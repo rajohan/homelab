@@ -178,24 +178,25 @@ export function createMiraOperationsTools(
                 const parsed = v.parse(miraHostCommandSchema, input);
                 await access(signal);
                 const target = connection(parsed.target);
-                const review = (await miraRunPermission(client, context)) !== "full_access";
+                const review =
+                    (await miraRunPermission(client, context)) !== "full_access";
                 const proposal = v.parse(miraHostProposalSchema, {
-                        ...parsed,
-                        binding: miraOperationsBinding(run.owner, target),
-                    });
-                    const hash = new Bun.CryptoHasher("sha256")
-                        .update(JSON.stringify(proposal))
-                        .digest("hex");
+                    ...parsed,
+                    binding: miraOperationsBinding(run.owner, target),
+                });
+                const hash = new Bun.CryptoHasher("sha256")
+                    .update(JSON.stringify(proposal))
+                    .digest("hex");
                 await client.begin(async (query) => {
-                        await lockMiraProposals(query, run.owner);
-                        const [saved] = await query<
-                            { id: string }[]
-                        >`UPDATE mira_tool_receipts SET state=${review ? "awaiting_approval" : "running"},proposal=${JSON.stringify(proposal)}::text::jsonb,input_hash=${hash},message=${review ? "Review this exact host command before execution." : "Executing under the operator's Full access setting."} WHERE id=${scoped.receiptId} AND run_id=${run.id} AND state='running' AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
-                        if (!saved)
-                            throw new MiraFailure(
-                                "CONFLICT",
-                                "Host command lost its execution lease."
-                            );
+                    await lockMiraProposals(query, run.owner);
+                    const [saved] = await query<
+                        { id: string }[]
+                    >`UPDATE mira_tool_receipts SET state=${review ? "awaiting_approval" : "running"},proposal=${JSON.stringify(proposal)}::text::jsonb,input_hash=${hash},message=${review ? "Review this exact host command before execution." : "Executing under the operator's Full access setting."} WHERE id=${scoped.receiptId} AND run_id=${run.id} AND state='running' AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
+                    if (!saved)
+                        throw new MiraFailure(
+                            "CONFLICT",
+                            "Host command lost its execution lease."
+                        );
                 });
                 if (review) {
                     for (;;) {
