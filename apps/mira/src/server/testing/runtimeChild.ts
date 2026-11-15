@@ -256,6 +256,13 @@ for await (const line of reader) {
             },
         });
     } else if (message.method === "thread/read") {
+        if (mode === "context-missing") {
+            write({
+                id: message.id,
+                error: { code: -32_600, message: "Fixture history is not persisted." },
+            });
+            continue;
+        }
         write({
             id: message.id,
             result: { thread: { id: message.params.threadId, path: null } },

@@ -32,6 +32,40 @@ const options = (mode = "ok") => ({
 });
 
 describe("Mira runtime transport", () => {
+    test.each(["turn", "import", "resume", "compact"])(
+        "defers empty-thread inspection but preserves missing-history failures after %s",
+        async (transition) => {
+            const runtime = await CodexRuntime.connect(options("context-missing"));
+            try {
+                const thread = await runtime.startThread("synthetic", process.cwd(), []);
+                expect(await runtime.readContext(thread)).toBeNull();
+                await runtime.importContext(thread, []);
+                expect(await runtime.readContext(thread)).toBeNull();
+                if (transition === "turn") {
+                    const reply = await runtime.turn(thread, "First reply");
+                    expect(reply.status).toBe("completed");
+                } else if (transition === "import") {
+                    await runtime.importContext(thread, [
+                        {
+                            type: "message",
+                            role: "user",
+                            content: [{ type: "input_text", text: "Preserved context" }],
+                        },
+                    ]);
+                } else if (transition === "resume") {
+                    await runtime.resumeThread(thread, []);
+                } else {
+                    await runtime.compactThread(thread, new AbortController().signal);
+                }
+                await rejects(runtime.readContext(thread), RuntimeResponseError);
+                await runtime.retireThread(thread);
+                await rejects(runtime.readContext(thread), /idle registered thread/);
+            } finally {
+                await runtime.close();
+            }
+        }
+    );
+
     test.each([1100, runtimeToolCallLimit + 1])(
         "allows extended sequential work with a bounded non-replaying call history: %s",
         async (count) => {
