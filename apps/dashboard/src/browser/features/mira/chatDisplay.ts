@@ -1,16 +1,14 @@
 import * as v from "valibot";
 
-const key = "homelab:mira:chat-display:v1";
+const key = "homelab:mira:chat-display:v2";
 const schema = v.strictObject({
-    showActivity: v.boolean(),
-    keepActivity: v.boolean(),
+    showThinking: v.boolean(),
     showTools: v.boolean(),
     expandTools: v.boolean(),
 });
 export type ChatDisplaySettings = v.InferOutput<typeof schema>;
 const defaults: ChatDisplaySettings = {
-    showActivity: true,
-    keepActivity: false,
+    showThinking: true,
     showTools: true,
     expandTools: false,
 };
@@ -25,7 +23,9 @@ export function readChatDisplay(): ChatDisplaySettings {
             schema,
             JSON.parse(globalThis.localStorage.getItem(key) ?? "null")
         );
-        return parsed.success ? parsed.output : defaults;
+        if (parsed.success) return parsed.output;
+        const legacy = v.safeParse(v.object({ showTools: v.boolean(), expandTools: v.boolean() }), JSON.parse(globalThis.localStorage.getItem("homelab:mira:chat-display:v1") ?? "null"));
+        return legacy.success ? { ...defaults, ...legacy.output } : defaults;
     } catch {
         return defaults;
     }

@@ -9,9 +9,8 @@ import { miraStatusTone } from "./statusTone";
  * @returns A readable chat entry that does not conceal interrupted or failed output.
  */
 export function ChatMessage({ message }: { readonly message: MiraMessage }) {
-    const pendingText =
-        message.state === "queued" ? "Waiting for Mira…" : "Mira is working…";
     const user = message.role === "user";
+    if (!user && !message.content.trim() && message.attachmentIds.length === 0) return null;
     return (
         <article
             aria-label={`${user ? "You" : "Mira"} message`}
@@ -30,11 +29,9 @@ export function ChatMessage({ message }: { readonly message: MiraMessage }) {
                     >
                         {formatDateTime(message.createdAt)}
                     </time>
-                    {message.state !== "completed" && (
+                    {["failed", "interrupted"].includes(message.state) && (
                         <Badge tone={miraStatusTone(message.state)}>
-                            {message.state === "streaming"
-                                ? "Replying"
-                                : message.state.replaceAll("_", " ")}
+                            {message.state.replaceAll("_", " ")}
                         </Badge>
                     )}
                 </div>
@@ -42,13 +39,7 @@ export function ChatMessage({ message }: { readonly message: MiraMessage }) {
                     <Markdown tone={user ? "onAccent" : "default"}>
                         {message.content}
                     </Markdown>
-                ) : (
-                    <p className="text-sm text-primary-400">
-                        {["queued", "streaming"].includes(message.state)
-                            ? pendingText
-                            : "No reply was recorded."}
-                    </p>
-                )}
+                ) : null}
                 {message.attachmentIds.length > 0 && (
                     <MessageAttachments ids={message.attachmentIds} />
                 )}

@@ -402,7 +402,7 @@ export async function listMiraRuns(
 }
 
 /**
- * Persist a coarse runtime activity without storing private reasoning or tool payloads.
+ * Persist runtime activity and bounded provider display summaries, never raw hidden reasoning or tool payloads.
  * @param client - Executor-owned database pool.
  * @param run - Current fenced lease.
  * @param activity - Observed provider stage or host-tool execution.

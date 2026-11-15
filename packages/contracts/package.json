@@ -15,6 +15,7 @@
         "./infrastructure": "./src/infrastructure.ts",
         "./maintenance": "./src/maintenance.ts",
         "./mira": "./src/mira.ts",
+        "./miraOperations": "./src/miraOperations.ts",
         "./miraMail": "./src/miraMail.ts",
         "./miraPublication": "./src/miraPublication.ts",
         "./miraSocial": "./src/miraSocial.ts",

@@ -42,6 +42,7 @@ import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
 import { loadSyntheticModels, SyntheticRuntime } from "../runtime/syntheticRuntime";
 import { createMiraToolRouter } from "../runtime/toolRouter";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
+import type { MiraOperationsConfiguration } from "../operations/configuration";
 import { prepareMiraAttachments } from "./attachments";
 import { readMiraTurnInput } from "./context";
 import { maintainMiraContext } from "./contextMaintenance";
@@ -63,6 +64,7 @@ export { miraInstructionsHash } from "../persona/instructions";
  * @param github - Optional GitHub mapping and dedicated read credential, retained only in the service closure.
  * @param synthetic - Optional owner-bound Synthetic subscription credential, retained only by the server.
  * @param localCode - Optional Main mapping; the run freezes its target before inference.
+ * @param operations - Explicit owner-bound host administration settings.
  * @param daytona - Nonsecret cloud mapping for local drafts and result reads.
  * @returns Completion after recording the observed terminal outcome and reaping the child.
  */
@@ -78,7 +80,8 @@ export async function executeMiraTurn(
     daytona?: DaytonaBinding,
     github?: GitHubBinding | GitHubConfiguration,
     synthetic?: SyntheticConfiguration,
-    localCode?: LocalCodeBinding
+    localCode?: LocalCodeBinding,
+    operations?: MiraOperationsConfiguration
 ): Promise<void> {
     const controller = new AbortController();
     const deadline = new AbortController();
@@ -315,7 +318,8 @@ export async function executeMiraTurn(
                     daytona,
                     github,
                     localCode,
-                    chatSearch && useSynthetic ? synthetic : undefined
+                    chatSearch && useSynthetic ? synthetic : undefined,
+                    operations
                 ),
                 ...(assistance
                     ? [
@@ -489,7 +493,8 @@ export async function executeMiraTurn(
                         providerTurn = turnId;
                     },
                     onActivity: (next) => {
-                        activity = next;
+                        const thinking = next.thinking ?? activity.thinking;
+                        activity = { ...next, ...(thinking ? { thinking } : {}) };
                     },
                     onDelta: (delta, itemId) => {
                         const separator =

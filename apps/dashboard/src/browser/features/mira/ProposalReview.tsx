@@ -9,6 +9,7 @@ const actions: Record<string, string> = {
     mira_task_update: "update a task",
     mira_task_progress: "record task progress",
     mira_memory_create: "save a memory",
+    mira_homelab_command: "execute a command on a Homelab host",
 };
 
 const labels: Record<string, string> = {
@@ -26,6 +27,11 @@ const labels: Record<string, string> = {
     version: "Expected version",
     text: "Progress",
     content: "Memory",
+    target: "Host",
+    command: "Exact command",
+    reason: "Purpose",
+    timeoutSeconds: "Command timeout (seconds)",
+    binding: "Connection fingerprint",
 };
 
 function displayValue(value: unknown): string {

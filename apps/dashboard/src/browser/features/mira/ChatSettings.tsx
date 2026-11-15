@@ -100,18 +100,10 @@ export function ChatSettings({
                 />
                 <div className="space-y-3 border-t border-primary-700 pt-4">
                     <Switch
-                        label="Show work status"
-                        checked={display.showActivity}
-                        onChange={(showActivity) =>
-                            onDisplayChange({ ...display, showActivity })
-                        }
-                    />
-                    <Switch
-                        label="Keep status after the reply"
-                        checked={display.keepActivity}
-                        disabled={!display.showActivity}
-                        onChange={(keepActivity) =>
-                            onDisplayChange({ ...display, keepActivity })
+                        label="Show thinking"
+                        checked={display.showThinking}
+                        onChange={(showThinking) =>
+                            onDisplayChange({ ...display, showThinking })
                         }
                     />
                     <Switch

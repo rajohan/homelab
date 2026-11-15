@@ -55,6 +55,7 @@ import { miraSkillCatalogHash } from "../skills/catalog";
 import { cleanupMiraResources } from "./cleanup";
 import { MaintenanceGate } from "./maintenanceGate";
 import { executeMiraTurn } from "./turn";
+import type { MiraOperationsConfiguration } from "../operations/configuration";
 
 export interface MiraHealth {
     ready: boolean;
@@ -82,6 +83,7 @@ export async function runMiraExecutor(options: {
     github?: GitHubConfiguration | undefined;
     synthetic?: SyntheticConfiguration | undefined;
     localCode?: LocalCodeBinding | undefined;
+    operations?: MiraOperationsConfiguration | undefined;
 }): Promise<void> {
     const { client, config, health } = options;
     const failed = new AbortController();
@@ -407,7 +409,8 @@ export async function runMiraExecutor(options: {
                                 options.daytona,
                                 options.github,
                                 options.synthetic,
-                                options.localCode
+                                options.localCode,
+                                options.operations
                             );
                         } finally {
                             health.active--;

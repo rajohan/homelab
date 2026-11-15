@@ -60,6 +60,8 @@ import type { RuntimeTool } from "../runtime/protocol";
 import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
+import type { MiraOperationsConfiguration } from "../operations/configuration";
+import { createMiraOperationsTools } from "../operations/tools";
 import { createMiraSkillTools } from "../skills/tools";
 import { createMiraActionTools } from "./actionTools";
 import { createMiraBrowserTools } from "./browserTools";
@@ -130,6 +132,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param moltbook - Optional social read settings, retained only by the service.
  * @param github - Optional GitHub mapping and dedicated read credential, retained only in the service closure.
  * @param search - Owner-bound search for manual Synthetic chat turns.
+ * @param operations - Explicit host administration, separate from sandbox execution.
  * @param localCode - Optional Main mapping; the run freezes its target before inference.
  * @param daytona - Nonsecret cloud job mapping; model tools cannot execute or approve.
  * @returns The fixed tool declarations for this conversation and their checked handlers.
@@ -144,7 +147,8 @@ export function createMiraTools(
     daytona?: DaytonaBinding,
     github?: GitHubBinding | GitHubConfiguration,
     localCode?: LocalCodeBinding,
-    search?: SyntheticConfiguration
+    search?: SyntheticConfiguration,
+    operations?: MiraOperationsConfiguration
 ): RuntimeTool<RuntimeToolResult>[] {
     const context: MiraContext = {
         client,
@@ -154,6 +158,7 @@ export function createMiraTools(
     };
     let uncertain = false;
     const definitions: MiraToolDefinition[] = [
+        ...createMiraOperationsTools(client, run, operations),
         ...createMiraRecallTools(client, run),
         ...createMiraComputerTools(),
         ...createMiraBrowserTools(),
@@ -739,6 +744,8 @@ export function createMiraTools(
                     if (known && error instanceof MiraFailure) message = error.message;
                     else if (readOnly && definition.name === "mira_web_search")
                         message = "Web search failed. Check the query and try again.";
+                    else if (readOnly && definition.name.startsWith("mira_homelab_"))
+                        message = "The host inspection failed. Check the connection before trying another read.";
                     else if (readOnly)
                         message =
                             "The screen could not be captured. No clicks or keystrokes were sent. Check Computer access before requesting another observation.";

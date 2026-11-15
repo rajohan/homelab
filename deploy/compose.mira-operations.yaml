@@ -1,0 +1,18 @@
+# Explicit production opt-in. Do not attach host credentials to the provider child or sandboxes.
+services:
+  mira:
+    environment:
+      HOMELAB_MIRA_OPERATIONS_FILE: /etc/homelab-mira/operations.json
+    volumes:
+      - type: bind
+        source: ${HOMELAB_MIRA_OPERATIONS_FILE:?Set the reviewed host administration JSON}
+        target: /etc/homelab-mira/operations.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${HOMELAB_MIRA_OPERATIONS_KEYS:?Set the private dedicated administration key directory}
+        target: /run/secrets/mira-operations
+        read_only: true
+        bind:
+          create_host_path: false

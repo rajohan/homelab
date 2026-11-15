@@ -421,8 +421,7 @@ test("chat model selection replaces unsupported thinking and speed choices", asy
             defaultModel="synthetic-a"
             fresh
             display={{
-                showActivity: true,
-                keepActivity: false,
+                showThinking: true,
                 showTools: true,
                 expandTools: false,
             }}
@@ -473,8 +472,7 @@ test("chat activity shows provider thinking and safe recorded tool outcomes", ()
                 },
             ]}
             display={{
-                showActivity: true,
-                keepActivity: false,
+                showThinking: true,
                 showTools: true,
                 expandTools: true,
             }}

@@ -230,6 +230,8 @@ export type MiraRunState =
 export interface MiraActivity {
     phase: "starting" | "thinking" | "replying" | "tool" | "working";
     tool: string | null;
+    /** Provider-supplied display summary; never raw hidden reasoning. */
+    thinking?: string;
 }
 export interface MiraRun {
     followupResolution?: MiraRunResolution | null;
