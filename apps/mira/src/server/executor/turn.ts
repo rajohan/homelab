@@ -600,6 +600,8 @@ export async function executeMiraTurn(
         if (steeringFailed) throw new Error("Message delivery could not be confirmed.");
         clearInterval(flush);
         await update;
+        // A short provider reply may finish between flush ticks; persist its last summary too.
+        await saveMiraActivity(client, run, activity);
         if (assistanceIdle) {
             const [current] = await client<
                 { cancelled: boolean }[]

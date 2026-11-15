@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 
-import { executeMiraHostCommand } from "./ssh";
+import { executeMiraHostCommand, MiraHostCommandFailure } from "./ssh";
 
 const target = {
     id: "fixture",
@@ -36,17 +36,27 @@ test("host transport sends literal stdin, retains observed exit codes and drains
             expect(args.at(-1)).toBe("sh -s");
             expect(new TextDecoder().decode(stdin)).toBe(command.command + "\n");
             return child(
-                "await Bun.stdin.text(); process.stdout.write('ø'.repeat(40000)); process.stderr.write('synthetic failure'); process.exitCode=7;",
+                "await Bun.stdin.text(); process.stdout.write('ø'.repeat(40000)); process.stderr.write('synthetic diagnostic');",
                 stdin
             );
         }
     );
     expect(result).toEqual({
-        exitCode: 7,
+        exitCode: 0,
         stdout: "ø".repeat(32_000),
-        stderr: "synthetic failure",
+        stderr: "synthetic diagnostic",
         truncated: true,
         trust: "untrusted_host_output",
+    });
+});
+
+test("an observed nonzero command is a known failure with bounded private diagnostics", async () => {
+    await rejects(executeMiraHostCommand(target, command, new AbortController().signal, (_args, stdin) => child("process.stdout.write('partial'); process.stderr.write('failure detail'); process.exitCode=7;", stdin)), (error: unknown) => {
+        expect(error).toBeInstanceOf(MiraHostCommandFailure);
+        const failure = error as MiraHostCommandFailure;
+        expect(failure.result).toMatchObject({ exitCode: 7, stdout: "partial", stderr: "failure detail" });
+        expect(failure.message).not.toContain("failure detail");
+        return true;
     });
 });
 

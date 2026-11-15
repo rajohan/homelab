@@ -2,6 +2,25 @@ import type { MiraHostCommand } from "@homelab/contracts/miraOperations";
 
 import type { MiraOperationsTarget } from "./configuration";
 
+interface HostCommandResult {
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+    truncated: boolean;
+    trust: string;
+}
+
+/** An observed command failure with private output kept separate from its operational message. */
+export class MiraHostCommandFailure extends Error {
+    /**
+     * @param result - Observed exit and bounded output; failure does not imply partial changes were undone.
+     */
+    constructor(readonly result: HostCommandResult) {
+        super(`Host command exited with status ${result.exitCode}. Inspect the output and any partial effects before retrying.`);
+        this.name = "MiraHostCommandFailure";
+    }
+}
+
 /** Construct fixed SSH transport arguments; command text is sent only through stdin.
  * @param target - Validated operator-owned destination.
  * @returns An argv array with strict host verification and no inherited SSH configuration.
@@ -105,13 +124,15 @@ export async function executeMiraHostCommand(
         ]);
         deadline.throwIfAborted();
         if (exitCode === 255) throw new Error("SSH outcome was not confirmed.");
-        return {
+        const result = {
             exitCode,
             stdout: stdout.text,
             stderr: stderr.text,
             truncated: stdout.truncated || stderr.truncated,
             trust: "untrusted_host_output",
         };
+        if (exitCode !== 0) throw new MiraHostCommandFailure(result);
+        return result;
     } finally {
         deadline.removeEventListener("abort", stop);
         if (child.exitCode === null) child.kill("SIGKILL");

@@ -57,6 +57,7 @@ import { createHereNowTools } from "../integrations/herenow/tools";
 import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
 import { createMoltbookTools } from "../integrations/moltbook/tools";
 import type { MiraOperationsConfiguration } from "../operations/configuration";
+import { MiraHostCommandFailure } from "../operations/ssh";
 import { createMiraOperationsTools } from "../operations/tools";
 import type { RuntimeTool } from "../runtime/protocol";
 import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
@@ -737,11 +738,12 @@ export function createMiraTools(
                         (!cleanupFailed &&
                             !(commitsIndependently && actionCompleted) &&
                             (error instanceof MiraFailure ||
+                                error instanceof MiraHostCommandFailure ||
                                 error instanceof v.ValiError));
                     uncertain = !known;
                     let message =
                         "The action outcome is uncertain. Do not retry; review this run before continuing.";
-                    if (known && error instanceof MiraFailure) message = error.message;
+                    if (known && (error instanceof MiraFailure || error instanceof MiraHostCommandFailure)) message = error.message;
                     else if (readOnly && definition.name === "mira_web_search")
                         message = "Web search failed. Check the query and try again.";
                     else if (readOnly && definition.name.startsWith("mira_homelab_"))
@@ -759,7 +761,8 @@ export function createMiraTools(
                     }
                     return JSON.stringify({
                         ok: false,
-                        retryable: !uncertain,
+                        retryable: !uncertain && !(error instanceof MiraHostCommandFailure),
+                        ...(!uncertain && error instanceof MiraHostCommandFailure ? { result: error.result } : {}),
                         message: uncertain
                             ? "The action outcome is uncertain. Do not retry; review this run before continuing."
                             : message,

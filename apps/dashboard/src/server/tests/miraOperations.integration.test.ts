@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { rejects } from "node:assert/strict";
 
 import { capabilities } from "@homelab/contracts/operations";
@@ -7,6 +7,7 @@ import { decideMiraProposal, listMiraProposals } from "@homelab/mira/data/propos
 import { createMiraOperationsTools } from "@homelab/mira/operations/tools";
 
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
+import * as hostSsh from "../../../../mira/src/server/operations/ssh";
 import { appRouter } from "../api/router";
 import { permissionRun } from "../testing/miraPermissions";
 import { operationFixture } from "../testing/operations";
@@ -120,6 +121,8 @@ test.each(["ask", "approve_for_me"] as const)(
             });
             expect(await pending).toMatchObject({ exitCode: 0 });
             expect(f.calls).toEqual(["printf synthetic"]);
+            const [receipt] = await f.client<{ proposal: unknown }[]>`SELECT proposal FROM mira_tool_receipts WHERE id=${f.receiptId}`;
+            expect(receipt?.proposal).toBeNull();
         } finally {
             await f.close();
         }
@@ -131,11 +134,9 @@ test("Full access commands use provisioned authority, independent of Daytona sel
     try {
         expect(await f.invoke()).toMatchObject({ stdout: "synthetic" });
         expect(f.calls).toEqual(["printf synthetic"]);
-        const [receipt] = await f.client<
-            { input: { command: string; binding: string } }[]
-        >`SELECT proposal AS input FROM mira_tool_receipts WHERE id=${f.receiptId}`;
-        expect(receipt?.input.command).toBe("printf synthetic");
-        expect(receipt?.input.binding).toHaveLength(64);
+        const [receipt] = await f.client<{ proposal: unknown; hash: string }[]>`SELECT proposal,input_hash AS hash FROM mira_tool_receipts WHERE id=${f.receiptId}`;
+        expect(receipt?.proposal).toBeNull();
+        expect(receipt?.hash).toHaveLength(64);
         expect(
             createMiraOperationsTools(f.client, f.run, {
                 ...f.configuration,
@@ -175,6 +176,10 @@ test.each(["reject", "stop", "revoke"])(
                 await f.client`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=${f.run.id}`;
             await rejects(pending);
             expect(f.calls).toEqual([]);
+            if (operation === "reject") {
+                const [receipt] = await f.client<{ proposal: unknown }[]>`SELECT proposal FROM mira_tool_receipts WHERE id=${f.receiptId}`;
+                expect(receipt?.proposal).toBeNull();
+            }
             await rejects(
                 decideMiraProposal(
                     f.context,
@@ -286,10 +291,9 @@ test("the public tool wrapper expires pending approvals when the operator stops"
         const proposal = await waitForProposal(f);
         await f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${f.run.id}`;
         expect(JSON.parse((await pending) as string)).toMatchObject({ ok: false });
-        const [row] = await f.client<
-            { state: string }[]
-        >`SELECT state FROM mira_tool_receipts WHERE id=${proposal.id}`;
+        const [row] = await f.client<{ state: string; proposal: unknown }[]>`SELECT state,proposal FROM mira_tool_receipts WHERE id=${proposal.id}`;
         expect(row?.state).toBe("expired");
+        expect(row?.proposal).toBeNull();
         expect(
             await listMiraProposals(
                 { client: f.client, owner: f.run.owner, actor: "human:operator" },
@@ -299,4 +303,19 @@ test("the public tool wrapper expires pending approvals when the operator stops"
     } finally {
         await f.close();
     }
+});
+
+test("failed commands stay failed in the public wrapper while output stays out of operational receipts", async () => {
+    const f = await fixture("full_access");
+    const transport = spyOn(hostSsh, "executeMiraHostCommand").mockRejectedValue(new hostSsh.MiraHostCommandFailure({ exitCode: 7, stdout: "partial output", stderr: "private diagnostic", truncated: false, trust: "untrusted_host_output" }));
+    try {
+        const tool = createMiraTools(f.client, f.run, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, f.configuration).find((entry) => entry.name === "mira_homelab_command")!;
+        const callId = crypto.randomUUID();
+        const result = await tool.execute({ target: "main", command: "synthetic-failure", reason: "Failing command" }, new AbortController().signal, { callId, threadId: "fixture", turnId: "fixture" });
+        expect(JSON.parse(result as string)).toMatchObject({ ok: false, retryable: false, result: { exitCode: 7, stderr: "private diagnostic" } });
+        const [receipt] = await f.client<{ state: string; message: string; proposal: unknown }[]>`SELECT state,message,proposal FROM mira_tool_receipts WHERE run_id=${f.run.id} AND call_id=${callId}`;
+        expect(receipt?.state).toBe("failed");
+        expect(receipt?.proposal).toBeNull();
+        expect(receipt?.message).not.toContain("private diagnostic");
+    } finally { transport.mockRestore(); await f.close(); }
 });

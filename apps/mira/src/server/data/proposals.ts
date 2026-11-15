@@ -134,7 +134,7 @@ export async function decideMiraProposal(
                     "CONFLICT",
                     "This command is no longer waiting in an active run. Request a new command."
                 );
-            await query`UPDATE mira_tool_receipts SET state=${decision},message=${input.approve ? "The operator approved this exact host command." : "The operator rejected this host command."},finished_at=now() WHERE id=${input.id}`;
+            await query`UPDATE mira_tool_receipts SET state=${decision},proposal=NULL,message=${input.approve ? "The operator approved this exact host command." : "The operator rejected this host command."},finished_at=now() WHERE id=${input.id}`;
             await auditMira(query, context, `proposal.${decision}`, input.id);
             return { state: decision };
         }

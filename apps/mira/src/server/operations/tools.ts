@@ -172,7 +172,7 @@ export function createMiraOperationsTools(
                 ["target", "command", "reason"]
             ),
             onFailure: async (scoped) => {
-                await client`UPDATE mira_tool_receipts SET state='expired',finished_at=clock_timestamp(),message='This command was not dispatched; request a new proposal.' WHERE id=${scoped.receiptId} AND run_id=${run.id} AND state IN ('awaiting_approval','approved')`;
+                await client`UPDATE mira_tool_receipts SET state='expired',proposal=NULL,finished_at=clock_timestamp(),message='This command was not dispatched; request a new proposal.' WHERE id=${scoped.receiptId} AND run_id=${run.id} AND state IN ('awaiting_approval','approved')`;
             },
             action: async (input, signal, scoped: MiraToolContext) => {
                 const parsed = v.parse(miraHostCommandSchema, input);
@@ -191,7 +191,7 @@ export function createMiraOperationsTools(
                     await lockMiraProposals(query, run.owner);
                     const [saved] = await query<
                         { id: string }[]
-                    >`UPDATE mira_tool_receipts SET state=${review ? "awaiting_approval" : "running"},proposal=${JSON.stringify(proposal)}::text::jsonb,input_hash=${hash},message=${review ? "Review this exact host command before execution." : "Executing under the operator's Full access setting."} WHERE id=${scoped.receiptId} AND run_id=${run.id} AND state='running' AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
+                    >`UPDATE mira_tool_receipts SET state=${review ? "awaiting_approval" : "running"},proposal=${review ? JSON.stringify(proposal) : null}::text::jsonb,input_hash=${hash},message=${review ? "Review this exact host command before execution." : "Executing under the operator's Full access setting."} WHERE id=${scoped.receiptId} AND run_id=${run.id} AND state='running' AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
                     if (!saved)
                         throw new MiraFailure(
                             "CONFLICT",
