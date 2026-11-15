@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/rajohan/homelab/compare/v0.16.6...v0.17.0) (2026-11-15)
+
+
+### Features
+
+* **mira:** add host administration and clarify chat activity ([#203](https://github.com/rajohan/homelab/issues/203)) ([bbf936e](https://github.com/rajohan/homelab/commit/bbf936ea155466b1ee6b857effffd3fcf5170cd9))
+
 ## [0.16.6](https://github.com/rajohan/homelab/compare/v0.16.5...v0.16.6) (2026-11-15)
 
 
