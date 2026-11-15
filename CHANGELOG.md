@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.4](https://github.com/rajohan/homelab/compare/v0.16.3...v0.16.4) (2026-11-15)
+
+
+### Bug Fixes
+
+* **mira:** preserve long conversations while retiring visual history ([#196](https://github.com/rajohan/homelab/issues/196)) ([0246cc4](https://github.com/rajohan/homelab/commit/0246cc4006a295e973e905b39fa91c1efe7ff247))
+* **updates:** refresh installed dependencies after host jobs ([#198](https://github.com/rajohan/homelab/issues/198)) ([19d8be6](https://github.com/rajohan/homelab/commit/19d8be6124d59d49f52823725dd434f86370d312))
+
 ## [0.16.3](https://github.com/rajohan/homelab/compare/v0.16.2...v0.16.3) (2026-11-11)
 
 
