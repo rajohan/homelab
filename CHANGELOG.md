@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.5](https://github.com/rajohan/homelab/compare/v0.16.4...v0.16.5) (2026-11-15)
+
+
+### Bug Fixes
+
+* **dashboard:** repair deployment, retention and Mira history ([#199](https://github.com/rajohan/homelab/issues/199)) ([683864e](https://github.com/rajohan/homelab/commit/683864e32c9d4f9096e60da5585c238d50db247c))
+
 ## [0.16.4](https://github.com/rajohan/homelab/compare/v0.16.3...v0.16.4) (2026-11-15)
 
 
