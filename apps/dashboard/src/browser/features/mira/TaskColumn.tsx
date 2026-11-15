@@ -1,6 +1,6 @@
 import { useDroppable } from "@dnd-kit/react";
 import type { MiraTask } from "@homelab/contracts/mira";
-import { Badge, Button, ErrorNotice, LoadingState, SectionHeader } from "@homelab/ui";
+import { Badge, InfiniteScrollTrigger, LoadingState, SectionHeader } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
 import { api } from "../../api/client";
@@ -68,7 +68,6 @@ export function TaskColumn({
                 className={`min-h-64 flex-1 space-y-3 rounded-xl border border-dashed p-3 transition-colors md:max-h-[calc(100dvh-19rem)] md:overflow-y-auto md:overscroll-contain ${isDropTarget ? "border-accent-400 bg-accent-900/20" : "border-primary-700/60 bg-primary-800/30"}`}
             >
                 {query.isPending && <LoadingState label="Loading tasks…" />}
-                {query.error && <ErrorNotice error={query.error} />}
                 {rows.map((task) => (
                     <TaskCard
                         key={task.id}
@@ -82,16 +81,18 @@ export function TaskColumn({
                         No matching tasks.
                     </p>
                 )}
-                {query.hasNextPage && (
-                    <Button
-                        fullWidth
-                        variant="secondary"
-                        busy={query.isFetchingNextPage}
-                        onClick={() => void query.fetchNextPage()}
-                    >
-                        Load more
-                    </Button>
-                )}
+                <InfiniteScrollTrigger
+                    itemCount={query.data?.pages.length ?? 0}
+                    hasMore={query.hasNextPage}
+                    loading={query.isFetchingNextPage}
+                    refreshing={query.isRefetching}
+                    error={query.isError ? query.error : undefined}
+                    onLoadMore={() =>
+                        void (query.isRefetchError
+                            ? query.refetch()
+                            : query.fetchNextPage())
+                    }
+                />
             </div>
         </section>
     );

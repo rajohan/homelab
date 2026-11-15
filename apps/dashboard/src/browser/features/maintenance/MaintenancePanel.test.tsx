@@ -371,3 +371,29 @@ test("restart navigation combines search, requirement and external filters", asy
         realm.close();
     }
 });
+
+test("an unfinished publication is shown as publishing rather than a failed release check", () => {
+    const close = fixture(<ReleasesPanel />, "releases", {
+        configured: true,
+        dashboard: "0.7.12",
+        workers: [],
+        auth: [],
+        release: {
+            fresh: true,
+            capturedAt: "2026-10-23T10:00:00Z",
+            value: {
+                version: "0.8.0",
+                verified: false,
+                tests: "in_progress",
+                url: "https://github.com/demo/homelab/releases/tag/v0.8.0",
+                buildUrl: null,
+            },
+        },
+    });
+    try {
+        expect(screen.getByText("Publishing")).toBeVisible();
+        expect(screen.queryByText("Verified release")).not.toBeInTheDocument();
+    } finally {
+        close();
+    }
+});

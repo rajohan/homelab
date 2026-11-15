@@ -29,8 +29,6 @@ export function maintenanceJob(retentionDays: number): JobHandler {
             );
             if (
                 !(await context.commit(async (transaction) => {
-                    await transaction`DELETE FROM job_runs WHERE id IN (SELECT id FROM job_runs WHERE state IN ('succeeded','failed','timed_out','cancelled') AND finished_at < now() - ${retentionDays} * interval '1 day' LIMIT 1000)`;
-                    await transaction`DELETE FROM operation_audit WHERE id IN (SELECT id FROM operation_audit WHERE created_at < now() - ${retentionDays} * interval '1 day' LIMIT 5000)`;
                     const retired = await transaction<
                         { id: string }[]
                     >`SELECT id FROM workers WHERE (draining OR heartbeat_at < now() - interval '5 minutes') ORDER BY heartbeat_at LIMIT 1000 FOR UPDATE SKIP LOCKED`;
@@ -42,24 +40,36 @@ export function maintenanceJob(retentionDays: number): JobHandler {
                             "UUID"
                         )}) AND (draining OR heartbeat_at < now() - interval '5 minutes') AND NOT EXISTS (SELECT 1 FROM job_runs WHERE worker_id = workers.id AND state = 'running')`;
                     await transaction`DELETE FROM operation_rate_windows WHERE expires_at < now() - interval '1 day'`;
-                    await transaction`DELETE FROM operational_incidents WHERE id IN (SELECT id FROM operational_incidents WHERE state = 'resolved' AND resolved_at < now() - ${retentionDays} * interval '1 day' ORDER BY id LIMIT 1000)`;
                 }))
             )
                 throw new Error("Maintenance ownership changed");
-            let removed: number;
+            let more: boolean;
             do {
                 context.signal.throwIfAborted();
-                removed = 0;
+                more = false;
                 if (
                     !(await context.commit(async (transaction) => {
+                        const jobs = await transaction<
+                            { id: string }[]
+                        >`DELETE FROM job_runs WHERE id IN (SELECT id FROM job_runs WHERE state IN ('succeeded','failed','timed_out','cancelled') AND finished_at < now() - ${retentionDays} * interval '1 day' LIMIT 1000) RETURNING id`;
+                        const audit = await transaction<
+                            { id: string }[]
+                        >`DELETE FROM operation_audit WHERE id IN (SELECT id FROM operation_audit WHERE created_at < now() - ${retentionDays} * interval '1 day' LIMIT 5000) RETURNING id`;
+                        const incidents = await transaction<
+                            { id: string }[]
+                        >`DELETE FROM operational_incidents WHERE id IN (SELECT id FROM operational_incidents WHERE state = 'resolved' AND resolved_at < now() - ${retentionDays} * interval '1 day' ORDER BY id LIMIT 1000) RETURNING id`;
                         const rows = await transaction<
                             { id: string }[]
                         >`DELETE FROM dashboard_notifications WHERE id IN (SELECT id FROM dashboard_notifications WHERE created_at < now() - ${retentionDays} * interval '1 day' ORDER BY id LIMIT 1000) RETURNING id`;
-                        removed = rows.length;
+                        more =
+                            jobs.length === 1000 ||
+                            audit.length === 5000 ||
+                            incidents.length === 1000 ||
+                            rows.length === 1000;
                     }))
                 )
                     throw new Error("Maintenance ownership changed");
-            } while (removed === 1000);
+            } while (more);
             await context.reportProgress("Operational history cleanup completed.");
         },
     };

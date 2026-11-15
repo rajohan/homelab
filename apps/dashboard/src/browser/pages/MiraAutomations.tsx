@@ -9,6 +9,7 @@ import {
     DropdownMenu,
     ErrorNotice,
     formatDateTime,
+    InfiniteScrollTrigger,
     LoadingState,
     PageHeader,
     SectionHeader,
@@ -271,16 +272,16 @@ export function MiraAutomations() {
                     );
                 })}
             </div>
-            {query.hasNextPage && (
-                <Button
-                    fullWidth
-                    variant="secondary"
-                    busy={query.isFetchingNextPage}
-                    onClick={() => void query.fetchNextPage()}
-                >
-                    Load more automations
-                </Button>
-            )}
+            <InfiniteScrollTrigger
+                itemCount={query.data?.pages.length ?? 0}
+                hasMore={query.hasNextPage}
+                loading={query.isFetchingNextPage}
+                refreshing={query.isRefetching}
+                error={query.isError ? query.error : undefined}
+                onLoadMore={() =>
+                    void (query.isRefetchError ? query.refetch() : query.fetchNextPage())
+                }
+            />
             <MiraIntegrations />
             <MiraBrowserControl />
             <MiraSkills />

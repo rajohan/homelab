@@ -33,7 +33,16 @@ export function ReleasesPanel() {
     );
     const data = query.data;
     const release = data?.release;
-    const verification = release?.value.verified ? "Verified release" : "Not verified";
+    const publishing = [
+        "queued",
+        "in_progress",
+        "waiting",
+        "pending",
+        "requested",
+    ].includes(release?.value.tests ?? "");
+    const unverifiedLabel = publishing ? "Publishing" : "Not verified";
+    const verification = release?.value.verified ? "Verified release" : unverifiedLabel;
+    const unverifiedTone = release?.fresh && publishing ? "info" : "warning";
     return (
         <Card id="homelab-release" className="@container space-y-4">
             <SectionHeader
@@ -114,7 +123,7 @@ export function ReleasesPanel() {
                                         tone={
                                             release.fresh && release.value.verified
                                                 ? "positive"
-                                                : "warning"
+                                                : unverifiedTone
                                         }
                                     >
                                         {release.fresh ? verification : "Status outdated"}

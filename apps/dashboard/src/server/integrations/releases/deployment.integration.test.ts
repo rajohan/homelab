@@ -672,6 +672,43 @@ test.each(["auth", "main"])(
     }
 );
 
+test.each([
+    ["backup_size_limit", "The database backup exceeded the 8 GiB limit."],
+    ["backup_space", "The database backup needs more free disk space"],
+    ["command_output_limit", "A deployment command exceeded its output limit."],
+])("recovered %s is explained without claiming Auth rollback", async (code, reason) => {
+    const state = await fixture(true);
+    try {
+        const { id } = await state.request();
+        await state.drained(id);
+        await state.coordinate();
+        completeHost(state, true);
+        await state.coordinate();
+        await state.coordinate();
+        state.setReceipt(
+            {
+                state: "failed",
+                phase: "failed",
+                changesStarted: true,
+                migrationStarted: false,
+                recovered: true,
+                code,
+            },
+            "main"
+        );
+        await state.coordinate();
+        expect(await state.record()).toMatchObject({ state: "failed", finished: true });
+        const [row] = await state.client<
+            { message: string }[]
+        >`SELECT message FROM release_deployments WHERE id=${id}`;
+        expect(row!.message).toContain(reason);
+        expect(row!.message).toContain("Auth was updated");
+        expect(row!.message).toContain("queued work can continue");
+    } finally {
+        await state.close();
+    }
+});
+
 test("unified deployment refuses missing Auth completion and holds uncertain recovery", async () => {
     const state = await fixture(true);
     try {

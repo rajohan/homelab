@@ -5,8 +5,8 @@ import {
     Card,
     ConfirmDialog,
     DropdownMenu,
-    ErrorNotice,
     formatDateTime,
+    InfiniteScrollTrigger,
     LoadingState,
     Modal,
     SectionHeader,
@@ -94,7 +94,6 @@ export function PublicationLibrary({
                     }
                 />
                 {query.isPending && <LoadingState label="Loading publication drafts…" />}
-                {query.error && <ErrorNotice error={query.error} />}
                 {!query.isPending && !query.error && rows.length === 0 && (
                     <p className="text-sm text-primary-400">
                         No publication drafts yet. Create one here or ask Mira to prepare
@@ -165,16 +164,18 @@ export function PublicationLibrary({
                         </time>
                     </Card>
                 ))}
-                {query.hasNextPage && (
-                    <Button
-                        variant="secondary"
-                        fullWidth
-                        busy={query.isFetchingNextPage}
-                        onClick={() => void query.fetchNextPage()}
-                    >
-                        Load more
-                    </Button>
-                )}
+                <InfiniteScrollTrigger
+                    itemCount={query.data?.pages.length ?? 0}
+                    hasMore={query.hasNextPage}
+                    loading={query.isFetchingNextPage}
+                    refreshing={query.isRefetching}
+                    error={query.isError ? query.error : undefined}
+                    onLoadMore={() =>
+                        void (query.isRefetchError
+                            ? query.refetch()
+                            : query.fetchNextPage())
+                    }
+                />
             </div>
         </Modal>
     );

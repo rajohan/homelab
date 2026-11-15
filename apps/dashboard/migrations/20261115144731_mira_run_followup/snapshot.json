@@ -1,0 +1,37 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "b4c6767d-c38d-4558-8043-c8eb4d4f86de",
+    "prevIds": ["fcdc9026-4dd3-466b-a7bf-0dfa14ef6664"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_runs", "followup_resolution"],
+            "writes": [
+                "s|col|public.mira_runs.followup_resolution",
+                "n|col|public.mira_runs.followup_resolution",
+                "e|col|public.mira_runs.followup_resolution"
+            ],
+            "reads": ["n|tbl|public.mira_runs", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runs",
+                "name": "followup_resolution",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}

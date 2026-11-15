@@ -232,6 +232,7 @@ export interface MiraActivity {
     tool: string | null;
 }
 export interface MiraRun {
+    followupResolution?: MiraRunResolution | null;
     manual?: boolean;
     activity?: MiraActivity | null;
     id: string;
@@ -350,6 +351,17 @@ export const miraRunReadSchema = v.strictObject({
     id: idSchema,
     before: v.optional(idSchema),
 });
+export const miraRunResolveSchema = v.strictObject({
+    id: idSchema,
+    outcome: v.picklist(["reviewed", "dismissed"]),
+    reason: v.pipe(v.string(), v.trim(), v.minLength(4), v.maxLength(2000)),
+});
+export interface MiraRunResolution {
+    outcome: "reviewed" | "dismissed";
+    reason: string;
+    closedAt: string;
+    closedBy: string;
+}
 export interface MiraToolReceipt {
     id: string;
     tool: string;

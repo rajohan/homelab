@@ -1,4 +1,5 @@
 import { api } from "../../api/client";
+import { waitForJob } from "../jobs/waitForJob";
 
 interface PreparationInput {
     readonly requestId: string;
@@ -28,30 +29,10 @@ export async function prepareUpdate(
 ): Promise<void> {
     signal.throwIfAborted();
     const { id } = await client.start(input, signal);
-    // The worker owns execution deadlines and retries. Queue time, large
-    // inventories and paused workers must not invalidate a still-live check.
-    while (true) {
-        signal.throwIfAborted();
-        const state = await client.state(id, signal);
-        if (state === "succeeded") return;
-        if (!["queued", "running"].includes(state))
-            throw new Error(
-                "Current software status could not be refreshed. Open Jobs to inspect the check before updating."
-            );
-        await new Promise<void>((resolve, reject) => {
-            const abort = () => {
-                clearTimeout(timer);
-                signal.removeEventListener("abort", abort);
-                reject(
-                    new Error("Update preparation cancelled", { cause: signal.reason })
-                );
-            };
-            const timer = setTimeout(() => {
-                signal.removeEventListener("abort", abort);
-                resolve();
-            }, 1000);
-            signal.addEventListener("abort", abort, { once: true });
-            if (signal.aborted) abort();
-        });
-    }
+    await waitForJob(
+        id,
+        signal,
+        client.state,
+        "Current software status could not be refreshed. Open Jobs to inspect the check before updating."
+    );
 }

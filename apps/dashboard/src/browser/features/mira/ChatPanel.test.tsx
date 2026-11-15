@@ -50,7 +50,7 @@ test.each([
     });
     const identity = new IdentityClient();
     const id = crypto.randomUUID();
-    const key = ["operations", "mira", "conversation", id, undefined];
+    const key = ["operations", "mira", "conversation", id];
     const router = createRouter({
         routeTree: createRootRoute({
             component: () => (

@@ -121,6 +121,8 @@ test("retention removes only aged completed history and preserves queued and cur
             return enqueueJob(transaction, handler.definition, "test", "old");
         });
         await fixture.client`UPDATE job_runs SET state = 'succeeded', finished_at = now() - interval '31 days' WHERE id = ${old}`;
+        await fixture.client`INSERT INTO job_runs (id, action, label, resource_class, state, payload, fingerprint, idempotency_key, requested_by, attempt_limit, retry_safe, timeout_ms, resource_keys, finished_at) SELECT gen_random_uuid(), action, label, resource_class, state, payload, fingerprint, 'expired-' || number, requested_by, attempt_limit, retry_safe, timeout_ms, resource_keys, finished_at FROM job_runs CROSS JOIN generate_series(1,2005) AS number WHERE id=${old}`;
+        await fixture.client`INSERT INTO operation_audit (id, actor, action, target, created_at) SELECT gen_random_uuid(), 'retention-test', 'test', 'fixture', now() - interval '31 days' FROM generate_series(1,10005)`;
         await fixture.client.begin(async (transaction) => {
             await lockQueue(transaction);
             await enqueueJob(transaction, handler.definition, "test", "current");
@@ -163,6 +165,9 @@ test("retention removes only aged completed history and preserves queued and cur
         );
         const remaining = await fixture.client<{ id: string }[]>`SELECT id FROM job_runs`;
         expect(remaining).toHaveLength(2);
+        expect(
+            await fixture.client`SELECT id FROM operation_audit WHERE created_at < now() - interval '30 days'`
+        ).toHaveLength(0);
         expect(remaining.some((row) => row.id === old)).toBe(false);
         expect(remaining.some((row) => row.id === run.id)).toBe(true);
         const registrations = await fixture.client<
@@ -226,6 +231,7 @@ test("notification retention stops between committed batches when its lease is l
     const fixture = await operationFixture();
     try {
         await fixture.client`INSERT INTO dashboard_notifications (id, source, source_key, title, message, severity, created_at) SELECT gen_random_uuid(), 'retention-test', number::text, 'Expired', 'Expired event', 'info', now() - interval '31 days' FROM generate_series(1, 2005) AS number`;
+        await fixture.client`INSERT INTO operation_audit (id, actor, action, target, created_at) SELECT gen_random_uuid(), 'retention-test', 'test', 'fixture', now() - interval '31 days' FROM generate_series(1,5005)`;
         let commits = 0;
         await expectOperationFailure(
             maintenanceJob(30).execute(
@@ -250,6 +256,9 @@ test("notification retention stops between committed batches when its lease is l
             { count: number }[]
         >`SELECT count(*)::int AS count FROM dashboard_notifications`;
         expect(remaining?.count).toBe(1005);
+        expect(
+            await fixture.client`SELECT id FROM operation_audit WHERE actor='retention-test'`
+        ).toHaveLength(5);
     } finally {
         await fixture.close();
     }

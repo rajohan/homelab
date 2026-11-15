@@ -1,14 +1,65 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 
 import { IdentityClient } from "@homelab/ui/identity/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { serialize } from "superjson";
 
 import { IdentityClientContext } from "../../identity/IdentityClientContext";
 import { DeploymentPanel } from "./DeploymentPanel";
 
-function fixture(data: { targets: Record<string, unknown>[]; history: unknown[] }) {
+function fixture(
+    data: { targets: Record<string, unknown>[]; history: unknown[] },
+    status = "succeeded"
+) {
+    const requests: string[] = [];
+    const fetcher = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+            (input: Parameters<typeof fetch>[0]) => {
+                const address = input instanceof Request ? input.url : input.toString();
+                const url = new URL(address, "http://localhost");
+                return Promise.resolve(
+                    Response.json(
+                        url.pathname
+                            .split("/")
+                            .at(-1)!
+                            .split(",")
+                            .map((path) => {
+                                requests.push(path);
+                                if (path === "jobs.run")
+                                    return {
+                                        result: {
+                                            data: serialize({ id: "preparation-job" }),
+                                        },
+                                    };
+                                if (path === "jobs.detail")
+                                    return {
+                                        result: {
+                                            data: serialize({ run: { state: status } }),
+                                        },
+                                    };
+                                if (path === "releases.deployment.overview")
+                                    return {
+                                        result: {
+                                            data: serialize({
+                                                ...data,
+                                                targets: data.targets.map((target) => ({
+                                                    ...target,
+                                                    version: "1.2.3",
+                                                    revision: "b".repeat(64),
+                                                })),
+                                            }),
+                                        },
+                                    };
+                                throw new Error(`Unexpected request: ${path}`);
+                            })
+                    )
+                );
+            },
+            { preconnect: fetch.preconnect }
+        )
+    );
     const client = new QueryClient({
         defaultOptions: { queries: { staleTime: Infinity, retry: false } },
     });
@@ -39,6 +90,8 @@ function fixture(data: { targets: Record<string, unknown>[]; history: unknown[] 
     return () => {
         cleanup();
         client.clear();
+        fetcher.mockRestore();
+        expect(requests).not.toContain("releases.deployment.request");
     };
 }
 
@@ -48,7 +101,7 @@ test("deployment confirmation names the frozen version and cancellation submits 
             {
                 id: "main",
                 label: "Dashboard and Mira",
-                version: "1.2.3",
+                version: "1.2.2",
                 revision: "a".repeat(64),
             },
         ],
@@ -56,7 +109,7 @@ test("deployment confirmation names the frozen version and cancellation submits 
     });
     try {
         await userEvent.click(screen.getByRole("button", { name: "Deploy release" }));
-        const dialog = screen.getByRole("dialog", { name: "Deploy 1.2.3?" });
+        const dialog = await screen.findByRole("dialog", { name: "Deploy 1.2.3?" });
         expect(within(dialog).getByText(/database backup/)).toBeVisible();
         await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -92,8 +145,8 @@ test.each(["running", "unknown", "failed"])(
         try {
             expect(screen.getByRole("button", { name: "Deploy release" })).toBeDisabled();
             expect(
-                screen.getByRole("button", { name: "Prepare release" })
-            ).toBeDisabled();
+                screen.queryByRole("button", { name: "Prepare release" })
+            ).not.toBeInTheDocument();
             expect(
                 screen.queryByRole("button", { name: "Cancel deployment" })
             ).not.toBeInTheDocument();
@@ -106,7 +159,7 @@ test.each(["running", "unknown", "failed"])(
     }
 );
 
-test("expired preparation disables deployment while retaining the prepare action", () => {
+test("an expired preparation can start the single deployment flow", () => {
     const close = fixture({
         targets: [
             { id: "main", label: "Dashboard and Mira", version: null, revision: null },
@@ -114,8 +167,10 @@ test("expired preparation disables deployment while retaining the prepare action
         history: [],
     });
     try {
-        expect(screen.getByRole("button", { name: "Deploy release" })).toBeDisabled();
-        expect(screen.getByRole("button", { name: "Prepare release" })).toBeEnabled();
+        expect(screen.getByRole("button", { name: "Deploy release" })).toBeEnabled();
+        expect(
+            screen.queryByRole("button", { name: "Prepare release" })
+        ).not.toBeInTheDocument();
     } finally {
         close();
     }
@@ -148,3 +203,36 @@ test("a waiting deployment offers cancellation and empty configuration stays hid
         close();
     }
 });
+
+test.each(["running", "failed"])(
+    "%s preflight never enables deployment and can be cancelled",
+    async (status) => {
+        const close = fixture(
+            {
+                targets: [
+                    {
+                        id: "main",
+                        label: "Dashboard and Mira",
+                        version: "1.2.2",
+                        revision: "a".repeat(64),
+                    },
+                ],
+                history: [],
+            },
+            status
+        );
+        try {
+            await userEvent.click(screen.getByRole("button", { name: "Deploy release" }));
+            const dialog = screen.getByRole("dialog", { name: "Deploy release" });
+            expect(
+                within(dialog).getByRole("button", { name: "Deploy release" })
+            ).toBeDisabled();
+            if (status === "failed")
+                await within(dialog).findByText(/Release checks did not complete/);
+            await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+            expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        } finally {
+            close();
+        }
+    }
+);

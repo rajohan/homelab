@@ -174,3 +174,9 @@ loopback, with synthetic Docker/Loki fixtures. It has no production control cred
 identity, jobs, notifications and application lifecycle state remain entirely synthetic.
 Stop with Ctrl+C to remove that exact container and all preview data. The ordinary
 integration suite also allocates a separate disposable database per test suite.
+
+Expired job, audit, incident and notification rows are removed in repeated small
+transactions by the hourly retention job. Each batch checks cancellation and live
+worker ownership; completed batches remain committed if a later batch is interrupted.
+The 30-day default is a rolling age policy, not a database size ceiling: event volume
+varies, and PostgreSQL normally reuses deleted-row space instead of shrinking files.

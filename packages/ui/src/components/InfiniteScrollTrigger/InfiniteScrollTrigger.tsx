@@ -7,6 +7,7 @@ import { LoadingState } from "../Loading/LoadingState";
 export interface InfiniteScrollContinuation {
     readonly hasMore: boolean;
     readonly loading: boolean;
+    readonly refreshing?: boolean;
     readonly error?: unknown;
     readonly onLoadMore: () => void;
     readonly loadingLabel?: string;
@@ -22,12 +23,13 @@ export function InfiniteScrollTrigger({
     itemCount,
     hasMore,
     loading,
+    refreshing = false,
     error,
     onLoadMore,
     loadingLabel = "Loading more…",
     retryLabel = "Try again",
 }: InfiniteScrollContinuation & {
-    readonly rootRef: RefObject<HTMLElement | null>;
+    readonly rootRef?: RefObject<HTMLElement | null>;
     readonly itemCount: number;
 }) {
     const sentinel = useRef<HTMLDivElement>(null);
@@ -35,7 +37,8 @@ export function InfiniteScrollTrigger({
     useEffect(() => {
         const Observer =
             sentinel.current?.ownerDocument.defaultView?.IntersectionObserver;
-        if (!sentinel.current || !hasMore || loading || error || !Observer) return;
+        if (!sentinel.current || !hasMore || loading || refreshing || error || !Observer)
+            return;
         const request = { sent: false };
         const observer = new Observer(
             (entries) => {
@@ -44,11 +47,11 @@ export function InfiniteScrollTrigger({
                     load();
                 }
             },
-            { root: rootRef.current, rootMargin: "200px 0px" }
+            { root: rootRef?.current ?? null, rootMargin: "200px 0px" }
         );
         observer.observe(sentinel.current);
         return () => observer.disconnect();
-    }, [rootRef, hasMore, loading, error, itemCount]);
+    }, [rootRef, hasMore, loading, refreshing, error, itemCount]);
     if (!hasMore && !error) return null;
     return (
         <div ref={sentinel} className="space-y-2 p-3">

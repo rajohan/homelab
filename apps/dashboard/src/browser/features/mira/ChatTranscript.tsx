@@ -1,5 +1,9 @@
 import type { MiraMessage } from "@homelab/contracts/mira";
-import { Button } from "@homelab/ui";
+import {
+    Button,
+    type InfiniteScrollContinuation,
+    InfiniteScrollTrigger,
+} from "@homelab/ui";
 import { ArrowDown } from "lucide-react";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
@@ -7,36 +11,57 @@ import { ChatMessage } from "./ChatMessage";
 
 /**
  * Keep the transcript inside the workspace and follow new replies without moving a reader in history.
- * @returns A bounded, accessible message log with explicit history navigation.
+ * @returns A bounded, accessible message log with automatic history loading.
  */
 export function ChatTranscript({
     messages,
-    before,
-    nextCursor,
-    onPage,
+    continuation,
     activity,
 }: {
     readonly activity?: ReactNode;
     readonly messages: MiraMessage[];
-    readonly before: string | undefined;
-    readonly nextCursor: string | null;
-    readonly onPage: (cursor: string | undefined) => void;
+    readonly continuation: InfiniteScrollContinuation;
 }) {
     const viewport = useRef<HTMLDivElement>(null);
     const content = useRef<HTMLDivElement>(null);
-    const following = useRef(!before);
-    const [showJump, setShowJump] = useState(Boolean(before));
+    const following = useRef(true);
+    const [showJump, setShowJump] = useState(false);
+    const anchor = useRef<{
+        element: HTMLElement;
+        top: number;
+        first: string | undefined;
+    } | null>(null);
+    const loadOlder = () => {
+        const node = viewport.current;
+        const element = content.current?.querySelector<HTMLElement>("[data-message-id]");
+        if (!following.current && node && element)
+            anchor.current = {
+                element,
+                top: element.getBoundingClientRect().top + node.scrollTop,
+                first: messages[0]?.id,
+            };
+        continuation.onLoadMore();
+    };
     const scrollToBottom = () => {
         const node = viewport.current;
         if (!node) return;
         following.current = true;
+        anchor.current = null;
         node.scrollTop = node.scrollHeight;
         setShowJump(false);
     };
     useLayoutEffect(() => {
-        if (following.current && viewport.current)
-            viewport.current.scrollTop = viewport.current.scrollHeight;
-    }, [messages, activity]);
+        const saved = anchor.current;
+        const node = viewport.current;
+        if (!node) return;
+        if (following.current) node.scrollTop = node.scrollHeight;
+        else if (saved && saved.first !== messages[0]?.id) {
+            node.scrollTop +=
+                saved.element.getBoundingClientRect().top + node.scrollTop - saved.top;
+            anchor.current = null;
+        }
+        if (!continuation.loading) anchor.current = null;
+    }, [messages, activity, continuation.loading]);
     useLayoutEffect(() => {
         const node = viewport.current;
         const body = content.current;
@@ -62,41 +87,27 @@ export function ChatTranscript({
                 onScroll={(event) => {
                     const node = event.currentTarget;
                     following.current =
-                        !before &&
                         node.scrollHeight - node.clientHeight - node.scrollTop < 80;
                     setShowJump(!following.current);
                 }}
             >
                 <div ref={content} className="space-y-5 p-4 sm:p-5">
-                    {(nextCursor || before) && (
-                        <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
-                            {nextCursor && (
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => onPage(nextCursor)}
-                                >
-                                    Older messages
-                                </Button>
-                            )}
-                            {before && (
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => onPage(undefined)}
-                                >
-                                    Latest messages
-                                </Button>
-                            )}
-                        </div>
-                    )}
+                    <InfiniteScrollTrigger
+                        {...continuation}
+                        rootRef={viewport}
+                        itemCount={messages.length}
+                        loadingLabel="Loading earlier messages..."
+                        onLoadMore={loadOlder}
+                    />
                     {messages.length === 0 && (
                         <p className="py-12 text-center text-sm text-primary-400">
                             Start a conversation with Mira.
                         </p>
                     )}
                     {messages.map((message) => (
-                        <ChatMessage key={message.id} message={message} />
+                        <div key={message.id} data-message-id={message.id}>
+                            <ChatMessage message={message} />
+                        </div>
                     ))}
                     {activity}
                 </div>
@@ -107,7 +118,7 @@ export function ChatTranscript({
                         className="pointer-events-auto shadow-lg"
                         variant="secondary"
                         size="sm"
-                        onClick={() => (before ? onPage(undefined) : scrollToBottom())}
+                        onClick={scrollToBottom}
                     >
                         <ArrowDown size={16} aria-hidden="true" />
                         Back to bottom

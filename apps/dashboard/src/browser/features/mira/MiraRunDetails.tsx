@@ -14,6 +14,7 @@ import { History } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { api } from "../../api/client";
+import { MiraRunFollowup } from "./MiraRunFollowup";
 import { miraStatusTone } from "./statusTone";
 
 /**
@@ -125,6 +126,21 @@ export function MiraRunDetails({
                             </p>
                         )}
                     </>
+                )}
+                {run && (
+                    <MiraRunFollowup
+                        key={run.id}
+                        run={run}
+                        eligible={
+                            !query.isError &&
+                            !query.hasNextPage &&
+                            !["queued", "running"].includes(run.state) &&
+                            (["failed", "interrupted", "needs_attention"].includes(
+                                run.state
+                            ) ||
+                                rows.some((row) => row.state === "unknown"))
+                        }
+                    />
                 )}
                 {run && !query.isError && !query.hasNextPage && footer}
                 <ActionGroup stretch={false}>

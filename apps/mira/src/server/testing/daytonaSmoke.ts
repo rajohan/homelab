@@ -175,6 +175,18 @@ export async function main(): Promise<void> {
             report && typeof report === "object" && "ok" in report && "steps" in report
         );
         if (!report.ok) {
+            // A later passing integration suite must not hide an earlier unit failure.
+            const beginning = await docker([
+                "exec",
+                "--workdir",
+                "/tmp",
+                name,
+                "head",
+                "-c",
+                "96000",
+                `/tmp/homelab-mira/${id}/outputs/check-log.txt`,
+            ]);
+            process.stderr.write(beginning.stdout);
             const log = await docker([
                 "exec",
                 "--workdir",

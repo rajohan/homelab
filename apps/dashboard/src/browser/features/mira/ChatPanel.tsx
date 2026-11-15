@@ -11,7 +11,7 @@ import {
     Modal,
     SectionHeader,
 } from "@homelab/ui";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
     Archive,
@@ -41,6 +41,7 @@ import { ComputerAccessDialog } from "./ComputerAccessDialog";
 import { ComputerAccessPanel } from "./ComputerAccessPanel";
 import { FileLibrary } from "./FileLibrary";
 import { ProposedChanges } from "./ProposedChanges";
+import { readChatUpdate } from "./readChatUpdate";
 
 /**
  * Send durable messages, observe streamed text and stop or manage an owned conversation.
@@ -72,21 +73,32 @@ export function ChatPanel({
     const [dialog, setDialog] = useState<
         "rename" | "delete" | "settings" | "computer" | "browser"
     >();
-    const [before, setBefore] = useState<string>();
     const request = useRef<{ text: string; id: string } | null>(null);
     const navigate = useNavigate();
+    const client = useQueryClient();
+    const [expanded, setExpanded] = useState(false);
+    const queryKey = ["operations", "mira", "conversation", id];
     const query = useQuery({
-        queryKey: ["operations", "mira", "conversation", id, before],
+        queryKey,
         queryFn: ({ signal }) =>
-            api.mira.conversations.read.query(
-                { id, ...(before ? { before } : {}) },
-                { signal }
-            ),
+            readChatUpdate(id, client.getQueryData(queryKey), signal),
         refetchInterval: (current) =>
             current.state.data?.run &&
             ["queued", "running"].includes(current.state.data.run.state)
                 ? 750
                 : 5000,
+    });
+    const latest = query.data;
+    const history = useInfiniteQuery({
+        queryKey: ["operations", "mira", "conversation-history", id, latest?.nextCursor],
+        initialPageParam: latest?.nextCursor as string | undefined,
+        enabled: expanded && !!latest?.nextCursor,
+        queryFn: ({ pageParam, signal }) =>
+            api.mira.conversations.read.query({ id, before: pageParam }, { signal }),
+        getNextPageParam: (page) => page.nextCursor ?? undefined,
+        staleTime: Infinity,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
     });
     const status = useQuery({
         queryKey: ["operations", "mira", "status"],
@@ -114,12 +126,11 @@ export function ChatPanel({
         setText("");
         setAttachments([]);
         request.current = null;
-        setBefore(undefined);
     });
     const cancel = useOperation((runId: string) =>
         api.mira.runs.cancel.mutate({ id: runId })
     );
-    const conversationVersion = query.data?.conversation.version;
+    const conversationVersion = latest?.conversation.version;
     const change = useOperation((action: "archive" | "restore" | "delete") => {
         if (conversationVersion === undefined)
             throw new Error("The conversation has not loaded yet.");
@@ -138,7 +149,7 @@ export function ChatPanel({
             title,
         });
     });
-    const active = ["queued", "running"].includes(query.data?.run?.state ?? "");
+    const active = ["queued", "running"].includes(latest?.run?.state ?? "");
     const error = send.error ?? cancel.error ?? change.error ?? rename.error;
     if (query.isPending)
         return (
@@ -146,13 +157,23 @@ export function ChatPanel({
                 <LoadingState label="Loading conversation…" />
             </Card>
         );
-    if (!query.data)
+    if (!latest)
         return (
             <Card>
                 <ErrorNotice error={query.error} />
             </Card>
         );
-    const { conversation, messages, run } = query.data;
+    const { conversation, run } = latest;
+    // Older pages are prepended; the live first page wins if page boundaries overlap.
+    const messages = [
+        ...new Map(
+            [
+                ...(history.data?.pages.toReversed().flatMap((page) => page.messages) ??
+                    []),
+                ...latest.messages,
+            ].map((message) => [message.id, message])
+        ).values(),
+    ];
     const modelId = active ? run?.model : conversation.settings?.model;
     const selectedModel =
         catalog.data?.models.find(
@@ -284,20 +305,27 @@ export function ChatPanel({
             )}
             <ProposedChanges conversationId={id} />
             <ChatTranscript
-                key={before ?? "latest"}
+                key={id}
                 messages={messages}
-                before={before}
-                nextCursor={query.data.nextCursor}
-                onPage={setBefore}
+                continuation={{
+                    hasMore: history.data ? history.hasNextPage : !!latest.nextCursor,
+                    loading: history.isFetching,
+                    error: history.error ?? undefined,
+                    onLoadMore: () => {
+                        if (history.isError) void history.refetch();
+                        else {
+                            setExpanded(true);
+                            if (history.data) void history.fetchNextPage();
+                        }
+                    },
+                }}
                 activity={
-                    !before && (
-                        <ChatActivity
-                            key={String(display.expandTools)}
-                            run={run}
-                            tools={query.data.tools ?? []}
-                            display={display}
-                        />
-                    )
+                    <ChatActivity
+                        key={String(display.expandTools)}
+                        run={run}
+                        tools={latest.tools ?? []}
+                        display={display}
+                    />
                 }
             />
             {run?.message && (
@@ -310,7 +338,7 @@ export function ChatPanel({
                 waiting={
                     run?.state === "running" &&
                     !run.cancelRequested &&
-                    (query.data.tools ?? []).some(
+                    (latest.tools ?? []).some(
                         (tool) =>
                             tool.tool === "mira_browser_wait" && tool.state === "running"
                     )
@@ -322,7 +350,7 @@ export function ChatPanel({
                 waiting={
                     run?.state === "running" &&
                     !run.cancelRequested &&
-                    (query.data.tools ?? []).some(
+                    (latest.tools ?? []).some(
                         (tool) =>
                             tool.tool === "mira_computer_wait" && tool.state === "running"
                     )
