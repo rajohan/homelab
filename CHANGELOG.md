@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.18.0](https://github.com/rajohan/homelab/compare/v0.17.0...v0.18.0) (2026-11-16)
+
+
+### Features
+
+* **mira:** keep approvals and questions in the chat composer ([#206](https://github.com/rajohan/homelab/issues/206)) ([01eb0b5](https://github.com/rajohan/homelab/commit/01eb0b55bcd5fbf94ccc86fd9dc855f1a5f06f5a))
+
+
+### Bug Fixes
+
+* **mira:** format file previews and share file type icons ([#207](https://github.com/rajohan/homelab/issues/207)) ([e0d58ad](https://github.com/rajohan/homelab/commit/e0d58ad6f599b9c0f52e4e89a2ef3c34ea44651e))
+* **mira:** format file previews and share file type icons ([#207](https://github.com/rajohan/homelab/issues/207)) ([96e38b4](https://github.com/rajohan/homelab/commit/96e38b4e76c6b928f426e0a8560f2efc65964ba2))
+* **mira:** keep chat activity and attachments complete ([#209](https://github.com/rajohan/homelab/issues/209)) ([f1c0c19](https://github.com/rajohan/homelab/commit/f1c0c196867b2606d7b7aa366cd46c712fc7aae5))
+
+
+### Dependencies
+
+* **deps:** bump the application-minor-and-patch group with 21 updates ([#205](https://github.com/rajohan/homelab/issues/205)) ([ebe6dea](https://github.com/rajohan/homelab/commit/ebe6deaf15bbd441a955f8a567300fc85d812b7f))
+
 ## [0.17.0](https://github.com/rajohan/homelab/compare/v0.16.6...v0.17.0) (2026-11-15)
 
 
