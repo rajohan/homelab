@@ -202,13 +202,14 @@ export function createMiraOperationsTools(
                 const proposal = v.parse(miraHostProposalSchema, {
                     ...parsed,
                     binding: miraOperationsBinding(run.owner, target),
+                    permissionEpoch: epoch,
                 });
                 const hash = new Bun.CryptoHasher("sha256")
                     .update(JSON.stringify(proposal))
                     .digest("hex");
                 const [prior] = await client<
                     { id: string; state: string }[]
-                >`SELECT t.id,t.state FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE r.owner=${run.owner} AND r.conversation_id=${run.conversationId} AND t.tool='mira_homelab_command' AND (t.input_hash=${hash} OR (t.proposal->>'target'=${parsed.target} AND t.proposal->>'command'=${parsed.command})) AND t.id<>${scoped.receiptId} AND (t.state='rejected' OR (t.state IN ('awaiting_approval','approved') AND t.proposal IS NOT NULL AND t.created_at>clock_timestamp()-interval '24 hours' AND r.state IN ('running','completed') AND NOT r.cancel_requested AND (r.approval_revoked_at IS NULL OR t.created_at>r.approval_revoked_at) AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at)))) ORDER BY t.id DESC LIMIT 1`;
+                >`SELECT t.id,t.state FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE r.owner=${run.owner} AND r.conversation_id=${run.conversationId} AND t.tool='mira_homelab_command' AND (t.input_hash=${hash} OR (t.proposal->>'target'=${parsed.target} AND t.proposal->>'command'=${parsed.command})) AND t.id<>${scoped.receiptId} AND (t.state='rejected' OR (t.state IN ('awaiting_approval','approved') AND t.proposal IS NOT NULL AND t.created_at>clock_timestamp()-interval '24 hours' AND r.state IN ('running','completed') AND NOT r.cancel_requested AND (r.approval_revoked_at::text IS NOT DISTINCT FROM t.proposal->>'permissionEpoch') AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at)))) ORDER BY t.id DESC LIMIT 1`;
                 if (prior) {
                     if (prior.state === "rejected")
                         throw new MiraFailure(
@@ -246,7 +247,7 @@ export function createMiraOperationsTools(
                     await lockMiraProposals(query, run.owner);
                     const [saved] = await query<
                         { id: string }[]
-                    >`UPDATE mira_tool_receipts SET state=${review ? "awaiting_approval" : "running"},proposal=${review ? JSON.stringify(proposal) : null}::text::jsonb,input_hash=${hash},message=${approvalMessage} WHERE id=${scoped.receiptId} AND run_id=${run.id} AND state='running' AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
+                    >`UPDATE mira_tool_receipts SET state=${review ? "awaiting_approval" : "running"},proposal=${review ? JSON.stringify(proposal) : null}::text::jsonb,input_hash=${hash},message=${approvalMessage} WHERE id=${scoped.receiptId} AND run_id=${run.id} AND state='running' AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() AND approval_revoked_at IS NOT DISTINCT FROM ${epoch}::timestamptz) RETURNING id`;
                     if (!saved)
                         throw new MiraFailure(
                             "CONFLICT",
@@ -284,7 +285,7 @@ export function createMiraOperationsTools(
                     await lockMiraProposals(query, run.owner);
                     const [receipt] = await query<
                         { input: unknown; hash: string }[]
-                    >`SELECT t.proposal AS input,t.input_hash AS hash FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE t.id=${id} AND t.tool='mira_homelab_command' AND t.state='approved' AND t.proposal IS NOT NULL AND t.created_at>clock_timestamp()-interval '24 hours' AND r.owner=${run.owner} AND r.conversation_id=${run.conversationId} AND r.state IN ('running','completed') AND NOT r.cancel_requested AND (r.approval_revoked_at IS NULL OR t.created_at>r.approval_revoked_at) AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at)) FOR UPDATE OF t`;
+                    >`SELECT t.proposal AS input,t.input_hash AS hash FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE t.id=${id} AND t.tool='mira_homelab_command' AND t.state='approved' AND t.proposal IS NOT NULL AND t.created_at>clock_timestamp()-interval '24 hours' AND r.owner=${run.owner} AND r.conversation_id=${run.conversationId} AND r.state IN ('running','completed') AND NOT r.cancel_requested AND (r.approval_revoked_at::text IS NOT DISTINCT FROM t.proposal->>'permissionEpoch') AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at)) FOR UPDATE OF t`;
                     if (!receipt)
                         throw new MiraFailure(
                             "FORBIDDEN",
@@ -304,7 +305,11 @@ export function createMiraOperationsTools(
                         );
                     await query`UPDATE mira_tool_receipts SET proposal=NULL,message=${`Approval consumed once; execution receipt ${scoped.receiptId}.`} WHERE id=${id}`;
                     await query`UPDATE mira_tool_receipts SET message=${`Executing approved request ${id}.`} WHERE id=${scoped.receiptId} AND run_id=${run.id}`;
-                    const { binding: _binding, ...command } = proposal;
+                    const {
+                        binding: _binding,
+                        permissionEpoch: _epoch,
+                        ...command
+                    } = proposal;
                     return command;
                 });
                 return dispatch(parsed, signal, epoch);

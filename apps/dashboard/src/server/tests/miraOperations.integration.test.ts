@@ -505,7 +505,7 @@ test("revoking permissions during automatic review prevents automatic execution"
     }
 });
 
-test("questions persist after completion, accept free text once and queue one continuation", async () => {
+test("questions survive completion and permission edits, then queue one continuation", async () => {
     const f = await fixture("ask");
     try {
         // The fixture's unused host receipt is unrelated to this question.
@@ -536,6 +536,12 @@ test("questions persist after completion, accept free text once and queue one co
             state: "completed",
             text: "Waiting for your choices.",
             message: null,
+        });
+        const chat = await f.api.conversations.read({ id: f.run.conversationId });
+        await f.api.conversations.settings({
+            id: f.run.conversationId,
+            version: chat.conversation.version,
+            settings: { ...chat.conversation.settings, permissionMode: "full_access" },
         });
         expect(await f.api.proposals.list({ id: f.run.conversationId })).toHaveLength(1);
         await rejects(
@@ -619,18 +625,18 @@ test.each(["consumed", "expired"] as const)(
     }
 );
 
-test("a mode change allows a fresh exact approval to resume inside the same active run", async () => {
+test("a reserved receipt can save a fresh approval after a permission edit", async () => {
     const f = await fixture("full_access");
     try {
+        // Reservation precedes the edit; authorization happens when the tool runs.
+        const fresh = crypto.randomUUID();
+        await f.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES(${fresh},${f.run.id},${fresh},'mira_homelab_command',${"0".repeat(64)},'running')`;
         const chat = await f.api.conversations.read({ id: f.run.conversationId });
         await f.api.conversations.settings({
             id: f.run.conversationId,
             version: chat.conversation.version,
             settings: { ...chat.conversation.settings, permissionMode: "ask" },
         });
-        // A new call after the mode edit, not a replay of a previous command.
-        const fresh = crypto.randomUUID();
-        await f.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES(${fresh},${f.run.id},${fresh},'mira_homelab_command',${"0".repeat(64)},'running')`;
         expect(await f.invoke(new AbortController().signal, fresh)).toMatchObject({
             state: "awaiting_approval",
         });

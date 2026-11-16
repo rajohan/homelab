@@ -66,6 +66,9 @@ export function ProposalReview({
         await decide.mutateAsync(approve);
         onClose();
     };
+    const fields = Object.entries(proposal.input).filter(
+        ([key]) => key !== "permissionEpoch"
+    );
     return (
         <section aria-label="Review proposed change">
             <div className="space-y-4">
@@ -77,7 +80,7 @@ export function ProposalReview({
                     <p className="text-sm text-primary-400">{proposal.message}</p>
                 )}
                 <dl className="divide-y divide-primary-700 rounded-lg border border-primary-700 bg-primary-900/40">
-                    {Object.entries(proposal.input).map(([key, value]) => (
+                    {fields.map(([key, value]) => (
                         <div key={key} className="space-y-1 p-3">
                             <dt className="text-xs font-medium text-primary-400">
                                 {labels[key] ?? key}

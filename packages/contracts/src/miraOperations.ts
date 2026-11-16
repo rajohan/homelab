@@ -18,6 +18,7 @@ export const miraHostCommandSchema = v.strictObject({
 export const miraHostProposalSchema = v.strictObject({
     ...miraHostCommandSchema.entries,
     binding: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
+    permissionEpoch: v.optional(v.nullable(v.pipe(v.string(), v.maxLength(64)))),
 });
 export type MiraHostCommand = v.InferOutput<typeof miraHostCommandSchema>;
 
