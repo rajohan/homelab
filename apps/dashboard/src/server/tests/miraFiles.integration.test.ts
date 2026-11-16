@@ -366,6 +366,18 @@ test("JSON previews format complete input before truncation and preserve origina
         expect(response.headers.get("content-security-policy")).toContain("sandbox");
         const download = await fetch(`${base}/${id}`);
         expect(await download.text()).toBe(source);
+        const precise = crypto.randomUUID();
+        const numbers = '{"id":9007199254740993,"negative":-0,"huge":1e400}';
+        await fetch(base, {
+            method: "POST",
+            body: numbers,
+            headers: { "x-file-id": precise, "x-file-name": "numbers.json" },
+        });
+        const numericResponse = await fetch(`${base}/${precise}?preview=text`);
+        const numericPreview = (await numericResponse.json()) as { text: string };
+        expect(numericPreview.text).toContain('"id": 9007199254740993');
+        expect(numericPreview.text).toContain('"negative": -0');
+        expect(numericPreview.text).toContain('"huge": 1e400');
         const invalid = crypto.randomUUID();
         const raw = '{ "unfinished":';
         await fetch(base, {

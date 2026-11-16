@@ -1,3 +1,4 @@
+import { describeFile } from "@homelab/contracts/files";
 import type { MiraAttachment } from "@homelab/contracts/mira";
 import {
     ActionGroup,
@@ -22,7 +23,7 @@ export function AttachmentPreview({
     readonly file: Pick<MiraAttachment, "id" | "name" | "mediaType" | "bytes">;
     readonly onClose: () => void;
 }) {
-    const image = file.mediaType.startsWith("image/");
+    const image = describeFile(file).kind === "image";
     const url = `/api/mira/files/${file.id}`;
     const text = useQuery({
         queryKey: ["operations", "mira", "file-text", file.id],

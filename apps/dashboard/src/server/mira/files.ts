@@ -1,4 +1,4 @@
-import { describeFile } from "@homelab/contracts/files";
+import { describeFile, formatJsonPreview } from "@homelab/contracts/files";
 import { MiraFailure } from "@homelab/mira/data/context";
 import {
     deleteMiraFile,
@@ -100,11 +100,7 @@ export async function miraFileRequest(
                             !document.truncated
                         ) {
                             try {
-                                previewText = JSON.stringify(
-                                    JSON.parse(document.text),
-                                    null,
-                                    2
-                                );
+                                previewText = formatJsonPreview(document.text);
                             } catch {
                                 /* Incomplete or nonstandard JSON remains readable source. */
                             }

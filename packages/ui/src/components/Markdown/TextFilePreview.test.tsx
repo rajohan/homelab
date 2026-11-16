@@ -52,3 +52,31 @@ test("JSON and source previews tokenize supported syntax and bound large input",
         view.unmount();
     }
 });
+
+test("publication media selects JSON or passive SVG despite the original name", () => {
+    const view = render(
+        <TextFilePreview
+            name="notes.md"
+            mediaType="application/json"
+            text={'{"id":9007199254740993,"negative":-0}'}
+        />
+    );
+    try {
+        expect(view.container.querySelector("pre")!.textContent).toBe(
+            '{\n  "id": 9007199254740993,\n  "negative": -0\n}'
+        );
+        expect(screen.queryByRole("button", { name: "Source" })).toBeNull();
+        view.rerender(
+            <TextFilePreview
+                name="notes.md"
+                mediaType="image/svg+xml"
+                text={"<svg><script>bad()</script></svg>"}
+            />
+        );
+        expect(view.container.querySelector("pre")!.textContent).toContain("<svg>");
+        expect(view.container.querySelector("svg script")).toBeNull();
+        expect(view.container.querySelector("img")).toBeNull();
+    } finally {
+        view.unmount();
+    }
+});

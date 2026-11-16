@@ -1,10 +1,19 @@
-import { describeFile } from "@homelab/contracts/files";
+import { describeFile, formatJsonPreview } from "@homelab/contracts/files";
 import { useState } from "react";
 
 import { Button } from "../Button/Button";
 import { CopyTextButton } from "../Button/CopyTextButton";
 import { Markdown } from "./Markdown";
 import { SyntaxSource } from "./SyntaxSource";
+
+function previewText(text: string, json: boolean): string {
+    if (!json) return text;
+    try {
+        return formatJsonPreview(text);
+    } catch {
+        return text;
+    }
+}
 
 /**
  * Render passive file text using the same Markdown and syntax components as Chat.
@@ -23,8 +32,9 @@ export function TextFilePreview({
 }) {
     const [source, setSource] = useState(false);
     const presentation = describeFile({ name, mediaType });
-    const content = text.slice(0, 32_000);
-    const shortened = truncated || content.length < text.length;
+    const formatted = previewText(text, presentation.kind === "json");
+    const content = formatted.slice(0, 32_000);
+    const shortened = truncated || content.length < formatted.length;
     if (!content)
         return (
             <p className="text-sm text-primary-400">
