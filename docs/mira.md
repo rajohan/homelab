@@ -118,10 +118,13 @@ isolated synthetic preview before production deployment.
   treated as uncertain, retains the attachment and fences further tool actions.
   Generated file IDs can be selected by the existing email/publication draft tools;
   external delivery still requires the operator's separate review and approval.
-- Two Mira execution lanes reserve foreground capacity for manual requests. They do
-  not consume infrastructure workers. Leases, durable tool receipts and cancellation
-  fencing prevent expired workers from recording new product effects. Uncertain
-  external outcomes are not automatically replayed.
+- Independent conversations and automations execute concurrently; an active Chat
+  does not occupy the capacity needed by a scheduled brief or another conversation.
+  Foreground dispatch still prioritizes manual requests. Each conversation and task
+  retains one active run, and deployment drain waits for every admitted turn to finish
+  cleanup. Agent runs do not consume infrastructure workers. Leases, durable tool
+  receipts and cancellation fencing prevent expired workers from recording new
+  product effects. Uncertain external outcomes are not automatically replayed.
 - **Context** in Chat settings and each automation controls saved memory and
   cross-conversation history. Both default to enabled for existing and new settings;
   changes apply to future runs. Model changes preserve these choices. Chat context
@@ -201,7 +204,7 @@ and the dedicated Mira login. CI never uses those credentials.
 - Automations support one-time, interval, daily, cron and events using the existing
   durable scheduling foundation. Recurrence survives completion of one invocation.
   Heartbeat is editable and quiet when nothing actionable changes. Runs have bounded
-  budgets, concurrency, retries and durable outcomes.
+  budgets, retries and durable outcomes.
 - Every automation, skill, integration and computer target supports independent
   disable with a reason and optional resumption. Global automatic-work pause is
   separate from stopping a running task. Recheck current state before dispatching

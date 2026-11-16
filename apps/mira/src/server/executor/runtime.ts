@@ -56,6 +56,7 @@ import {
 import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { miraSkillCatalogHash } from "../skills/catalog";
 import { cleanupMiraResources } from "./cleanup";
+import { dispatchMiraRuns } from "./dispatch";
 import { MaintenanceGate } from "./maintenanceGate";
 import { executeMiraTurn } from "./turn";
 
@@ -67,7 +68,7 @@ export interface MiraHealth {
 }
 
 /**
- * Run two agent lanes and a durable scheduler without using infrastructure workers.
+ * Dispatch concurrent agent turns and a durable scheduler without infrastructure workers.
  * @param options - Owned database, canonical runtime paths, health state and shutdown signal.
  * @returns Completion when dispatch stops and all active provider children are reaped.
  */
@@ -402,46 +403,41 @@ export async function runMiraExecutor(options: {
             await wait(30_000);
         }
     };
-    const lane = async (name: "foreground" | "general") => {
-        while (!signal.aborted) {
-            if (health.ready && Date.now() - health.heartbeatAt < 30_000) {
-                const executed = await maintenance.run(async () => {
-                    const run = await claimMiraRun(client, workerId, name, {
-                        models: models.map((entry) => entry.model),
-                        defaultModel: model,
-                        nativeDefaultModel: miraNativeDefaultModel(models, model),
-                        syntheticOwner: options.synthetic?.owner,
-                    });
-                    if (run) {
-                        health.active++;
-                        try {
-                            await executeMiraTurn(
-                                client,
-                                config,
-                                run,
-                                signal,
-                                options.filesDirectory,
-                                options.agentMail,
-                                options.moltbook,
-                                options.hereNow,
-                                options.daytona,
-                                options.github,
-                                options.synthetic,
-                                options.localCode,
-                                options.operations
-                            );
-                        } finally {
-                            health.active--;
-                        }
-                        return true;
-                    }
-                    return false;
-                });
-                if (executed) continue;
-            }
-            await wait(500);
-        }
-    };
+    const lane = (name: "foreground" | "general") =>
+        dispatchMiraRuns({
+            signal,
+            maintenance,
+            ready: () => health.ready && Date.now() - health.heartbeatAt < 30_000,
+            claim: () =>
+                claimMiraRun(client, workerId, name, {
+                    models: models.map((entry) => entry.model),
+                    defaultModel: model,
+                    nativeDefaultModel: miraNativeDefaultModel(models, model),
+                    syntheticOwner: options.synthetic?.owner,
+                }),
+            execute: async (run, turnSignal) => {
+                health.active++;
+                try {
+                    await executeMiraTurn(
+                        client,
+                        config,
+                        run,
+                        turnSignal,
+                        options.filesDirectory,
+                        options.agentMail,
+                        options.moltbook,
+                        options.hereNow,
+                        options.daytona,
+                        options.github,
+                        options.synthetic,
+                        options.localCode,
+                        options.operations
+                    );
+                } finally {
+                    health.active--;
+                }
+            },
+        });
     const stopOnFailure = async (work: Promise<void>) => {
         try {
             await work;

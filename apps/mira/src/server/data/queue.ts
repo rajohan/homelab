@@ -83,12 +83,12 @@ async function reconcileExpired(query: TransactionSQL): Promise<number> {
 }
 
 /**
- * Claim separate agent capacity, reserving one lane for user-started conversations.
+ * Claim independent runs while preserving priority for user-started conversations.
  * @param client - Mira's bounded database pool, separate from infrastructure workers.
  * @param workerId - Current executor process identity.
  * @param lane - Foreground capacity never runs scheduled work.
  * @param catalog - Current executor model catalog; unavailable choices remain queued.
- * @returns One leased run, or null when this lane is busy or has no eligible work.
+ * @returns One leased run, or null when this dispatcher has no eligible work.
  */
 export async function claimMiraRun(
     client: SQL,
@@ -99,10 +99,6 @@ export async function claimMiraRun(
     return client.begin(async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:claim', 0))`;
         await reconcileExpired(query);
-        const busy = await query<
-            { id: string }[]
-        >`SELECT id FROM mira_runs WHERE state = 'running' AND lane = ${lane}`;
-        if (busy[0]) return null;
         // Bound skipped entries so deliberately disabled jobs cannot monopolize a claim.
         for (let skipped = 0; skipped < 20; skipped++) {
             const [run] = await query<
