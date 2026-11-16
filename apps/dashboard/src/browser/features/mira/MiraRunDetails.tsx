@@ -52,13 +52,28 @@ export function MiraRunDetails({
                         <SectionHeader
                             title={run.title}
                             icon={History}
-                            description={formatDateTime(run.createdAt)}
                             badge={
                                 <Badge tone={miraStatusTone(run.state)}>
                                     {run.state.replaceAll("_", " ")}
                                 </Badge>
                             }
                         />
+                        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+                            <dt className="text-primary-400">Queued</dt>
+                            <dd>{formatDateTime(run.createdAt)}</dd>
+                            <dt className="text-primary-400">Started</dt>
+                            <dd>
+                                {run.startedAt
+                                    ? formatDateTime(run.startedAt)
+                                    : "Not started"}
+                            </dd>
+                            <dt className="text-primary-400">Finished</dt>
+                            <dd>
+                                {run.finishedAt
+                                    ? formatDateTime(run.finishedAt)
+                                    : "Not finished"}
+                            </dd>
+                        </dl>
                         {run.message && (
                             <p className="text-sm wrap-anywhere text-primary-300">
                                 {run.message}

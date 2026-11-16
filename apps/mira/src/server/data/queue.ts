@@ -13,7 +13,11 @@ import {
     nextMiraOccurrence,
     resumeMiraControls,
 } from "./automations";
-import { miraQueueAvailable } from "./capacity";
+import {
+    miraGeneralManualRunLimit,
+    miraQueueAvailable,
+    miraRunConcurrencyPerLane,
+} from "./capacity";
 import { auditMira, type MiraContext } from "./context";
 import { enqueueTurn } from "./conversations";
 import { scheduleMiraEvents } from "./events";
@@ -83,12 +87,12 @@ async function reconcileExpired(query: TransactionSQL): Promise<number> {
 }
 
 /**
- * Claim separate agent capacity, reserving one lane for user-started conversations.
+ * Claim independent runs while preserving priority for user-started conversations.
  * @param client - Mira's bounded database pool, separate from infrastructure workers.
  * @param workerId - Current executor process identity.
  * @param lane - Foreground capacity never runs scheduled work.
  * @param catalog - Current executor model catalog; unavailable choices remain queued.
- * @returns One leased run, or null when this lane is busy or has no eligible work.
+ * @returns One leased run, or null when this dispatcher has no eligible work.
  */
 export async function claimMiraRun(
     client: SQL,
@@ -99,15 +103,17 @@ export async function claimMiraRun(
     return client.begin(async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended('homelab:mira:claim', 0))`;
         await reconcileExpired(query);
-        const busy = await query<
-            { id: string }[]
-        >`SELECT id FROM mira_runs WHERE state = 'running' AND lane = ${lane}`;
-        if (busy[0]) return null;
+        const [active] = await query<
+            { total: number; manual: number }[]
+        >`SELECT count(*)::int AS total,count(*) FILTER (WHERE manual AND NOT task_resumed)::int AS manual FROM mira_runs WHERE state='running' AND lane=${lane}`;
+        if (!active || active.total >= miraRunConcurrencyPerLane) return null;
+        const includeManual =
+            lane !== "general" || active.manual < miraGeneralManualRunLimit;
         // Bound skipped entries so deliberately disabled jobs cannot monopolize a claim.
         for (let skipped = 0; skipped < 20; skipped++) {
             const [run] = await query<
                 Omit<MiraClaim, "leaseToken">[]
-            >`SELECT id, owner, conversation_id AS "conversationId", user_message_id AS "userMessageId", assistant_message_id AS "assistantMessageId", automation_id AS "automationId", task_id AS "taskId", budget_seconds AS "budgetSeconds", manual, coalesce(settings->>'executionTarget','daytona') AS "executionTarget", task_resumed AS "taskResumed" FROM mira_runs WHERE state = 'queued' AND NOT cancel_requested AND (${lane === "general"} OR (manual AND NOT task_resumed AND (task_id IS NOT NULL OR automation_id IS NOT NULL OR coalesce(settings->>'liveAssistanceMinutes','0') NOT IN ('-1','30','60','120')))) AND (NOT task_resumed OR NOT EXISTS (SELECT 1 FROM mira_switches WHERE owner=mira_runs.owner AND key='autonomy' AND NOT enabled)) AND (${catalog === undefined} OR (COALESCE(settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) NOT LIKE 'syn:%' OR owner=${catalog?.syntheticOwner ?? null}))) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
+            >`SELECT id, owner, conversation_id AS "conversationId", user_message_id AS "userMessageId", assistant_message_id AS "assistantMessageId", automation_id AS "automationId", task_id AS "taskId", budget_seconds AS "budgetSeconds", manual, coalesce(settings->>'executionTarget','daytona') AS "executionTarget", task_resumed AS "taskResumed" FROM mira_runs WHERE state = 'queued' AND NOT cancel_requested AND (${includeManual} OR NOT manual OR task_resumed) AND (${lane === "general"} OR (manual AND NOT task_resumed AND (task_id IS NOT NULL OR automation_id IS NOT NULL OR coalesce(settings->>'liveAssistanceMinutes','0') NOT IN ('-1','30','60','120')))) AND (NOT task_resumed OR NOT EXISTS (SELECT 1 FROM mira_switches WHERE owner=mira_runs.owner AND key='autonomy' AND NOT enabled)) AND (${catalog === undefined} OR (COALESCE(settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) IN (SELECT jsonb_array_elements_text(${JSON.stringify(catalog?.models ?? [])}::text::jsonb)) AND (COALESCE(settings->>'model',CASE WHEN ${!isSyntheticModel(catalog?.defaultModel)} OR owner=${catalog?.syntheticOwner ?? null} THEN ${catalog?.defaultModel ?? null} ELSE ${catalog?.nativeDefaultModel ?? null} END) NOT LIKE 'syn:%' OR owner=${catalog?.syntheticOwner ?? null}))) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
             if (!run) return null;
             // A pause/delete may hold controls while waiting for this row. Never wait in reverse order.
             const [controls] = await query<
