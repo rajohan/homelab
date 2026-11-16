@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.18.2](https://github.com/rajohan/homelab/compare/v0.18.1...v0.18.2) (2026-11-16)
+
+
+### Bug Fixes
+
+* **mira:** compact chat requests and sort run history ([#213](https://github.com/rajohan/homelab/issues/213)) ([b578549](https://github.com/rajohan/homelab/commit/b578549b68f413a4988b74e08ee93a450ca4f836))
+* **mira:** honor live permissions for code jobs and tested draft PRs ([#212](https://github.com/rajohan/homelab/issues/212)) ([471adf4](https://github.com/rajohan/homelab/commit/471adf4ce5e6d137aa9389a835fa223c7e01e6de))
+* **mira:** remove duplicate dialog close actions ([#214](https://github.com/rajohan/homelab/issues/214)) ([b8caadc](https://github.com/rajohan/homelab/commit/b8caadc397b6d4e288e506ba6dd208c11659e6dc))
+* **mira:** run independent chats and automations concurrently ([#216](https://github.com/rajohan/homelab/issues/216)) ([1ece6ad](https://github.com/rajohan/homelab/commit/1ece6adf39190c753a2ce0a27ec1733b371874d0))
+
 ## [0.18.1](https://github.com/rajohan/homelab/compare/v0.18.0...v0.18.1) (2026-11-16)
 
 
