@@ -16,98 +16,107 @@ export async function sendMiraMessage(
     context: MiraContext,
     input: v.InferOutput<typeof miraMessageInputSchema>
 ) {
-    return context.client.begin(async (query) => {
-        const key = `${context.owner}:${input.requestId}`;
-        const hash = new Bun.CryptoHasher("sha256")
-            .update(JSON.stringify(input))
-            .digest("hex");
-        await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:request:${key}`},0))`;
-        const [existing] = await query<{ id: string; hash: string }[]>`
-            SELECT run_id AS id,request_hash AS hash FROM mira_chat_inputs WHERE request_key=${key}
-            UNION ALL SELECT id,request_hash AS hash FROM mira_runs WHERE request_key=${key}`;
-        if (existing) {
-            if (existing.hash !== hash)
-                throw new MiraFailure(
-                    "CONFLICT",
-                    "This request identifier already belongs to another message."
-                );
-            return { id: existing.id };
-        }
-        const [chat] = await query<
-            { id: string }[]
-        >`SELECT id FROM mira_conversations WHERE id=${input.conversationId} AND owner=${context.owner} AND deleted_at IS NULL AND archived_at IS NULL FOR UPDATE`;
-        if (!chat)
-            throw new MiraFailure(
-                "NOT_FOUND",
-                "Open an active conversation before sending."
-            );
-        let [run] = await query<
-            {
-                id: string;
-                manual: boolean;
-                automationId: string | null;
-                cancelled: boolean;
-            }[]
-        >`SELECT id,manual,automation_id AS "automationId",cancel_requested AS cancelled FROM mira_runs WHERE conversation_id=${chat.id} AND owner=${context.owner} AND state IN ('queued','running') FOR UPDATE`;
-        if (!run) {
-            // Admission and the scheduler share the conversation lock. Never let a
-            // newly submitted message overtake an older, unconsumed follow-up.
-            const pending = await query<
-                { id: string; owner: string; conversationId: string }[]
-            >`
-                SELECT id,owner,conversation_id AS "conversationId" FROM mira_chat_inputs
-                WHERE conversation_id=${chat.id} AND owner=${context.owner} AND state IN ('pending','sending') ORDER BY id`;
-            for (const candidate of pending) {
-                const [lock] = await query<{ acquired: boolean }[]>`
-                    SELECT pg_try_advisory_xact_lock(hashtextextended(${`mira:request:${candidate.owner}:${candidate.id}`},0)) AS acquired`;
-                if (!lock?.acquired)
-                    throw new MiraFailure(
-                        "CONFLICT",
-                        "An earlier message is being queued. Retry shortly."
-                    );
-                const next = await continueChatFollowup(query, candidate);
-                if (next) {
-                    run = {
-                        id: next.id,
-                        manual: true,
-                        automationId: null,
-                        cancelled: false,
-                    };
-                    break;
-                }
-            }
-            if (!run) return enqueueTurn(query, context, input);
-        }
-        if (!run.manual || run.automationId || run.cancelled)
+    return context.client.begin((query) =>
+        sendMiraMessageInTransaction(query, context, input)
+    );
+}
+
+/**
+ * Persist a human reply atomically with its question or approval decision.
+ * @param query - Existing transaction; request locking precedes conversation locking.
+ * @param context - Verified human account, never a model-selected actor.
+ * @param input - Human text and stable request identity.
+ * @returns The active or newly queued run receiving the reply.
+ */
+export async function sendMiraMessageInTransaction(
+    query: TransactionSQL,
+    context: MiraContext,
+    input: v.InferOutput<typeof miraMessageInputSchema>
+) {
+    const key = `${context.owner}:${input.requestId}`;
+    const hash = new Bun.CryptoHasher("sha256")
+        .update(JSON.stringify(input))
+        .digest("hex");
+    await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:request:${key}`},0))`;
+    const [existing] = await query<{ id: string; hash: string }[]>`
+        SELECT run_id AS id,request_hash AS hash FROM mira_chat_inputs WHERE request_key=${key}
+        UNION ALL SELECT id,request_hash AS hash FROM mira_runs WHERE request_key=${key}`;
+    if (existing) {
+        if (existing.hash !== hash)
             throw new MiraFailure(
                 "CONFLICT",
-                "Wait for the stopped or automatic run to finish before sending."
+                "This request identifier already belongs to another message."
             );
-        const [count] = await query<
-            { total: number }[]
-        >`SELECT count(*)::int AS total FROM mira_chat_inputs WHERE conversation_id=${chat.id} AND state IN ('pending','sending')`;
-        if ((count?.total ?? 0) >= 20)
-            throw new MiraFailure(
-                "PRECONDITION_FAILED",
-                "There are already 20 pending messages. Wait for Mira to read them."
-            );
-        for (const id of input.attachmentIds) {
-            const [file] = await query<
-                { id: string }[]
-            >`SELECT id FROM mira_attachments WHERE id=${id} AND owner=${context.owner} AND deleted_at IS NULL AND ready_at IS NOT NULL FOR SHARE`;
-            if (!file)
+        return { id: existing.id };
+    }
+    const [chat] = await query<
+        { id: string }[]
+    >`SELECT id FROM mira_conversations WHERE id=${input.conversationId} AND owner=${context.owner} AND deleted_at IS NULL AND archived_at IS NULL FOR UPDATE`;
+    if (!chat)
+        throw new MiraFailure("NOT_FOUND", "Open an active conversation before sending.");
+    let [run] = await query<
+        {
+            id: string;
+            manual: boolean;
+            automationId: string | null;
+            cancelled: boolean;
+        }[]
+    >`SELECT id,manual,automation_id AS "automationId",cancel_requested AS cancelled FROM mira_runs WHERE conversation_id=${chat.id} AND owner=${context.owner} AND state IN ('queued','running') FOR UPDATE`;
+    if (!run) {
+        // Admission and the scheduler share the conversation lock. Never let a
+        // newly submitted message overtake an older, unconsumed follow-up.
+        const pending = await query<
+            { id: string; owner: string; conversationId: string }[]
+        >`
+            SELECT id,owner,conversation_id AS "conversationId" FROM mira_chat_inputs
+            WHERE conversation_id=${chat.id} AND owner=${context.owner} AND state IN ('pending','sending') ORDER BY id`;
+        for (const candidate of pending) {
+            const [lock] = await query<{ acquired: boolean }[]>`
+                SELECT pg_try_advisory_xact_lock(hashtextextended(${`mira:request:${candidate.owner}:${candidate.id}`},0)) AS acquired`;
+            if (!lock?.acquired)
                 throw new MiraFailure(
-                    "NOT_FOUND",
-                    "An attachment is no longer available."
+                    "CONFLICT",
+                    "An earlier message is being queued. Retry shortly."
                 );
+            const next = await continueChatFollowup(query, candidate);
+            if (next) {
+                run = {
+                    id: next.id,
+                    manual: true,
+                    automationId: null,
+                    cancelled: false,
+                };
+                break;
+            }
         }
-        const id = Bun.randomUUIDv7();
-        await query`INSERT INTO mira_messages(id,conversation_id,role,content,state,attachment_ids) VALUES (${id},${chat.id},'user',${input.text},'queued',${JSON.stringify(input.attachmentIds)}::text::jsonb)`;
-        await query`INSERT INTO mira_chat_inputs(id,owner,conversation_id,run_id,request_key,request_hash) VALUES (${id},${context.owner},${chat.id},${run.id},${key},${hash})`;
-        await query`UPDATE mira_conversations SET version=version+1,updated_at=clock_timestamp() WHERE id=${chat.id}`;
-        await auditMira(query, context, "chat.guidance_queued", id);
-        return { id: run.id };
-    });
+        if (!run) return enqueueTurn(query, context, input);
+    }
+    if (!run.manual || run.automationId || run.cancelled)
+        throw new MiraFailure(
+            "CONFLICT",
+            "Wait for the stopped or automatic run to finish before sending."
+        );
+    const [count] = await query<
+        { total: number }[]
+    >`SELECT count(*)::int AS total FROM mira_chat_inputs WHERE conversation_id=${chat.id} AND state IN ('pending','sending')`;
+    if ((count?.total ?? 0) >= 20)
+        throw new MiraFailure(
+            "PRECONDITION_FAILED",
+            "There are already 20 pending messages. Wait for Mira to read them."
+        );
+    for (const id of input.attachmentIds) {
+        const [file] = await query<
+            { id: string }[]
+        >`SELECT id FROM mira_attachments WHERE id=${id} AND owner=${context.owner} AND deleted_at IS NULL AND ready_at IS NOT NULL FOR SHARE`;
+        if (!file)
+            throw new MiraFailure("NOT_FOUND", "An attachment is no longer available.");
+    }
+    const id = Bun.randomUUIDv7();
+    await query`INSERT INTO mira_messages(id,conversation_id,role,content,state,attachment_ids) VALUES (${id},${chat.id},'user',${input.text},'queued',${JSON.stringify(input.attachmentIds)}::text::jsonb)`;
+    await query`INSERT INTO mira_chat_inputs(id,owner,conversation_id,run_id,request_key,request_hash) VALUES (${id},${context.owner},${chat.id},${run.id},${key},${hash})`;
+    await query`UPDATE mira_conversations SET version=version+1,updated_at=clock_timestamp() WHERE id=${chat.id}`;
+    await auditMira(query, context, "chat.guidance_queued", id);
+    return { id: run.id };
 }
 
 /**

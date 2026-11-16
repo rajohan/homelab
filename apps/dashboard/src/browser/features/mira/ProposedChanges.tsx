@@ -1,80 +1,89 @@
-import type { MiraProposal } from "@homelab/contracts/mira";
-import { Badge, Button, Card, ErrorNotice, Modal, SectionHeader } from "@homelab/ui";
+import { Button, ErrorNotice } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
-import { ShieldCheck } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
 import { ProposalReview } from "./ProposalReview";
+import { QuestionReview } from "./QuestionReview";
 
 /**
- * Keep pending human decisions visible across run completion and conversation reconnects.
- * @returns A compact review entry point and shared dialogs, or nothing when no decision is pending.
+ * Keep browsable approval and question cards directly above the shared Chat composer.
+ * @returns Pending durable requests; changing cards preserves unsent question drafts.
  */
 export function ProposedChanges({ conversationId }: { readonly conversationId: string }) {
-    const [open, setOpen] = useState(false);
-    const [selected, setSelected] = useState<MiraProposal>();
+    const [selected, setSelected] = useState<string>();
     const query = useQuery({
         queryKey: ["operations", "mira", "proposals", conversationId],
         queryFn: () => api.mira.proposals.list.query({ id: conversationId }),
-        refetchInterval: 5000,
+        refetchInterval: 1500,
     });
-    if (selected)
-        return (
-            <ProposalReview proposal={selected} onClose={() => setSelected(undefined)} />
-        );
-    if (!query.data?.length && !query.error) return null;
+    const requests = query.data ?? [];
+    const index = Math.max(
+        0,
+        requests.findIndex((request) => request.id === selected)
+    );
+    if (requests.length === 0 && !query.error) return null;
     return (
-        <>
-            <div className="shrink-0 border-b border-primary-700 px-4 py-3">
-                {query.error ? (
-                    <ErrorNotice error={query.error} />
-                ) : (
-                    <SectionHeader
-                        title="Proposed changes"
-                        icon={ShieldCheck}
-                        badge={<Badge>{query.data?.length}</Badge>}
-                        compactActions
-                        actions={
-                            <Button variant="secondary" onClick={() => setOpen(true)}>
-                                Review
-                            </Button>
-                        }
-                    />
-                )}
-            </div>
-            {open && (
-                <Modal title="Proposed changes" onClose={() => setOpen(false)}>
-                    <div className="space-y-3">
-                        <p className="text-sm text-primary-400">
-                            These changes await your approval and expire after 24 hours.
+        <section
+            aria-label="Requests from Mira"
+            className="shrink-0 border-t border-primary-700 bg-primary-900/40 px-4 py-3"
+        >
+            {query.error && <ErrorNotice error={query.error} />}
+            {requests.length > 0 && (
+                <>
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                        <p
+                            className="text-sm font-medium text-primary-100"
+                            aria-live="polite"
+                        >
+                            {requests[index]?.tool === "mira_request_user_input"
+                                ? "Your input is needed"
+                                : "Approval needed"}
                         </p>
-                        {query.data?.map((proposal) => (
-                            <Card key={proposal.id} className="bg-primary-900/40">
-                                <SectionHeader
-                                    title={
-                                        typeof proposal.input.title === "string"
-                                            ? proposal.input.title
-                                            : proposal.tool
-                                                  .replace(/^mira_/, "")
-                                                  .replaceAll("_", " ")
-                                    }
-                                    icon={ShieldCheck}
-                                    compactActions
-                                    actions={
-                                        <Button
-                                            variant="secondary"
-                                            onClick={() => setSelected(proposal)}
-                                        >
-                                            Review change
-                                        </Button>
-                                    }
-                                />
-                            </Card>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="secondary"
+                                aria-label="Previous request"
+                                disabled={index === 0}
+                                onClick={() => setSelected(requests[index - 1]?.id)}
+                            >
+                                <ChevronLeft size={16} />
+                            </Button>
+                            <span className="text-xs text-primary-400" aria-live="polite">
+                                {index + 1} of {requests.length}
+                            </span>
+                            <Button
+                                variant="secondary"
+                                aria-label="Next request"
+                                disabled={index === requests.length - 1}
+                                onClick={() => setSelected(requests[index + 1]?.id)}
+                            >
+                                <ChevronRight size={16} />
+                            </Button>
+                        </div>
+                    </div>
+                    <div className="max-h-[45dvh] overflow-y-auto overscroll-contain">
+                        {requests.map((request, requestIndex) => (
+                            <div key={request.id} hidden={requestIndex !== index}>
+                                {request.tool === "mira_request_user_input" ? (
+                                    <QuestionReview proposal={request} />
+                                ) : (
+                                    <ProposalReview
+                                        proposal={request}
+                                        onClose={() => {
+                                            void query.refetch();
+                                        }}
+                                    />
+                                )}
+                            </div>
                         ))}
                     </div>
-                </Modal>
+                    <p className="mt-2 text-xs text-primary-400">
+                        Saved in this conversation until answered or expired (24 hours).
+                    </p>
+                </>
             )}
-        </>
+        </section>
     );
 }

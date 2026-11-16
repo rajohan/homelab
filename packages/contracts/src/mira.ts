@@ -336,6 +336,39 @@ export const miraModelSchema = v.object({
 });
 export type MiraModel = v.InferOutput<typeof miraModelSchema>;
 
+const questionOptionSchema = v.pipe(
+    v.string(),
+    v.trim(),
+    v.minLength(1),
+    v.maxLength(240)
+);
+const questionSchema = v.strictObject({
+    id: v.pipe(v.string(), v.regex(/^[a-z][a-z0-9_]{0,63}$/)),
+    title: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(1000)),
+    options: v.optional(v.pipe(v.array(questionOptionSchema), v.maxLength(6)), []),
+});
+export const miraQuestionRequestSchema = v.strictObject({
+    questions: v.pipe(
+        v.array(questionSchema),
+        v.minLength(1),
+        v.maxLength(3),
+        v.check(
+            (questions) =>
+                new Set(questions.map((question) => question.id)).size ===
+                questions.length
+        )
+    ),
+});
+export const miraQuestionAnswerSchema = v.strictObject({
+    id: idSchema,
+    inputHash: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
+    answers: v.record(
+        v.pipe(v.string(), v.maxLength(64)),
+        v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4000))
+    ),
+});
+export type MiraQuestionRequest = v.InferOutput<typeof miraQuestionRequestSchema>;
+
 export const miraProposalDecisionSchema = v.strictObject({
     id: idSchema,
     inputHash: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
@@ -347,6 +380,7 @@ export interface MiraProposal {
     readonly inputHash: string;
     readonly input: Record<string, unknown>;
     readonly createdAt: string;
+    readonly message?: string | null;
 }
 
 export const miraRunReadSchema = v.strictObject({

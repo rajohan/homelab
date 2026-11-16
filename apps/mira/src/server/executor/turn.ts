@@ -29,6 +29,7 @@ import type {
 } from "../integrations/github/configuration";
 import type { HereNowReadConfiguration } from "../integrations/herenow/configuration";
 import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
+import { createMiraHostReviewer } from "../operations/autoReview";
 import type { MiraOperationsConfiguration } from "../operations/configuration";
 import {
     miraInstructions as instructions,
@@ -319,7 +320,8 @@ export async function executeMiraTurn(
                     github,
                     localCode,
                     chatSearch && useSynthetic ? synthetic : undefined,
-                    operations
+                    operations,
+                    createMiraHostReviewer(client, run, config, settings, synthetic)
                 ),
                 ...(assistance
                     ? [

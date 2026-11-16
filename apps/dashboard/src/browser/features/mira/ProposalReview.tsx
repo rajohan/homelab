@@ -1,5 +1,5 @@
 import type { MiraProposal } from "@homelab/contracts/mira";
-import { ActionGroup, Button, ErrorNotice, Modal } from "@homelab/ui";
+import { ActionGroup, Button, ErrorNotice } from "@homelab/ui";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
@@ -46,7 +46,7 @@ function displayValue(value: unknown): string {
 
 /**
  * Show every immutable proposed field before an explicit human decision.
- * @returns A bounded review dialog whose retry keeps the same receipt and argument hash.
+ * @returns An inline approval card whose retry keeps the same receipt and argument hash.
  */
 export function ProposalReview({
     proposal,
@@ -67,12 +67,15 @@ export function ProposalReview({
         onClose();
     };
     return (
-        <Modal title="Review proposed change" size="wide" onClose={onClose}>
+        <section aria-label="Review proposed change">
             <div className="space-y-4">
                 <p className="text-sm text-primary-300">
                     Mira proposes to {actions[proposal.tool] ?? "apply a product change"}.
-                    Review all fields below. Approving applies this exact change once.
+                    Review all fields below. Approval covers only these exact fields.
                 </p>
+                {proposal.message && (
+                    <p className="text-sm text-primary-400">{proposal.message}</p>
+                )}
                 <dl className="divide-y divide-primary-700 rounded-lg border border-primary-700 bg-primary-900/40">
                     {Object.entries(proposal.input).map(([key, value]) => (
                         <div key={key} className="space-y-1 p-3">
@@ -91,7 +94,9 @@ export function ProposalReview({
                         busy={decide.isPending}
                         onClick={() => void submit(true).catch(() => {})}
                     >
-                        Approve change
+                        {proposal.tool === "mira_homelab_command"
+                            ? "Allow once"
+                            : "Approve change"}
                     </Button>
                     <Button
                         variant="secondary"
@@ -100,15 +105,8 @@ export function ProposalReview({
                     >
                         Reject
                     </Button>
-                    <Button
-                        variant="secondary"
-                        disabled={decide.isPending}
-                        onClick={onClose}
-                    >
-                        Close
-                    </Button>
                 </ActionGroup>
             </div>
-        </Modal>
+        </section>
     );
 }

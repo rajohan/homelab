@@ -303,7 +303,6 @@ export function ChatPanel({
                     <ErrorNotice error={error} />
                 </div>
             )}
-            <ProposedChanges conversationId={id} />
             <ChatTranscript
                 key={id}
                 messages={messages}
@@ -357,6 +356,7 @@ export function ChatPanel({
                 }
                 onManage={() => setDialog("computer")}
             />
+            {!conversation.archivedAt && <ProposedChanges key={id} conversationId={id} />}
             {!conversation.archivedAt && (
                 <ChatComposer
                     text={text}
