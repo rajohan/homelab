@@ -1,5 +1,12 @@
 import type { MiraAttachment } from "@homelab/contracts/mira";
-import { ActionGroup, buttonStyles, ErrorNotice, LoadingState, Modal } from "@homelab/ui";
+import {
+    ActionGroup,
+    buttonStyles,
+    ErrorNotice,
+    LoadingState,
+    Modal,
+    TextFilePreview,
+} from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import * as v from "valibot";
@@ -12,7 +19,7 @@ export function AttachmentPreview({
     file,
     onClose,
 }: {
-    readonly file: MiraAttachment;
+    readonly file: Pick<MiraAttachment, "id" | "name" | "mediaType" | "bytes">;
     readonly onClose: () => void;
 }) {
     const image = file.mediaType.startsWith("image/");
@@ -45,17 +52,12 @@ export function AttachmentPreview({
                 {!image && text.isPending && <LoadingState label="Reading document…" />}
                 {text.error && <ErrorNotice error={text.error} />}
                 {text.data && (
-                    <>
-                        <pre className="max-h-[60dvh] overflow-auto rounded-lg border border-primary-700 bg-primary-950/30 p-4 text-sm wrap-break-word whitespace-pre-wrap text-primary-200">
-                            {text.data.text || "No readable text was found in this file."}
-                        </pre>
-                        {text.data.truncated && (
-                            <p className="text-sm text-primary-400">
-                                This preview is shortened. Download the original for the
-                                complete document.
-                            </p>
-                        )}
-                    </>
+                    <TextFilePreview
+                        name={file.name}
+                        mediaType={file.mediaType}
+                        text={text.data.text}
+                        truncated={text.data.truncated}
+                    />
                 )}
                 <ActionGroup>
                     <a

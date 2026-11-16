@@ -1,3 +1,4 @@
+import { describeFile } from "@homelab/contracts/files";
 import { MiraFailure } from "@homelab/mira/data/context";
 import {
     deleteMiraFile,
@@ -90,11 +91,29 @@ export async function miraFileRequest(
                                       text: new TextDecoder().decode(file.bytes),
                                       truncated: false,
                                   };
+                        let previewText = document.text;
+                        // Format complete bounded JSON before shortening its preview.
+                        // Unparseable, oversized and non-JSON files retain their original text.
+                        if (
+                            describeFile(file.metadata).kind === "json" &&
+                            document.text.length <= 1_048_576 &&
+                            !document.truncated
+                        ) {
+                            try {
+                                previewText = JSON.stringify(
+                                    JSON.parse(document.text),
+                                    null,
+                                    2
+                                );
+                            } catch {
+                                /* Incomplete or nonstandard JSON remains readable source. */
+                            }
+                        }
                         return Response.json(
                             {
-                                text: document.text.slice(0, 64_000),
+                                text: previewText.slice(0, 64_000),
                                 truncated:
-                                    document.truncated || document.text.length > 64_000,
+                                    document.truncated || previewText.length > 64_000,
                             },
                             { headers }
                         );

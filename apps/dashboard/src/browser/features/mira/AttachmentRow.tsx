@@ -1,6 +1,7 @@
+import { describeFile } from "@homelab/contracts/files";
 import type { MiraAttachment } from "@homelab/contracts/mira";
-import { Button, IconButton } from "@homelab/ui";
-import { FileImage, FileText, X } from "lucide-react";
+import { Button, fileTypeIcons, IconButton } from "@homelab/ui";
+import { X } from "lucide-react";
 
 /**
  * Show a selected attachment with readable metadata, preview and a separate remove action.
@@ -17,8 +18,8 @@ export function AttachmentRow({
     readonly onPreview: () => void;
     readonly onRemove: () => void;
 }) {
-    const image = file.mediaType.startsWith("image/");
-    const documentType = file.mediaType === "application/pdf" ? "PDF" : "Text";
+    const presentation = describeFile(file);
+    const Icon = fileTypeIcons[presentation.kind];
     return (
         <li className="flex min-w-0 items-center gap-1 rounded-lg border border-primary-700 bg-primary-800 p-1">
             <Button
@@ -28,16 +29,12 @@ export function AttachmentRow({
                 onClick={onPreview}
             >
                 <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-primary-900">
-                    {image ? (
-                        <FileImage size={18} aria-hidden="true" />
-                    ) : (
-                        <FileText size={18} aria-hidden="true" />
-                    )}
+                    <Icon size={18} aria-hidden="true" />
                 </span>
                 <span className="min-w-0">
                     <span className="block truncate text-sm">{file.name}</span>
                     <span className="block truncate text-xs font-normal text-primary-400">
-                        {image ? "Image" : documentType}
+                        {presentation.label}
                         {" · "}
                         {file.bytes >= 1_048_576
                             ? `${(file.bytes / 1_048_576).toFixed(1)} MiB`

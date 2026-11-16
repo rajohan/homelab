@@ -3,13 +3,14 @@ import {
     Card,
     ConfirmDialog,
     DropdownMenu,
+    fileTypeIcon,
     InfiniteScrollTrigger,
     LoadingState,
     Modal,
     SectionHeader,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Eye, File, Paperclip, Trash2 } from "lucide-react";
+import { Eye, Paperclip, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
@@ -73,7 +74,7 @@ export function FileLibrary({
                         <Card key={file.id} className="space-y-3 bg-primary-900/40">
                             <SectionHeader
                                 title={file.name}
-                                icon={File}
+                                icon={fileTypeIcon(file)}
                                 description={`${(file.bytes / 1024).toFixed(1)} KiB`}
                                 compactActions
                                 actions={

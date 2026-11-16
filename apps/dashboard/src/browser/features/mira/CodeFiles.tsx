@@ -1,4 +1,5 @@
-import { Badge, CopyTextButton, SyntaxSource } from "@homelab/ui";
+import { describeFile } from "@homelab/contracts/files";
+import { Badge, CopyTextButton, fileTypeIcon, SyntaxSource } from "@homelab/ui";
 
 function fileStatus(file: { content: string | null; beforeSha256: string | null }) {
     if (file.content === null) return "Delete";
@@ -20,43 +21,49 @@ export function CodeFiles({
 }) {
     return (
         <div className="space-y-3">
-            {files.map((file) => (
-                <section
-                    key={file.path}
-                    aria-label={`Changes to ${file.path}`}
-                    className="min-w-0 overflow-hidden rounded-lg border border-primary-700 bg-primary-950"
-                >
-                    <div className="flex flex-wrap items-center gap-2 border-b border-primary-700 bg-primary-900/60 px-3 py-2">
-                        <p className="w-full min-w-0 font-mono text-xs wrap-anywhere text-primary-200 sm:w-auto sm:flex-1">
-                            {file.path}
-                        </p>
-                        <Badge tone={file.content === null ? "warning" : "neutral"}>
-                            {fileStatus(file)}
-                        </Badge>
-                        {file.content !== null && (
-                            <CopyTextButton
-                                text={file.content}
-                                label={`Copy ${file.path}`}
-                                iconOnly
+            {files.map((file) => {
+                const Icon = fileTypeIcon({ name: file.path });
+                return (
+                    <section
+                        key={file.path}
+                        aria-label={`Changes to ${file.path}`}
+                        className="min-w-0 overflow-hidden rounded-lg border border-primary-700 bg-primary-950"
+                    >
+                        <div className="flex flex-wrap items-center gap-2 border-b border-primary-700 bg-primary-900/60 px-3 py-2">
+                            <Icon
+                                size={16}
+                                aria-hidden="true"
+                                className="shrink-0 text-primary-400"
                             />
-                        )}
-                    </div>
-                    {file.content === null ? (
-                        <p className="p-4 text-sm text-primary-300">
-                            This file will be deleted.
-                        </p>
-                    ) : (
-                        <div className="max-h-96 overflow-auto overscroll-contain">
-                            <SyntaxSource
-                                source={file.content}
-                                language={
-                                    file.path.split(".").at(-1)?.toLowerCase() ?? "text"
-                                }
-                            />
+                            <p className="w-full min-w-0 font-mono text-xs wrap-anywhere text-primary-200 sm:w-auto sm:flex-1">
+                                {file.path}
+                            </p>
+                            <Badge tone={file.content === null ? "warning" : "neutral"}>
+                                {fileStatus(file)}
+                            </Badge>
+                            {file.content !== null && (
+                                <CopyTextButton
+                                    text={file.content}
+                                    label={`Copy ${file.path}`}
+                                    iconOnly
+                                />
+                            )}
                         </div>
-                    )}
-                </section>
-            ))}
+                        {file.content === null ? (
+                            <p className="p-4 text-sm text-primary-300">
+                                This file will be deleted.
+                            </p>
+                        ) : (
+                            <div className="max-h-96 overflow-auto overscroll-contain">
+                                <SyntaxSource
+                                    source={file.content}
+                                    language={describeFile({ name: file.path }).language}
+                                />
+                            </div>
+                        )}
+                    </section>
+                );
+            })}
         </div>
     );
 }

@@ -9,10 +9,11 @@ import {
     Modal,
     SectionHeader,
 } from "@homelab/ui";
-import { Download, ExternalLink, Globe, Upload } from "lucide-react";
+import { ExternalLink, Globe, Upload } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { AttachmentFileActions } from "./AttachmentFileActions";
 import { miraStatusTone } from "./statusTone";
 
 /**
@@ -71,14 +72,7 @@ export function PublicationReview({
                                         · {file.mediaType}
                                     </p>
                                 </div>
-                                <a
-                                    href={`/api/mira/files/${file.id}`}
-                                    download={file.name}
-                                    className={buttonStyles({ variant: "secondary" })}
-                                >
-                                    <Download size={16} aria-hidden="true" />
-                                    Download
-                                </a>
+                                <AttachmentFileActions file={file} />
                             </div>
                         ))}
                     </div>

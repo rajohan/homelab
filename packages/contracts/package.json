@@ -4,6 +4,7 @@
     "type": "module",
     "exports": {
         ".": "./src/index.ts",
+        "./files": "./src/files.ts",
         "./operations": "./src/operations.ts",
         "./notifications": "./src/notifications.ts",
         "./applications": "./src/applications.ts",
