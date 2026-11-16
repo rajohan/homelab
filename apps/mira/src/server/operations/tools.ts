@@ -201,7 +201,7 @@ export function createMiraOperationsTools(
                     .digest("hex");
                 const [prior] = await client<
                     { id: string; state: string }[]
-                >`SELECT t.id,t.state FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE r.owner=${run.owner} AND r.conversation_id=${run.conversationId} AND t.tool='mira_homelab_command' AND (t.input_hash=${hash} OR (t.proposal->>'target'=${parsed.target} AND t.proposal->>'command'=${parsed.command})) AND t.id<>${scoped.receiptId} AND t.state IN ('awaiting_approval','approved','rejected') ORDER BY t.id DESC LIMIT 1`;
+                >`SELECT t.id,t.state FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE r.owner=${run.owner} AND r.conversation_id=${run.conversationId} AND t.tool='mira_homelab_command' AND (t.input_hash=${hash} OR (t.proposal->>'target'=${parsed.target} AND t.proposal->>'command'=${parsed.command})) AND t.id<>${scoped.receiptId} AND (t.state='rejected' OR (t.state IN ('awaiting_approval','approved') AND t.proposal IS NOT NULL AND t.created_at>clock_timestamp()-interval '24 hours' AND r.state IN ('running','completed') AND NOT r.cancel_requested AND r.approval_revoked_at IS NULL AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at)))) ORDER BY t.id DESC LIMIT 1`;
                 if (prior) {
                     if (prior.state === "rejected")
                         throw new MiraFailure(

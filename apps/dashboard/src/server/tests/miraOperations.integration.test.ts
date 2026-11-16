@@ -55,7 +55,7 @@ async function fixture(mode: "ask" | "approve_for_me" | "full_access") {
     );
     const receiptId = crypto.randomUUID();
     await database.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES(${receiptId},${current.run.id},${receiptId},'mira_homelab_command',${"0".repeat(64)},'running')`;
-    const invoke = (signal = new AbortController().signal) =>
+    const invoke = (signal = new AbortController().signal, id = receiptId) =>
         tools
             .find((tool) => tool.name === "mira_homelab_command")!
             .action(
@@ -65,7 +65,7 @@ async function fixture(mode: "ask" | "approve_for_me" | "full_access") {
                     reason: "Test exact approval",
                 },
                 signal,
-                { ...current.context, receiptId }
+                { ...current.context, receiptId: id }
             );
     return {
         ...database,
@@ -577,3 +577,36 @@ test("questions persist after completion, accept free text once and queue one co
         await f.close();
     }
 });
+
+test.each(["consumed", "expired"] as const)(
+    "%s requests do not block a fresh review of the same host command",
+    async (previous) => {
+        const f = await fixture("ask");
+        try {
+            await f.invoke();
+            const proposal = await waitForProposal(f);
+            if (previous === "consumed") {
+                await f.approved.proposals.decide({
+                    id: proposal.id,
+                    inputHash: proposal.inputHash,
+                    approve: true,
+                });
+                await f.resume();
+            } else {
+                await f.client`UPDATE mira_tool_receipts SET created_at=clock_timestamp()-interval '25 hours' WHERE id=${proposal.id}`;
+            }
+            const id = crypto.randomUUID();
+            await f.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES(${id},${f.run.id},${id},'mira_homelab_command',${"0".repeat(64)},'running')`;
+            expect(await f.invoke(undefined, id)).toMatchObject({
+                requestId: id,
+                state: "awaiting_approval",
+            });
+            const pending = await f.api.proposals.list({ id: f.run.conversationId });
+            expect(pending).toHaveLength(1);
+            expect(pending[0]?.id).toBe(id);
+            expect(f.calls).toHaveLength(previous === "consumed" ? 1 : 0);
+        } finally {
+            await f.close();
+        }
+    }
+);
