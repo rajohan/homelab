@@ -392,6 +392,7 @@ export class CodexRuntime {
         let output = "";
         let lastMessageId: string | null = null;
         let thinking = "";
+        let thinkingOffset = 0;
         let thinkingItem: string | null = null;
         const completion = Promise.withResolvers<TurnResult>();
         // The notification can arrive before the turn/start response.
@@ -434,10 +435,22 @@ export class CodexRuntime {
                     return;
                 const part = delta.output;
                 const section = `${part.itemId}:${part.summaryIndex}`;
-                if (thinkingItem !== null && thinkingItem !== section) thinking += "\n\n";
+                if (thinkingItem !== section) {
+                    thinking = "";
+                    thinkingOffset = 0;
+                }
                 thinkingItem = section;
-                thinking = (thinking + part.delta).slice(-32_000);
-                options.onActivity?.({ phase: "thinking", tool: null, thinking });
+                // oxlint-disable-next-line typescript/no-misused-spread -- Preserve Unicode code points for PostgreSQL offsets.
+                const characters = [...(thinking + part.delta)];
+                thinkingOffset += Math.max(0, characters.length - 32_000);
+                thinking = characters.slice(-32_000).join("");
+                options.onActivity?.({
+                    phase: "thinking",
+                    tool: null,
+                    thinking,
+                    thinkingId: section,
+                    thinkingOffset,
+                });
             } else if (event.method === "item/agentMessage/delta") {
                 const delta = v.parse(deltaSchema, event.params);
                 if (

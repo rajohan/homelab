@@ -39,16 +39,37 @@ $$;
 CREATE TRIGGER mira_reply_files BEFORE INSERT OR UPDATE OF attachment_ids,parts ON mira_messages FOR EACH ROW EXECUTE FUNCTION link_mira_reply_files();
 --> statement-breakpoint
 CREATE FUNCTION record_mira_work_note() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE previous_id uuid; note text;
+DECLARE previous_id uuid; note text; addition text; previous_size integer; consumed integer; portion integer;
 BEGIN
     note=NEW.activity->>'thinking';
-    IF note IS NULL OR note='' OR note IS NOT DISTINCT FROM OLD.activity->>'thinking' THEN RETURN NEW; END IF;
-    SELECT id INTO previous_id FROM mira_work_notes WHERE run_id=NEW.id ORDER BY created_at DESC,id DESC LIMIT 1;
-    IF previous_id IS NOT NULL AND starts_with(note,coalesce(OLD.activity->>'thinking','')) AND coalesce(OLD.activity->>'thinking','')<>'' THEN
-        UPDATE mira_work_notes SET content=note WHERE id=previous_id;
-    ELSE
-        INSERT INTO mira_work_notes(id,run_id,content) VALUES(gen_random_uuid(),NEW.id,note);
+    IF note IS NULL OR note='' THEN RETURN NEW; END IF;
+    IF note IS NOT DISTINCT FROM OLD.activity->>'thinking'
+        AND NEW.activity->>'thinkingId' IS NOT DISTINCT FROM OLD.activity->>'thinkingId'
+        AND NEW.activity->>'thinkingOffset' IS NOT DISTINCT FROM OLD.activity->>'thinkingOffset' THEN RETURN NEW; END IF;
+    addition=note;
+    IF NEW.activity->>'thinkingId' IS NOT NULL AND NEW.activity->>'thinkingId'=OLD.activity->>'thinkingId' THEN
+        consumed=coalesce((OLD.activity->>'thinkingOffset')::integer,0)+length(coalesce(OLD.activity->>'thinking',''))-coalesce((NEW.activity->>'thinkingOffset')::integer,0);
+        addition=substring(note FROM greatest(0,consumed)+1);
+        IF consumed<0 THEN addition=E'[Earlier note text was not observed]\n' || addition; END IF;
+        SELECT id,length(content) INTO previous_id,previous_size FROM mira_work_notes WHERE run_id=NEW.id ORDER BY created_at DESC,id DESC LIMIT 1;
+    ELSIF NEW.activity->>'thinkingId' IS NULL AND OLD.activity->>'thinkingId' IS NULL
+        AND coalesce(OLD.activity->>'thinking','')<>'' AND starts_with(note,OLD.activity->>'thinking') THEN
+        addition=substring(note FROM length(OLD.activity->>'thinking')+1);
+        SELECT id,length(content) INTO previous_id,previous_size FROM mira_work_notes WHERE run_id=NEW.id ORDER BY created_at DESC,id DESC LIMIT 1;
+    ELSIF coalesce((NEW.activity->>'thinkingOffset')::integer,0)>0 THEN
+        addition=E'[Earlier note text was not observed]\n' || addition;
     END IF;
+    WHILE length(addition)>0 LOOP
+        IF previous_id IS NOT NULL AND previous_size<8000 THEN
+            portion=least(8000-previous_size,length(addition));
+            UPDATE mira_work_notes SET content=content || left(addition,portion) WHERE id=previous_id;
+        ELSE
+            portion=least(8000,length(addition));
+            INSERT INTO mira_work_notes(id,run_id,content,created_at) VALUES(gen_random_uuid(),NEW.id,left(addition,portion),clock_timestamp());
+        END IF;
+        addition=substring(addition FROM portion+1);
+        previous_id=NULL;
+    END LOOP;
     RETURN NEW;
 END;
 $$;

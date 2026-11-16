@@ -473,3 +473,26 @@ test("activity pages include recent tools beyond 32 and preserve work notes acro
         await f.close();
     }
 });
+
+test("long work notes retain bounded nonoverlapping pages after the provider tail rolls", async () => {
+    const f = await fixture();
+    try {
+        const content = "ø".repeat(32_000);
+        const activity = (thinking: string, thinkingOffset: number) =>
+            JSON.stringify({
+                phase: "thinking",
+                tool: null,
+                thinking,
+                thinkingId: f.run.id,
+                thinkingOffset,
+            });
+        await f.client`UPDATE mira_runs SET activity=${activity(content, 0)}::text::jsonb WHERE id=${f.run.id}`;
+        await f.client`UPDATE mira_runs SET activity=${activity(content.slice(3) + "end", 3)}::text::jsonb WHERE id=${f.run.id}`;
+        const notes = await f.api.activity({ id: f.run.id, kind: "notes" });
+        expect(notes.rows.map((row) => row.message).join("")).toBe(content + "end");
+        expect(notes.rows.every((row) => (row.message?.length ?? 0) <= 8000)).toBe(true);
+        expect(notes.total).toBe(5);
+    } finally {
+        await f.close();
+    }
+});
