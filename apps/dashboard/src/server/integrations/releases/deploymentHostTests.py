@@ -350,6 +350,7 @@ class HostTests(unittest.TestCase):
                             self.assertEqual(saved["code"]["egress"], slots[1])
                             self.assertEqual(saved["code"]["imageId"], code["imageId"] if failure else "sha256:" + "d"*64)
                             self.assertEqual(saved["code"]["owner"], "fixture")
+                            self.assertEqual(saved["code"].get("releasePreviousBinding"), None if failure else code)
                     return self.command(arguments, directory, timeout, output_file)
                 with patch.object(host, "inspect", return_value=self.expected), patch.object(host, "configured", side_effect=configured), \
                         patch.object(host, "command", side_effect=execute), \

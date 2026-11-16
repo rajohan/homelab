@@ -39,7 +39,7 @@ test("Chat permissions default to asking and preserve provider, memory and execu
             executionTarget: "main",
         });
         expect(
-            screen.getByText(/Emails and publications still need your approval/)
+            screen.getByText(/Emails and other publications still need your approval/)
         ).toBeVisible();
         fireEvent.click(screen.getByLabelText("Permissions"));
         fireEvent.click(await screen.findByRole("option", { name: "Full access" }));

@@ -56,7 +56,7 @@ export function parseMiraProposal(tool: string, input: unknown): Record<string, 
 export async function listMiraProposals(context: MiraContext, conversationId: string) {
     return context.client<
         MiraProposal[]
-    >`SELECT t.id,t.tool,t.input_hash AS "inputHash",t.proposal AS input,t.created_at::text AS "createdAt",t.message FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id JOIN mira_conversations c ON c.id=r.conversation_id WHERE r.owner=${context.owner} AND c.owner=${context.owner} AND c.id=${conversationId} AND c.deleted_at IS NULL AND c.archived_at IS NULL AND (t.tool NOT IN ('mira_homelab_command','mira_request_user_input') OR (r.state IN ('running','completed') AND NOT r.cancel_requested AND r.approval_revoked_at IS NULL AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at)))) AND t.state='awaiting_approval' AND t.proposal IS NOT NULL AND t.created_at > now()-interval '24 hours' ORDER BY t.id LIMIT 20`;
+    >`SELECT t.id,t.tool,t.input_hash AS "inputHash",t.proposal AS input,t.created_at::text AS "createdAt",t.message FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id JOIN mira_conversations c ON c.id=r.conversation_id WHERE r.owner=${context.owner} AND c.owner=${context.owner} AND c.id=${conversationId} AND c.deleted_at IS NULL AND c.archived_at IS NULL AND (t.tool NOT IN ('mira_homelab_command','mira_request_user_input') OR (r.state IN ('running','completed') AND NOT r.cancel_requested AND (t.tool='mira_request_user_input' OR r.approval_revoked_at::text IS NOT DISTINCT FROM t.proposal->>'permissionEpoch') AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at)))) AND t.state='awaiting_approval' AND t.proposal IS NOT NULL AND t.created_at > now()-interval '24 hours' ORDER BY t.id LIMIT 20`;
 }
 
 /**
@@ -134,7 +134,7 @@ export async function decideMiraProposal(
             v.parse(miraHostProposalSchema, proposal.input);
             const [live] = await query<
                 { id: string }[]
-            >`SELECT r.id FROM mira_runs r JOIN mira_tool_receipts t ON t.run_id=r.id WHERE t.id=${input.id} AND r.owner=${context.owner} AND (r.state='completed' OR (r.state='running' AND r.lease_expires_at>clock_timestamp())) AND NOT r.cancel_requested AND r.approval_revoked_at IS NULL AND r.manual AND r.automation_id IS NULL AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at)) FOR UPDATE OF r`;
+            >`SELECT r.id FROM mira_runs r JOIN mira_tool_receipts t ON t.run_id=r.id WHERE t.id=${input.id} AND r.owner=${context.owner} AND (r.state='completed' OR (r.state='running' AND r.lease_expires_at>clock_timestamp())) AND NOT r.cancel_requested AND (r.approval_revoked_at::text IS NOT DISTINCT FROM t.proposal->>'permissionEpoch') AND r.manual AND r.automation_id IS NULL AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at)) FOR UPDATE OF r`;
             if (!live)
                 throw new MiraFailure(
                     "CONFLICT",
@@ -265,6 +265,8 @@ export function createMiraQuestionTools(run: MiraClaim): MiraToolDefinition[] {
                 >`UPDATE mira_tool_receipts SET state='awaiting_approval',proposal=${JSON.stringify(request)}::text::jsonb,input_hash=${hash},message='Waiting for your answer.',finished_at=clock_timestamp() WHERE id=${context.receiptId} AND run_id=${run.id} AND state='running' AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
                 if (!saved)
                     throw new MiraFailure("CONFLICT", "The question lost its run lease.");
+                await query`INSERT INTO mira_messages(id,conversation_id,role,content,state,attachment_ids)
+                    VALUES(${saved.id},${run.conversationId},'assistant',${request.questions.map((question) => question.title).join("\n\n")},'completed','[]'::jsonb)`;
                 return {
                     requestId: saved.id,
                     state: "awaiting_answer",
@@ -313,7 +315,7 @@ export async function answerMiraQuestion(
                 fresh: boolean;
                 allowed: boolean;
             }[]
-        >`SELECT t.state,t.input_hash AS "inputHash",t.proposal AS input,t.message,t.created_at>clock_timestamp()-interval '24 hours' AS fresh,(r.state IN ('running','completed') AND NOT r.cancel_requested AND r.approval_revoked_at IS NULL AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at))) AS allowed FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE t.id=${input.id} FOR UPDATE OF t`;
+        >`SELECT t.state,t.input_hash AS "inputHash",t.proposal AS input,t.message,t.created_at>clock_timestamp()-interval '24 hours' AS fresh,(r.state IN ('running','completed') AND NOT r.cancel_requested AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at))) AS allowed FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE t.id=${input.id} FOR UPDATE OF t`;
         if (!row || row.inputHash !== input.inputHash)
             throw new MiraFailure(
                 "CONFLICT",
@@ -338,11 +340,15 @@ export async function answerMiraQuestion(
                 "BAD_REQUEST",
                 "Answer every question before submitting."
             );
+        // Older pending receipts have no assistant question message yet.
+        await query`INSERT INTO mira_messages(id,conversation_id,role,content,state,attachment_ids)
+            VALUES(${input.id},${link.conversationId},'assistant',${request.questions.map((question) => question.title).join("\n\n")},'completed','[]'::jsonb)
+            ON CONFLICT(id) DO NOTHING`;
         await sendMiraMessageInTransaction(query, context, {
             conversationId: link.conversationId,
             requestId: input.id,
             text: request.questions
-                .map((question) => `${question.title}\n${input.answers[question.id]}`)
+                .map((question) => input.answers[question.id])
                 .join("\n\n"),
             attachmentIds: [],
         });

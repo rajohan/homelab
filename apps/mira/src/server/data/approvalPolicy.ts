@@ -8,7 +8,7 @@ import * as v from "valibot";
 import { localCodeRequest } from "../sandbox/localProtocol";
 import { type MiraContext, MiraFailure, type MiraQuery } from "./context";
 
-export type MiraApprovalScope = "task" | "check" | "external";
+export type MiraApprovalScope = "task" | "check" | "code" | "external";
 export type MiraActionKind = "mail" | "publication" | "social" | "code" | "job";
 
 /**
@@ -43,43 +43,47 @@ export async function miraActionApproval(
     kind: MiraActionKind,
     id: string
 ): Promise<boolean> {
-    type Origin = { runId: string | null };
+    type Origin = { runId: string | null; approvedAt: string | null };
     let row: Origin | undefined;
     let scope: MiraApprovalScope = "external";
     switch (kind) {
         case "mail": {
             [row] = await query<
                 Origin[]
-            >`SELECT approval_run_id AS "runId" FROM mira_mail_drafts WHERE id=${id} AND owner=${owner}`;
+            >`SELECT approval_run_id AS "runId",approved_at::text AS "approvedAt" FROM mira_mail_drafts WHERE id=${id} AND owner=${owner}`;
             break;
         }
         case "publication": {
             [row] = await query<
                 Origin[]
-            >`SELECT approval_run_id AS "runId" FROM mira_publications WHERE id=${id} AND owner=${owner}`;
+            >`SELECT approval_run_id AS "runId",approved_at::text AS "approvedAt" FROM mira_publications WHERE id=${id} AND owner=${owner}`;
             break;
         }
         case "social": {
             [row] = await query<
                 Origin[]
-            >`SELECT approval_run_id AS "runId" FROM mira_social_drafts WHERE id=${id} AND owner=${owner}`;
+            >`SELECT approval_run_id AS "runId",approved_at::text AS "approvedAt" FROM mira_social_drafts WHERE id=${id} AND owner=${owner}`;
             break;
         }
         case "code": {
+            scope = "code";
             [row] = await query<
                 Origin[]
-            >`SELECT approval_run_id AS "runId" FROM mira_code_publications WHERE id=${id} AND owner=${owner}`;
+            >`SELECT approval_run_id AS "runId",approved_at::text AS "approvedAt" FROM mira_code_publications WHERE id=${id} AND owner=${owner}`;
             break;
         }
         case "job": {
             const [job] = await query<
                 (Origin & { content: MiraDaytonaContent })[]
-            >`SELECT approval_run_id AS "runId",content FROM mira_daytona_jobs WHERE id=${id} AND owner=${owner}`;
+            >`SELECT approval_run_id AS "runId",approved_at::text AS "approvedAt",content FROM mira_daytona_jobs WHERE id=${id} AND owner=${owner}`;
             row = job;
             if (job?.runId) scope = miraJobApprovalScope(id, job.content);
         }
     }
-    return row !== undefined && miraApprovalCurrent(query, owner, row.runId, scope);
+    return (
+        row !== undefined &&
+        miraApprovalCurrent(query, owner, row.runId, scope, row.approvedAt)
+    );
 }
 
 /**
@@ -96,10 +100,10 @@ export function miraModeAllows(
 }
 
 /**
- * Read the current, frozen permission for an owned live Chat/task run.
+ * Read the current conversation permission for an owned live Chat/task run.
  * @param query - Current transaction; callers serialize mutations with their existing locks.
  * @param context - Trusted tool context, including the lease token and exact actor.
- * @returns Ask unless both the queued setting and current conversation still authorize the same mode.
+ * @returns The current human-selected mode while this exact run and lease remain active.
  */
 export async function miraRunPermission(
     query: MiraQuery,
@@ -107,12 +111,11 @@ export async function miraRunPermission(
 ): Promise<MiraPermissionMode> {
     if (!context.run || context.actor !== `mira:${context.run.id}`) return "ask";
     const [row] = await query<{ mode: unknown }[]>`
-        SELECT r.settings->>'permissionMode' AS mode FROM mira_runs r
+        SELECT c.settings->>'permissionMode' AS mode FROM mira_runs r
         JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner
         WHERE r.id=${context.run.id} AND r.owner=${context.owner} AND r.lease_token=${context.run.leaseToken}
         AND r.state='running' AND NOT r.cancel_requested AND r.lease_expires_at>clock_timestamp()
-        AND r.approval_revoked_at IS NULL AND r.automation_id IS NULL AND r.manual AND c.deleted_at IS NULL AND c.archived_at IS NULL
-        AND c.settings->>'permissionMode'=r.settings->>'permissionMode'
+        AND r.automation_id IS NULL AND r.manual AND c.deleted_at IS NULL AND c.archived_at IS NULL
         AND NOT EXISTS(SELECT 1 FROM mira_tasks t WHERE t.id=r.task_id AND t.owner=r.owner
             AND (t.deleted_at IS NOT NULL OR t.work_stopped_at>=r.created_at))`;
     const parsed = v.safeParse(miraPermissionModeSchema, row?.mode);
@@ -153,22 +156,23 @@ export async function requireMiraApproval(
  * @param owner - Verified job owner.
  * @param runId - Captured approval origin; null means the existing human/policy approval path.
  * @param scope - Fixed class originally approved by this dispatcher.
- * @returns False after cancellation, permission changes, archival or task stop; never revives an interrupted run.
+ * @param approvedAt - Database approval timestamp; approvals predating the latest revocation never revive.
+ * @returns False after cancellation, stale approval, archival or task stop; never revives an interrupted run.
  */
 export async function miraApprovalCurrent(
     query: MiraQuery,
     owner: string,
     runId: string | null,
-    scope: MiraApprovalScope
+    scope: MiraApprovalScope,
+    approvedAt: string | null = null
 ): Promise<boolean> {
     if (runId === null) return true;
     const [row] = await query<{ mode: unknown }[]>`
-        SELECT r.settings->>'permissionMode' AS mode FROM mira_runs r
+        SELECT c.settings->>'permissionMode' AS mode FROM mira_runs r
         JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner
-        WHERE r.id=${runId} AND r.owner=${owner} AND r.approval_revoked_at IS NULL AND r.automation_id IS NULL AND r.manual
+        WHERE r.id=${runId} AND r.owner=${owner} AND (r.approval_revoked_at IS NULL OR ${approvedAt}::timestamptz>r.approval_revoked_at) AND r.automation_id IS NULL AND r.manual
         AND NOT r.cancel_requested AND (r.state='completed' OR (r.state='running' AND r.lease_expires_at>clock_timestamp()))
         AND c.deleted_at IS NULL AND c.archived_at IS NULL
-        AND c.settings->>'permissionMode'=r.settings->>'permissionMode'
         AND NOT EXISTS(SELECT 1 FROM mira_tasks t WHERE t.id=r.task_id AND t.owner=r.owner
             AND (t.deleted_at IS NOT NULL OR t.work_stopped_at>=r.created_at))`;
     const parsed = v.safeParse(miraPermissionModeSchema, row?.mode);

@@ -65,16 +65,22 @@ export function createMiraOperationsTools(
         actor: `mira:${run.id}`,
         run: { id: run.id, leaseToken: run.leaseToken },
     };
-    const access = async (signal: AbortSignal) => {
+    const access = async (signal: AbortSignal, epoch?: string | null) => {
         signal.throwIfAborted();
         const [row] = await client<
-            { id: string }[]
-        >`SELECT r.id FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner WHERE r.id=${run.id} AND r.owner=${run.owner} AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=${run.leaseToken} AND r.lease_expires_at>clock_timestamp() AND r.approval_revoked_at IS NULL AND c.deleted_at IS NULL AND c.archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM mira_tasks t WHERE t.id=r.task_id AND t.owner=r.owner AND (t.deleted_at IS NOT NULL OR t.work_stopped_at>=r.created_at))`;
+            { id: string; epoch: string | null }[]
+        >`SELECT r.id,r.approval_revoked_at::text AS epoch FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner WHERE r.id=${run.id} AND r.owner=${run.owner} AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=${run.leaseToken} AND r.lease_expires_at>clock_timestamp() AND c.deleted_at IS NULL AND c.archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM mira_tasks t WHERE t.id=r.task_id AND t.owner=r.owner AND (t.deleted_at IS NOT NULL OR t.work_stopped_at>=r.created_at))`;
         if (!row || !(await miraDependenciesAllowed(client, run.owner, null)))
             throw new MiraFailure(
                 "FORBIDDEN",
-                "Host access stopped. Request fresh authorization before continuing."
+                "Host access is unavailable because this run stopped, its lease expired, or an operator control is paused."
             );
+        if (epoch !== undefined && row.epoch !== epoch)
+            throw new MiraFailure(
+                "FORBIDDEN",
+                "Permissions changed during this command. Its previous authorization is no longer valid."
+            );
+        return row.epoch;
     };
     const connection = (id: string) => {
         const target = configuration.targets.find((entry) => entry.id === id);
@@ -87,18 +93,19 @@ export function createMiraOperationsTools(
     };
     const dispatch = async (
         input: v.InferOutput<typeof miraHostCommandSchema>,
-        signal: AbortSignal
+        signal: AbortSignal,
+        epoch?: string | null
     ) => {
-        await access(signal);
+        const startedEpoch = await access(signal, epoch);
         const target = connection(input.target);
         const controller = new AbortController();
         const effective = AbortSignal.any([signal, controller.signal]);
         let checking = false;
-        let check: Promise<void> = Promise.resolve();
+        let check: Promise<unknown> = Promise.resolve();
         const timer = setInterval(() => {
             if (checking) return;
             checking = true;
-            check = access(effective)
+            check = access(effective, startedEpoch)
                 .catch(() => controller.abort())
                 .finally(() => {
                     checking = false;
@@ -107,7 +114,7 @@ export function createMiraOperationsTools(
         try {
             const result = await execute(target, input, effective);
             try {
-                await access(effective);
+                await access(effective, startedEpoch);
             } catch {
                 // An accepted host command cannot be rolled back by a later authority check.
                 throw new Error(
@@ -187,7 +194,7 @@ export function createMiraOperationsTools(
             },
             action: async (input, signal, scoped: MiraToolContext) => {
                 const parsed = v.parse(miraHostCommandSchema, input);
-                await access(signal);
+                const epoch = await access(signal);
                 const target = connection(parsed.target);
                 const mode = await miraRunPermission(client, context);
                 let review = mode !== "full_access";
@@ -195,13 +202,14 @@ export function createMiraOperationsTools(
                 const proposal = v.parse(miraHostProposalSchema, {
                     ...parsed,
                     binding: miraOperationsBinding(run.owner, target),
+                    permissionEpoch: epoch,
                 });
                 const hash = new Bun.CryptoHasher("sha256")
                     .update(JSON.stringify(proposal))
                     .digest("hex");
                 const [prior] = await client<
                     { id: string; state: string }[]
-                >`SELECT t.id,t.state FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE r.owner=${run.owner} AND r.conversation_id=${run.conversationId} AND t.tool='mira_homelab_command' AND (t.input_hash=${hash} OR (t.proposal->>'target'=${parsed.target} AND t.proposal->>'command'=${parsed.command})) AND t.id<>${scoped.receiptId} AND (t.state='rejected' OR (t.state IN ('awaiting_approval','approved') AND t.proposal IS NOT NULL AND t.created_at>clock_timestamp()-interval '24 hours' AND r.state IN ('running','completed') AND NOT r.cancel_requested AND r.approval_revoked_at IS NULL AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at)))) ORDER BY t.id DESC LIMIT 1`;
+                >`SELECT t.id,t.state FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE r.owner=${run.owner} AND r.conversation_id=${run.conversationId} AND t.tool='mira_homelab_command' AND (t.input_hash=${hash} OR (t.proposal->>'target'=${parsed.target} AND t.proposal->>'command'=${parsed.command})) AND t.id<>${scoped.receiptId} AND (t.state='rejected' OR (t.state IN ('awaiting_approval','approved') AND t.proposal IS NOT NULL AND t.created_at>clock_timestamp()-interval '24 hours' AND r.state IN ('running','completed') AND NOT r.cancel_requested AND (r.approval_revoked_at::text IS NOT DISTINCT FROM t.proposal->>'permissionEpoch') AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at)))) ORDER BY t.id DESC LIMIT 1`;
                 if (prior) {
                     if (prior.state === "rejected")
                         throw new MiraFailure(
@@ -224,7 +232,7 @@ export function createMiraOperationsTools(
                         reviewMessage =
                             "Automatic review was unavailable. Please review this exact command.";
                     }
-                    await access(signal);
+                    await access(signal, epoch);
                     if ((await miraRunPermission(client, context)) !== mode) {
                         review = true;
                         reviewMessage =
@@ -239,7 +247,7 @@ export function createMiraOperationsTools(
                     await lockMiraProposals(query, run.owner);
                     const [saved] = await query<
                         { id: string }[]
-                    >`UPDATE mira_tool_receipts SET state=${review ? "awaiting_approval" : "running"},proposal=${review ? JSON.stringify(proposal) : null}::text::jsonb,input_hash=${hash},message=${approvalMessage} WHERE id=${scoped.receiptId} AND run_id=${run.id} AND state='running' AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
+                    >`UPDATE mira_tool_receipts SET state=${review ? "awaiting_approval" : "running"},proposal=${review ? JSON.stringify(proposal) : null}::text::jsonb,input_hash=${hash},message=${approvalMessage} WHERE id=${scoped.receiptId} AND run_id=${run.id} AND state='running' AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() AND approval_revoked_at IS NOT DISTINCT FROM ${epoch}::timestamptz) RETURNING id`;
                     if (!saved)
                         throw new MiraFailure(
                             "CONFLICT",
@@ -251,16 +259,16 @@ export function createMiraOperationsTools(
                         requestId: scoped.receiptId,
                         state: "awaiting_approval",
                         message:
-                            "The exact command is saved above the Chat composer. It has not executed. The operator can approve after this reply ends.",
+                            "The exact command is saved above the Chat composer. It has not executed. The operator can review it now; approval can resume this active conversation.",
                     };
                 // Review cannot outlive a permission change or a stopped run.
-                await access(signal);
+                await access(signal, epoch);
                 if ((await miraRunPermission(client, context)) !== mode)
                     throw new MiraFailure(
                         "FORBIDDEN",
                         "Permissions changed before dispatch; nothing was executed."
                     );
-                return dispatch(parsed, signal);
+                return dispatch(parsed, signal, epoch);
             },
         },
         {
@@ -272,12 +280,12 @@ export function createMiraOperationsTools(
             inputSchema: object({ id: { type: "string", format: "uuid" } }, ["id"]),
             action: async (input, signal, scoped) => {
                 const { id } = v.parse(v.strictObject({ id: idSchema }), input);
-                await access(signal);
+                const epoch = await access(signal);
                 const parsed = await client.begin(async (query) => {
                     await lockMiraProposals(query, run.owner);
                     const [receipt] = await query<
                         { input: unknown; hash: string }[]
-                    >`SELECT t.proposal AS input,t.input_hash AS hash FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE t.id=${id} AND t.tool='mira_homelab_command' AND t.state='approved' AND t.proposal IS NOT NULL AND t.created_at>clock_timestamp()-interval '24 hours' AND r.owner=${run.owner} AND r.conversation_id=${run.conversationId} AND r.state IN ('running','completed') AND NOT r.cancel_requested AND r.approval_revoked_at IS NULL AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at)) FOR UPDATE OF t`;
+                    >`SELECT t.proposal AS input,t.input_hash AS hash FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE t.id=${id} AND t.tool='mira_homelab_command' AND t.state='approved' AND t.proposal IS NOT NULL AND t.created_at>clock_timestamp()-interval '24 hours' AND r.owner=${run.owner} AND r.conversation_id=${run.conversationId} AND r.state IN ('running','completed') AND NOT r.cancel_requested AND (r.approval_revoked_at::text IS NOT DISTINCT FROM t.proposal->>'permissionEpoch') AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at)) FOR UPDATE OF t`;
                     if (!receipt)
                         throw new MiraFailure(
                             "FORBIDDEN",
@@ -297,10 +305,14 @@ export function createMiraOperationsTools(
                         );
                     await query`UPDATE mira_tool_receipts SET proposal=NULL,message=${`Approval consumed once; execution receipt ${scoped.receiptId}.`} WHERE id=${id}`;
                     await query`UPDATE mira_tool_receipts SET message=${`Executing approved request ${id}.`} WHERE id=${scoped.receiptId} AND run_id=${run.id}`;
-                    const { binding: _binding, ...command } = proposal;
+                    const {
+                        binding: _binding,
+                        permissionEpoch: _epoch,
+                        ...command
+                    } = proposal;
                     return command;
                 });
-                return dispatch(parsed, signal);
+                return dispatch(parsed, signal, epoch);
             },
         },
     ];
