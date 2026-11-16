@@ -12,7 +12,7 @@ export function messagePartRows(client: SQL) {
     return client`SELECT p.id,p.offset,p."createdAt",
         rtrim(substring(m.content FROM p.offset+1 FOR coalesce(p."endOffset",length(m.content))-p.offset), E' \t\n\r') AS content,
         CASE WHEN p.completed OR (p."endOffset" IS NOT NULL AND m.state IN ('streaming','completed')) THEN 'completed' ELSE m.state END AS state,
-        CASE WHEN p."endOffset" IS NULL THEN m.attachment_ids ELSE '[]'::jsonb END AS "attachmentIds"
+        coalesce((SELECT jsonb_agg(a.value ORDER BY a.ordinality) FROM jsonb_array_elements(m.attachment_ids) WITH ORDINALITY a WHERE coalesce(m.attachment_replies->>trim(both '"' from a.value::text),m.id::text)=p.id::text),'[]'::jsonb) AS "attachmentIds"
         FROM (
             SELECT id,"offset",end_offset AS "endOffset",completed,created_at::text AS "createdAt"
             FROM mira_message_replies WHERE message_id=m.id
@@ -69,6 +69,7 @@ export async function readMessageParts(
             createdAt: string;
             content: string;
             attachmentIds: string[];
+            attachmentReplies: Record<string, string>;
             truncated: boolean;
         }[]
     >`WITH page AS MATERIALIZED (
@@ -89,9 +90,14 @@ export async function readMessageParts(
         CASE WHEN p.completed OR (p.end_offset IS NOT NULL AND m.state IN ('streaming','completed')) THEN 'completed' ELSE m.state END AS state,
         p.created_at::text AS "createdAt",left(reply.content,coalesce(${options.characters ?? null}::int,length(reply.content))) AS content,
         coalesce(length(reply.content)>${options.characters ?? null}::int,false) AS truncated,
-        CASE WHEN p.end_offset IS NULL THEN m.attachment_ids ELSE '[]'::jsonb END AS "attachmentIds"
+        m.attachment_ids AS "attachmentIds", m.attachment_replies AS "attachmentReplies"
         FROM page p JOIN mira_messages m ON m.id=p.message_id
         CROSS JOIN LATERAL (SELECT rtrim(substring(m.content FROM p.offset+1 FOR coalesce(p.end_offset,length(m.content))-p.offset),E' \\t\\n\\r') AS content) reply
         ORDER BY ${options.after === undefined ? client`p.id DESC` : client`p.id ASC`}`;
-    return rows;
+    return rows.map(({ attachmentReplies, ...row }) => ({
+        ...row,
+        attachmentIds: row.attachmentIds.filter(
+            (id) => (attachmentReplies[id] ?? row.sourceMessageId) === row.partId
+        ),
+    }));
 }

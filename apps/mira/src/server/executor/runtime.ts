@@ -1,6 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 
-import type { MiraModel } from "@homelab/contracts/mira";
+import type { MiraModel, MiraQuota } from "@homelab/contracts/mira";
 import type { SQL } from "bun";
 
 import { runtimeEnvironment } from "../config/environment";
@@ -49,6 +49,7 @@ import { pilotArguments, type PilotConfig } from "../runtime/configuration";
 import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
 import {
     loadSyntheticModels,
+    readSyntheticQuota,
     syntheticSubscriptionAvailable,
 } from "../runtime/syntheticRuntime";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
@@ -188,6 +189,7 @@ export async function runMiraExecutor(options: {
     };
     let model: string | null = null;
     let models: MiraModel[] = [];
+    let quotas: MiraQuota[] = [];
     let defaultReady = false;
     let message: string | null = null;
     let cleanupPending = false;
@@ -213,7 +215,7 @@ export async function runMiraExecutor(options: {
             if (deployment)
                 currentMessage =
                     "Mira is waiting for the Homelab deployment. Queued work is preserved.";
-            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models, integrations, skill_catalog_hash, skill_catalog_worker_id, deployment_drained_for, synthetic_owner) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready && !deployment}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb, ${JSON.stringify(integrationsCatalog)}::text::jsonb, ${miraSkillCatalogHash}, ${workerId}, ${maintenance.drained}, ${options.synthetic?.owner ?? null}) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models, integrations = EXCLUDED.integrations, skill_catalog_hash = EXCLUDED.skill_catalog_hash, skill_catalog_worker_id = EXCLUDED.skill_catalog_worker_id, deployment_drained_for = EXCLUDED.deployment_drained_for, synthetic_owner = EXCLUDED.synthetic_owner`;
+            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models, integrations, skill_catalog_hash, skill_catalog_worker_id, deployment_drained_for, synthetic_owner, quotas) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready && !deployment}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb, ${JSON.stringify(integrationsCatalog)}::text::jsonb, ${miraSkillCatalogHash}, ${workerId}, ${maintenance.drained}, ${options.synthetic?.owner ?? null}, ${JSON.stringify(quotas)}::text::jsonb) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models, integrations = EXCLUDED.integrations, skill_catalog_hash = EXCLUDED.skill_catalog_hash, skill_catalog_worker_id = EXCLUDED.skill_catalog_worker_id, deployment_drained_for = EXCLUDED.deployment_drained_for, synthetic_owner = EXCLUDED.synthetic_owner, quotas = EXCLUDED.quotas`;
             health.heartbeatAt = Date.now();
             await Promise.race([wait(5000), changed]);
         }
@@ -241,6 +243,7 @@ export async function runMiraExecutor(options: {
         while (!signal.aborted) {
             let runtime: CodexRuntime | undefined;
             let nativeModels: MiraModel[] = [];
+            const observed: MiraQuota[] = [];
             try {
                 runtime = await CodexRuntime.connect({
                     command: config.command,
@@ -255,6 +258,17 @@ export async function runMiraExecutor(options: {
                     ? await runtime.models()
                     : [];
                 nativeModels = availableModels;
+                if (account.authenticated) {
+                    try {
+                        observed.push({
+                            provider: "chatgpt",
+                            observedAt: new Date().toISOString(),
+                            windows: await runtime.quota(),
+                        });
+                    } catch {
+                        /* Quota telemetry must not block inference. */
+                    }
+                }
             } catch {
                 nativeModels = [];
             } finally {
@@ -278,6 +292,53 @@ export async function runMiraExecutor(options: {
                         /* One provider outage must not stop the other provider. */
                     }
                 }
+                if (options.synthetic) {
+                    try {
+                        const quota = await readSyntheticQuota(options.synthetic, signal);
+                        if (quota)
+                            observed.push({
+                                provider: "synthetic",
+                                observedAt: new Date().toISOString(),
+                                windows: [
+                                    {
+                                        label: "Subscription",
+                                        remainingPercent:
+                                            quota.subscription.limit > 0
+                                                ? Math.max(
+                                                      0,
+                                                      Math.min(
+                                                          100,
+                                                          100 *
+                                                              (1 -
+                                                                  quota.subscription
+                                                                      .requests /
+                                                                      quota.subscription
+                                                                          .limit)
+                                                      )
+                                                  )
+                                                : 0,
+                                        resetsAt: quota.subscription.renewsAt ?? null,
+                                    },
+                                    ...(quota.planWeeklyLimit
+                                        ? [
+                                              {
+                                                  label: "Weekly",
+                                                  remainingPercent:
+                                                      quota.planWeeklyLimit
+                                                          .percentRemaining,
+                                                  resetsAt:
+                                                      quota.planWeeklyLimit.renewsAt ??
+                                                      null,
+                                              },
+                                          ]
+                                        : []),
+                                ],
+                            });
+                    } catch {
+                        /* Report unavailable telemetry without stopping the other provider. */
+                    }
+                }
+                quotas = observed;
                 models = [...nativeModels, ...aliases];
                 model =
                     config.model ??

@@ -205,23 +205,26 @@ test("invalid names, unscoped arguments, binary content and byte overflow leave 
     }
 });
 
-test("eight response files include the final concurrent slot without orphaned reservations", async () => {
+test("100 response files include the final concurrent slot without orphaned reservations", async () => {
     const f = await fixture();
     try {
-        for (let index = 0; index < 7; index++)
+        for (let index = 0; index < 99; index++) {
             expect(await f.create(`part-${index}.txt`)).toMatchObject({ ok: true });
+            // Exercise per-run capacity independently of the unchanged per-minute upload limit.
+            await f.client`UPDATE mira_attachments SET created_at=now()-interval '2 minutes'`;
+        }
         const outcomes = await Promise.all([
             f.create("part-a.txt"),
             f.create("part-b.txt"),
         ]);
         expect(outcomes.filter((outcome) => outcome.ok)).toHaveLength(1);
-        expect(await f.files()).toHaveLength(8);
+        expect(await f.files()).toHaveLength(100);
         const files = await f.files();
         expect(files.every((file) => file.readyAt !== null)).toBe(true);
-        expect(await f.attached()).toHaveLength(8);
-        expect(await f.create("ninth.txt")).toMatchObject({ ok: false });
+        expect(await f.attached()).toHaveLength(100);
+        expect(await f.create("overflow.txt")).toMatchObject({ ok: false });
         expect(await f.create("part-0.txt")).toMatchObject({ ok: true });
-        expect(await f.files()).toHaveLength(8);
+        expect(await f.files()).toHaveLength(100);
     } finally {
         await f.close();
     }
@@ -391,6 +394,81 @@ test("valid Unicode and an actual replacement character retain their exact UTF-8
             expect(file.bytes).toEqual(Buffer.from(new TextEncoder().encode(text)));
         }
         expect(await f.files()).toHaveLength(2);
+    } finally {
+        await f.close();
+    }
+});
+
+test("generated attachments remain on their original reply after later commentary", async () => {
+    const f = await fixture();
+    try {
+        const initial = {
+            id: Bun.randomUUIDv7(),
+            offset: 0,
+            createdAt: new Date().toISOString(),
+        };
+        const early = await f.create("early.txt");
+        await f.client`UPDATE mira_messages SET content='First',parts=${JSON.stringify([initial])}::text::jsonb WHERE id=${f.run.assistantMessageId}`;
+        const first = await f.create("first.txt");
+        const secondPart = {
+            id: Bun.randomUUIDv7(),
+            offset: 5,
+            createdAt: new Date().toISOString(),
+        };
+        await f.client`UPDATE mira_messages SET content='FirstSecond',parts=${JSON.stringify([initial, secondPart])}::text::jsonb WHERE id=${f.run.assistantMessageId}`;
+        const second = await f.create("second.txt");
+        const lastPart = {
+            id: Bun.randomUUIDv7(),
+            offset: 11,
+            createdAt: new Date().toISOString(),
+        };
+        await f.client`UPDATE mira_messages SET content='FirstSecondLast',parts=${JSON.stringify([initial, secondPart, lastPart])}::text::jsonb WHERE id=${f.run.assistantMessageId}`;
+        const chat = await f.api.conversations.read({ id: f.chat.id });
+        expect(chat.messages.find((row) => row.id === initial.id)?.attachmentIds).toEqual(
+            [early.result!.file.id, first.result!.file.id]
+        );
+        expect(
+            chat.messages.find((row) => row.id === secondPart.id)?.attachmentIds
+        ).toEqual([second.result!.file.id]);
+        expect(
+            chat.messages.find((row) => row.id === lastPart.id)?.attachmentIds
+        ).toEqual([]);
+    } finally {
+        await f.close();
+    }
+});
+
+test("activity pages include recent tools beyond 32 and preserve work notes across phases", async () => {
+    const f = await fixture();
+    try {
+        for (let index = 0; index < 65; index++) {
+            await f.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES(${Bun.randomUUIDv7()},${f.run.id},${`page-${index}`},${`tool_${index}`},'test','succeeded')`;
+        }
+        const latest = await f.api.activity({ id: f.run.id, kind: "tools" });
+        expect(latest.total).toBe(65);
+        expect(latest.rows.at(-1)?.tool).toBe("tool_64");
+        const older = await f.api.activity({
+            id: f.run.id,
+            kind: "tools",
+            before: latest.nextCursor!,
+        });
+        expect(older.rows.at(-1)?.tool).toBe("tool_34");
+        expect(new Set([...older.rows, ...latest.rows].map((row) => row.id)).size).toBe(
+            60
+        );
+        const read = await f.api.conversations.read({ id: f.chat.id });
+        expect(read.tools.at(-1)?.tool).toBe("tool_64");
+        for (const thinking of ["First", "First note", "Second note"]) {
+            await f.client`UPDATE mira_runs SET activity=${JSON.stringify({ phase: "thinking", tool: null, thinking })}::text::jsonb WHERE id=${f.run.id}`;
+        }
+        const notes = await f.api.activity({ id: f.run.id, kind: "notes" });
+        expect(notes.rows.map((row) => row.message)).toEqual([
+            "First note",
+            "Second note",
+        ]);
+        await expect(
+            f.api.activity({ id: crypto.randomUUID(), kind: "tools" })
+        ).rejects.toThrow("Run not found");
     } finally {
         await f.close();
     }

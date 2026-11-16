@@ -139,6 +139,48 @@ export class CodexRuntime {
         };
     }
 
+    /** Read the provider's quota windows without returning account or billing identity.
+     * @returns Validated usage percentages and reset times, or no windows when unavailable.
+     */
+    async quota() {
+        const window = v.nullish(
+            v.object({
+                usedPercent: v.pipe(v.number(), v.finite()),
+                windowDurationMins: v.nullish(v.number()),
+                resetsAt: v.nullish(v.number()),
+            })
+        );
+        const snapshot = v.object({ primary: window, secondary: window });
+        const result = v.parse(
+            v.object({
+                rateLimits: snapshot,
+                rateLimitsByLimitId: v.nullish(v.record(v.string(), snapshot)),
+            }),
+            await this.connection.request("account/rateLimits/read", {})
+        );
+        const buckets = result.rateLimitsByLimitId
+            ? Object.entries(result.rateLimitsByLimitId)
+            : [["codex", result.rateLimits] as const];
+        return buckets.flatMap(([name, limits]) =>
+            [limits.primary, limits.secondary].flatMap((entry, index) =>
+                entry
+                    ? [
+                          {
+                              label: `${name} · ${entry.windowDurationMins ? `${entry.windowDurationMins / 60}h` : ["Primary", "Secondary"][index]}`,
+                              remainingPercent: Math.max(
+                                  0,
+                                  Math.min(100, 100 - entry.usedPercent)
+                              ),
+                              resetsAt: entry.resetsAt
+                                  ? new Date(entry.resetsAt * 1000).toISOString()
+                                  : null,
+                          },
+                      ]
+                    : []
+            )
+        );
+    }
+
     /**
      * List advertised model choices; actual inference must still prove access.
      * @returns The paginated model catalog.

@@ -1,0 +1,279 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "830618d9-65cf-4442-bac8-8b3a84194658",
+    "prevIds": ["b4c6767d-c38d-4558-8043-c8eb4d4f86de"],
+    "footprints": [
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "mira_work_notes"],
+            "writes": [
+                "s|tbl|public.mira_work_notes",
+                "n|tbl|public.mira_work_notes",
+                "e|tbl|public.mira_work_notes",
+                "n|rel|public.mira_work_notes",
+                "n|type|public.mira_work_notes",
+                "n|rel|public.mira_work_notes_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_messages",
+                "attachment_replies"
+            ],
+            "writes": [
+                "s|col|public.mira_messages.attachment_replies",
+                "n|col|public.mira_messages.attachment_replies",
+                "e|col|public.mira_messages.attachment_replies"
+            ],
+            "reads": ["n|tbl|public.mira_messages", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_runtime_status", "quotas"],
+            "writes": [
+                "s|col|public.mira_runtime_status.quotas",
+                "n|col|public.mira_runtime_status.quotas",
+                "e|col|public.mira_runtime_status.quotas"
+            ],
+            "reads": ["n|tbl|public.mira_runtime_status", "n|sch|public"]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_work_notes",
+                "mira_work_notes_run"
+            ],
+            "writes": [
+                "s|idx|public.mira_work_notes_run",
+                "n|idx|public.mira_work_notes_run",
+                "e|idx|public.mira_work_notes_run",
+                "n|rel|public.mira_work_notes_run"
+            ],
+            "reads": [
+                "n|tbl|public.mira_work_notes",
+                "n|sch|public",
+                "n|col|public.mira_work_notes.run_id",
+                "n|col|public.mira_work_notes.created_at",
+                "n|col|public.mira_work_notes.id"
+            ]
+        },
+        {
+            "statementType": "create_fk",
+            "statementTarget": ["table", "public", "mira_work_notes"],
+            "writes": [
+                "s|fk|public.mira_work_notes.mira_work_notes_run_id_mira_runs_id_fkey",
+                "n|fk|public.mira_work_notes.mira_work_notes_run_id_mira_runs_id_fkey",
+                "e|fk|public.mira_work_notes.mira_work_notes_run_id_mira_runs_id_fkey",
+                "n|con|public.mira_work_notes.mira_work_notes_run_id_mira_runs_id_fkey"
+            ],
+            "reads": [
+                "n|tbl|public.mira_work_notes",
+                "n|sch|public",
+                "n|tbl|public.mira_runs",
+                "n|sch|public",
+                "n|col|public.mira_work_notes.run_id",
+                "n|col|public.mira_runs.id",
+                "e|uniqueness|public.mira_runs.id"
+            ]
+        },
+        {
+            "statementType": "alter_check",
+            "statementTarget": ["table", "public", "mira_automations"],
+            "writes": ["s|ck|public.mira_automations.mira_automations_budget"],
+            "reads": [
+                "n|tbl|public.mira_automations",
+                "n|sch|public",
+                "n|col|public.mira_automations.budget_seconds",
+                "e|col|public.mira_automations.budget_seconds"
+            ],
+            "sqlHash": "98d2e9b77ea52d49"
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "name": "mira_work_notes",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_messages",
+                "name": "attachment_replies",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'{}'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_runtime_status",
+                "name": "quotas",
+                "type": "jsonb",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "'[]'",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_work_notes",
+                "name": "id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_work_notes",
+                "name": "run_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_work_notes",
+                "name": "content",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_work_notes",
+                "name": "created_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "now()",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_work_notes",
+                "name": "mira_work_notes_run",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "run_id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "created_at",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_work_notes",
+                "name": "mira_work_notes_run_id_mira_runs_id_fkey",
+                "nameExplicit": false,
+                "columns": ["run_id"],
+                "schemaTo": "public",
+                "tableTo": "mira_runs",
+                "columnsTo": ["id"],
+                "onUpdate": "NO ACTION",
+                "onDelete": "CASCADE",
+                "entityType": "fks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_work_notes",
+                "name": "mira_work_notes_pkey",
+                "columns": ["id"],
+                "nameExplicit": false,
+                "entityType": "pks"
+            }
+        },
+        {
+            "op": "alter",
+            "key": "checks\u0000[\"public\",\"mira_automations\",\"mira_automations_budget\"]",
+            "set": {
+                "value": "\"budget_seconds\" between 30 and 3600"
+            }
+        }
+    ]
+}

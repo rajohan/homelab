@@ -11,6 +11,7 @@ import { AttachmentPreview } from "./AttachmentPreview";
  * @returns Preview actions for owned files and an honest unavailable-file indicator.
  */
 export function MessageAttachments({ ids }: { readonly ids: string[] }) {
+    const [visible, setVisible] = useState(8);
     const [selected, setSelected] = useState<MiraAttachment>();
     const files = useQuery({
         queryKey: ["operations", "mira", "message-files", ids],
@@ -20,7 +21,7 @@ export function MessageAttachments({ ids }: { readonly ids: string[] }) {
         <div className="mt-3 space-y-2">
             {files.error && <ErrorNotice error={files.error} />}
             <div className="flex flex-wrap gap-2">
-                {files.data?.map((file) => {
+                {files.data?.slice(0, visible).map((file) => {
                     const Icon = fileTypeIcon(file);
                     return (
                         <Button
@@ -36,6 +37,15 @@ export function MessageAttachments({ ids }: { readonly ids: string[] }) {
                     );
                 })}
             </div>
+            {files.data && files.data.length > visible && (
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setVisible((count) => count + 8)}
+                >
+                    Show more files ({files.data.length - visible})
+                </Button>
+            )}
             {files.data && files.data.length < ids.length && (
                 <p className="text-xs text-primary-400">
                     Some attachments are no longer available.

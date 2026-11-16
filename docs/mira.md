@@ -380,3 +380,28 @@ pages automatically when their scroll boundary becomes visible. Failed page requ
 retain the loaded content and offer retry. Chat prepends history without moving the
 reader, keeps live replies below it, and catches up missed live pages after reconnecting.
 Only the live conversation page polls; loaded historical pages are not repolled.
+
+### Chat activity and provider allowance
+
+The chat's **Work notes** and **Tools** panels show current activity while collapsed.
+Older entries load using the shared infinite-scroll control. Each panel follows new
+entries at the bottom until the reader scrolls up; **Latest activity** resumes following.
+Run status appears below both panels. Work notes are provider-supplied display summaries,
+not a complete internal reasoning log. Tool counts cover the full run, with bounded pages
+and refreshed durable receipt states.
+
+**Provider quota** shows ChatGPT and Synthetic provider-reported remaining percentages,
+reset times when supplied, and observation time. Missing or stale telemetry is shown as
+unavailable and never interpreted as a full allowance. Synthetic telemetry remains scoped
+to its configured owner. Quotas do not independently prove model availability.
+
+Generated, imported and browser-downloaded files allow up to 100 attachments per run.
+Files retain their originating reply even as more commentary arrives; files created before
+the first reply attach to that first reply. Existing artifact links are backfilled using file
+creation time and reply boundaries. Message previews initially show eight files, with **Show
+more files** for the rest. The separate eight-file input limit and provider image-context
+limits are unchanged.
+
+Automation presets and new automation forms default to 15 minutes. The editor allows up
+to 60 minutes. The migration raises existing shorter automation budgets to 15 minutes,
+without changing schedules, pause controls, previous outcomes or follow-up decisions.

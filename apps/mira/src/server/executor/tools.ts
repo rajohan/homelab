@@ -172,7 +172,7 @@ export function createMiraTools(
         {
             name: "mira_file_create",
             description:
-                "Create a downloadable UTF-8 text artifact requested by the operator, such as Markdown, JSON, HTML or source code. Give a display filename without paths and its complete content (up to 1 MiB). This attaches the immutable file to this response; at most eight files total, including email imports. Identical retries within the run reuse one file; changed bytes create a new version rather than overwriting. This tool never executes, emails or publishes content. Its returned file ID can be used in a separately reviewed email or publication draft.",
+                "Create a downloadable UTF-8 text artifact requested by the operator, such as Markdown, JSON, HTML or source code. Give a display filename without paths and its complete content (up to 1 MiB). This attaches the immutable file to this response; at most 100 files total, including email imports. Identical retries within the run reuse one file; changed bytes create a new version rather than overwriting. This tool never executes, emails or publishes content. Its returned file ID can be used in a separately reviewed email or publication draft.",
             inputSchema: object(
                 {
                     name: { type: "string", minLength: 1, maxLength: 200 },

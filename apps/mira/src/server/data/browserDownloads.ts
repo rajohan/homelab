@@ -89,12 +89,12 @@ export async function saveBrowserDownload(
             FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id
             WHERE r.id=${context.run!.id} AND r.owner=${context.owner} AND c.owner=${context.owner} AND c.deleted_at IS NULL
             AND m.id=r.assistant_message_id AND m.conversation_id=c.id
-            AND (jsonb_array_length(m.attachment_ids)<8 OR m.attachment_ids @> ${JSON.stringify([command.id])}::text::jsonb)
+            AND (jsonb_array_length(m.attachment_ids)<100 OR m.attachment_ids @> ${JSON.stringify([command.id])}::text::jsonb)
             RETURNING m.id`;
             if (linked.length !== 1)
                 throw new MiraFailure(
                     "CONFLICT",
-                    "This response is unavailable or already contains eight files."
+                    "This response is unavailable or already contains 100 files."
                 );
             requireSignal(signal);
             const settled = await query<{ id: string }[]>`
