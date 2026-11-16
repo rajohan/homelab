@@ -47,7 +47,7 @@ export function ActivityFeed({
         <div className="relative border-t border-primary-700">
             <div
                 ref={viewport}
-                className="max-h-64 overflow-y-auto overscroll-contain [overflow-anchor:none]"
+                className="max-h-[min(12rem,30dvh)] overflow-y-auto overscroll-contain [overflow-anchor:none]"
                 onScroll={(event) => {
                     const node = event.currentTarget;
                     following.current =
@@ -55,7 +55,7 @@ export function ActivityFeed({
                     setJump(!following.current);
                 }}
             >
-                <div ref={body} className="space-y-3 p-3">
+                <div ref={body} className="space-y-2 p-2">
                     {continuation && (
                         <InfiniteScrollTrigger
                             {...continuation}

@@ -16,6 +16,7 @@ import type { ReactNode } from "react";
 import { api } from "../../api/client";
 import { MiraRunFollowup } from "./MiraRunFollowup";
 import { miraStatusTone } from "./statusTone";
+import { toolLabel } from "./toolLabel";
 
 /**
  * Inspect durable tool outcomes for the selected run, including old uncertain effects.
@@ -78,9 +79,7 @@ export function MiraRunDetails({
                                         render: (tool) => (
                                             <div className="space-y-1">
                                                 <p className="font-medium text-primary-100">
-                                                    {tool.tool
-                                                        .replace(/^mira_/, "")
-                                                        .replaceAll("_", " ")}
+                                                    {toolLabel(tool.tool)}
                                                 </p>
                                                 {tool.message && (
                                                     <p className="text-xs wrap-anywhere text-primary-300">

@@ -2,6 +2,7 @@ import * as v from "valibot";
 
 import { idSchema, versionedIdSchema } from "./operations";
 import { scheduleConfigurationSchema } from "./schedules";
+import { tableCursorSchema, tableSortSchema } from "./tableSort";
 
 const text = (maximum: number) => v.pipe(v.string(), v.trim(), v.maxLength(maximum));
 const title = v.pipe(text(160), v.minLength(1));
@@ -431,3 +432,11 @@ export const miraQuotaSchema = v.object({
     ),
 });
 export type MiraQuota = v.InferOutput<typeof miraQuotaSchema>;
+
+/** Paging and filtering for the complete owned run history. */
+export const miraRunListSchema = v.strictObject({
+    ...miraPageSchema.entries,
+    needsReview: v.optional(v.boolean(), false),
+    sort: v.optional(tableSortSchema(["conversation", "state", "time"])),
+    sortCursor: v.optional(tableCursorSchema),
+});

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ActivityFeed } from "./ActivityFeed";
 import type { ChatDisplaySettings } from "./chatDisplay";
 import { miraStatusTone } from "./statusTone";
+import { toolLabel } from "./toolLabel";
 
 /**
  * Present observed work stages and redacted durable tool receipts beneath the current reply.
@@ -67,10 +68,12 @@ export function ChatActivity({
     const lastTool = tools.at(-1);
     const toolPreview =
         active && run.activity?.tool
-            ? `${run.activity.tool.replace(/^mira_/, "").replaceAll("_", " ")} · Running`
-            : `${lastTool?.tool.replace(/^mira_/, "").replaceAll("_", " ") ?? ""} · ${toolStates[lastTool?.state ?? ""] ?? "Unknown"}`;
+            ? `${toolLabel(run.activity.tool)} · Running`
+            : `${toolLabel(lastTool?.tool ?? "")} · ${toolStates[lastTool?.state ?? ""] ?? "Unknown"}`;
     const showStatus = active;
     const thinking = display.showThinking ? run.activity?.thinking : undefined;
+    const notePreview =
+        (thinking || notes?.at(-1)?.message)?.split("\n").findLast(Boolean) ?? "";
     const showTools =
         display.showTools && (tools.length > 0 || Boolean(toolContinuation?.error));
     if (
@@ -82,18 +85,14 @@ export function ChatActivity({
     )
         return null;
     return (
-        <div className="space-y-2 text-xs text-primary-400">
+        <div className="space-y-1 text-xs text-primary-400">
             {display.showThinking &&
             (thinking || notes?.length || Boolean(noteContinuation?.error)) ? (
-                <details className="rounded-lg border border-primary-700 bg-primary-900/40">
-                    <summary className="cursor-pointer px-3 py-2 text-primary-300">
+                <details className="min-w-0">
+                    <summary className="cursor-pointer py-1 text-primary-300">
                         <span className="font-medium">Work notes</span>
-                        <span className="mt-1 block truncate font-normal text-primary-400">
-                            <MarkdownText>
-                                {thinking?.split("\n").findLast(Boolean) ??
-                                    notes?.at(-1)?.message ??
-                                    ""}
-                            </MarkdownText>
+                        <span className="ml-2 inline-block max-w-[60%] truncate align-bottom font-normal text-primary-400">
+                            <MarkdownText>{notePreview}</MarkdownText>
                         </span>
                     </summary>
                     <ActivityFeed
@@ -114,27 +113,25 @@ export function ChatActivity({
             ) : null}
             {showTools && (
                 <details
-                    className="rounded-lg border border-primary-700 bg-primary-900/40"
+                    className="min-w-0"
                     open={expanded}
                     onToggle={(event) => setExpanded(event.currentTarget.open)}
                 >
-                    <summary className="cursor-pointer px-3 py-2 text-primary-300">
+                    <summary className="cursor-pointer py-1 text-primary-300">
                         <span className="font-medium">
                             {toolTotal ?? tools.length} tools
                         </span>
-                        <span className="mt-1 block truncate font-normal text-primary-400">
+                        <span className="ml-2 inline-block max-w-[60%] truncate align-bottom font-normal text-primary-400">
                             {toolPreview}
                         </span>
                     </summary>
                     <ActivityFeed count={tools.length} continuation={toolContinuation}>
-                        <ul className="space-y-3">
+                        <ul className="space-y-2">
                             {tools.map((tool) => (
                                 <li key={tool.id} className="space-y-1">
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                         <span className="min-w-0 wrap-break-word">
-                                            {tool.tool
-                                                .replace(/^mira_/, "")
-                                                .replaceAll("_", " ")}
+                                            {toolLabel(tool.tool)}
                                         </span>
                                         <Badge tone={miraStatusTone(tool.state)}>
                                             {toolStates[tool.state] ?? "Unknown"}

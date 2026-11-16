@@ -1,6 +1,8 @@
-import { Card, ErrorNotice, LoadingState, SectionHeader } from "@homelab/ui";
+import type { TableCursor, TableSort } from "@homelab/contracts/tableSort";
+import { Button, Card, ErrorNotice, LoadingState, SectionHeader } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { History } from "lucide-react";
+import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
@@ -11,14 +13,18 @@ import { MiraRunTable } from "./MiraRunTable";
  * @returns Bounded durable run outcomes, stop controls and conversation links.
  */
 export function MiraRunHistory() {
+    const [needsReview, setNeedsReview] = useState(false);
+    const [sort, setSort] = useState<TableSort | null>(null);
     const query = useInfiniteQuery({
-        queryKey: ["operations", "mira", "runs"],
-        initialPageParam: undefined as string | undefined,
+        queryKey: ["operations", "mira", "runs", needsReview, sort],
+        initialPageParam: undefined as TableCursor | undefined,
         queryFn: ({ pageParam }) =>
             api.mira.runs.list.query({
                 search: "",
                 archived: false,
-                ...(pageParam ? { before: pageParam } : {}),
+                needsReview,
+                ...(sort ? { sort } : {}),
+                ...(pageParam ? { sortCursor: pageParam } : {}),
             }),
         getNextPageParam: (page) => page.nextCursor ?? undefined,
         refetchInterval: 5000,
@@ -31,6 +37,16 @@ export function MiraRunHistory() {
                 title="Mira runs"
                 icon={History}
                 description="Agent work and outcomes across chat and automations."
+                actions={
+                    <Button
+                        size="sm"
+                        variant={needsReview ? "primary" : "secondary"}
+                        aria-pressed={needsReview}
+                        onClick={() => setNeedsReview(!needsReview)}
+                    >
+                        Needs review
+                    </Button>
+                }
             />
             {query.isPending && <LoadingState label="Loading Mira runs…" />}
             {(query.error || stop.error) && (
@@ -39,6 +55,8 @@ export function MiraRunHistory() {
             {rows.length > 0 && (
                 <MiraRunTable
                     rows={rows}
+                    sort={sort}
+                    onSortChange={setSort}
                     onStop={(id) => stop.mutate(id)}
                     stoppingId={stop.isPending ? stop.variables : undefined}
                     continuation={{
@@ -55,7 +73,7 @@ export function MiraRunHistory() {
             )}
             {!query.isPending && !query.isError && rows.length === 0 && (
                 <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
-                    No Mira runs yet.
+                    {needsReview ? "No runs need review." : "No Mira runs yet."}
                 </p>
             )}
         </Card>

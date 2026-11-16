@@ -8,8 +8,9 @@ import { serialize } from "superjson";
 
 import { IdentityClientContext } from "../../identity/IdentityClientContext";
 import { ProposedChanges } from "./ProposedChanges";
+import { QuestionReview } from "./QuestionReview";
 
-test("request and question navigation preserves free text and requires explicit submission", async () => {
+test("approval review stays in a dialog while compact questions preserve drafts", async () => {
     const previousColors = process.env.DEBUG_COLORS;
     process.env.DEBUG_COLORS = "false";
     const id = crypto.randomUUID();
@@ -71,11 +72,13 @@ test("request and question navigation preserves free text and requires explicit 
         </QueryClientProvider>
     );
     try {
-        expect(screen.getByText("hostname")).toBeTruthy();
+        expect(screen.queryByText("hostname")).toBeNull();
         expect(screen.queryByRole("dialog")).toBeNull();
+        fireEvent.click(screen.getByRole("button", { name: "Review" }));
+        expect(screen.getByRole("dialog")).toHaveTextContent("hostname");
+        fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
         fireEvent.click(screen.getByRole("button", { name: "Next request" }));
-        fireEvent.click(screen.getByRole("radio", { name: "Main" }));
-        fireEvent.click(screen.getByRole("button", { name: "Next question" }));
+        fireEvent.click(screen.getByRole("button", { name: "Main" }));
         fireEvent.change(screen.getByRole("textbox", { name: "Your answer" }), {
             target: { value: "No downtime" },
         });
@@ -85,18 +88,44 @@ test("request and question navigation preserves free text and requires explicit 
             (screen.getByRole("textbox", { name: "Your answer" }) as HTMLTextAreaElement)
                 .value
         ).toBe("No downtime");
-        fireEvent.click(screen.getByRole("button", { name: "Previous question" }));
+        fireEvent.click(screen.getByRole("button", { name: "Minimize" }));
+        expect(screen.queryByRole("textbox", { name: "Your answer" })).toBeNull();
+        fireEvent.click(screen.getByRole("button", { name: "Show question" }));
         expect(
-            (screen.getByRole("radio", { name: "Main" }) as HTMLInputElement).checked
-        ).toBe(true);
+            (screen.getByRole("textbox", { name: "Your answer" }) as HTMLTextAreaElement)
+                .value
+        ).toBe("No downtime");
         expect(saved).toEqual([]);
-        fireEvent.click(screen.getByRole("button", { name: "Next question" }));
-        fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+        fireEvent.click(screen.getByRole("button", { name: "Send" }));
         await waitFor(() => expect(saved).toHaveLength(1));
         expect(saved[0]).toEqual({
             id: questionId,
             inputHash: "1".repeat(64),
             answers: { target: "Main", note: "No downtime" },
+        });
+        const single = {
+            ...proposals[1]!,
+            id: crypto.randomUUID(),
+            input: {
+                questions: [{ id: "choice", title: "Choose one", options: ["Continue"] }],
+            },
+        };
+        view.rerender(
+            <QueryClientProvider client={query}>
+                <IdentityClientContext value={identity}>
+                    <QuestionReview proposal={single} />
+                </IdentityClientContext>
+            </QueryClientProvider>
+        );
+        expect(screen.queryByRole("button", { name: "Previous question" })).toBeNull();
+        const choice = screen.getByRole("button", { name: "Continue" });
+        fireEvent.click(choice);
+        fireEvent.click(choice);
+        await waitFor(() => expect(saved).toHaveLength(2));
+        expect(saved[1]).toEqual({
+            id: single.id,
+            inputHash: single.inputHash,
+            answers: { choice: "Continue" },
         });
     } finally {
         view.unmount();

@@ -61,9 +61,16 @@ export function DaytonaDetails({
         else await query.refetch();
     };
     const busy = approve.isPending || cancel.isPending;
-    const active =
+    const canCancel =
+        !job.cancelRequested &&
         ["not_needed", "pending"].includes(job.cleanup) &&
         ["draft", "queued", "running", "needs_attention"].includes(job.state);
+    const canRecover =
+        job.executionTarget === "daytona" &&
+        ((job.cleanup === "pending" &&
+            job.state === "needs_attention" &&
+            job.phase === "cleaning") ||
+            job.cleanup === "operator_confirmed");
     if (recovering)
         return <DaytonaRecovery id={job.id} onClose={() => setRecovering(false)} />;
     return (
@@ -193,12 +200,9 @@ export function DaytonaDetails({
                 {(query.error || approve.error || cancel.error) && (
                     <ErrorNotice error={query.error ?? approve.error ?? cancel.error} />
                 )}
-                <ActionGroup>
-                    {job.executionTarget === "daytona" &&
-                        ((job.cleanup === "pending" &&
-                            job.state === "needs_attention" &&
-                            job.phase === "cleaning") ||
-                            job.cleanup === "operator_confirmed") && (
+                {(canRecover || job.state === "draft" || canCancel) && (
+                    <ActionGroup>
+                        {canRecover && (
                             <Button
                                 variant="secondary"
                                 disabled={busy}
@@ -209,34 +213,33 @@ export function DaytonaDetails({
                                     : "Resolve cleanup"}
                             </Button>
                         )}
-                    {job.state === "draft" && (
-                        <Button
-                            busy={approve.isPending}
-                            disabled={busy || changed}
-                            onClick={() =>
-                                void approve
-                                    .mutateAsync(undefined)
-                                    .then(onClose)
-                                    .catch(() => {})
-                            }
-                        >
-                            Start on {job.executionTarget === "main" ? "Main" : "Daytona"}
-                        </Button>
-                    )}
-                    {active && !job.cancelRequested && (
-                        <Button
-                            variant="secondary"
-                            busy={cancel.isPending}
-                            disabled={busy}
-                            onClick={() => void cancelJob().catch(() => {})}
-                        >
-                            Cancel job
-                        </Button>
-                    )}
-                    <Button variant="secondary" onClick={onClose} disabled={busy}>
-                        Close
-                    </Button>
-                </ActionGroup>
+                        {job.state === "draft" && (
+                            <Button
+                                busy={approve.isPending}
+                                disabled={busy || changed}
+                                onClick={() =>
+                                    void approve
+                                        .mutateAsync(undefined)
+                                        .then(onClose)
+                                        .catch(() => {})
+                                }
+                            >
+                                Start on{" "}
+                                {job.executionTarget === "main" ? "Main" : "Daytona"}
+                            </Button>
+                        )}
+                        {canCancel && (
+                            <Button
+                                variant="secondary"
+                                busy={cancel.isPending}
+                                disabled={busy}
+                                onClick={() => void cancelJob().catch(() => {})}
+                            >
+                                Cancel job
+                            </Button>
+                        )}
+                    </ActionGroup>
+                )}
             </div>
         </Modal>
     );
