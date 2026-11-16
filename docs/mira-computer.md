@@ -54,7 +54,7 @@ Live sign-in, security-key handling and installation remain deployment qualifica
 References: [Microsoft WebView2 distribution](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution),
 [Microsoft WebView2 security guidance](https://learn.microsoft.com/microsoft-edge/webview2/concepts/security).
 
-The computer foundation uses the unmodified, pinned `@trycua/cua-driver` 0.38.0 SDK with the pinned Bun Canary revision. It provides a single-window adapter, a supervised private child process and a reproducible native X11 qualification. Chat tools, per-run access controls and the installed Windows composition are implemented. Production PC activation still requires interactive qualification, private routing and release delivery.
+The computer foundation uses the unmodified, pinned `@trycua/cua-driver` 0.48.0 SDK with the pinned Bun Canary revision. It provides a single-window adapter, a supervised private child process and a reproducible native X11 qualification. Chat tools, per-run access controls and the installed Windows composition are implemented. Production PC activation still requires interactive qualification, private routing and release delivery.
 
 ## Authority and observations
 
@@ -87,6 +87,13 @@ A connection has a server-issued generation, fifteen-second heartbeat cadence an
 **Pairing and a fresh heartbeat do not authorize input or prove the desktop is ready.** Every machine receipt explicitly reports `controlAllowed: false`. The separate per-run grant, local consent and command queue described below are required for screen/input access. Release distribution, interactive qualification and update qualification remain required before production activation. Installation/platform/version fields are self-reported metadata, not a trust attestation.
 
 ## Repeatable qualification
+
+The 0.48.0 SDK removes `get_session_state`. The packaged Windows worker's
+`--check-runtime` manifest permits only the supported `get_session` tool while
+reading driver metadata; it grants no application or desktop access. SDK updates
+must pass the Docker/native-computer, Windows consent-host and interruption jobs,
+including extracted-package startup and native input qualification, before merge.
+The server browser retains its separately pinned CUA CLI 0.38.0.
 
 Run `bash scripts/testComputer.sh` on a Docker-capable development host. The command builds the repository's fixture image and runs it with no network, no host desktop/device mounts, no capabilities, no elevated privileges and a read-only filesystem with bounded temporary storage. The SDK remains an ordinary repository dependency, covered by lockfile and dependency updates; the disposable image is not a new deployed service.
 

@@ -68,7 +68,7 @@ export async function runComputerWorker(args: readonly string[]): Promise<void> 
                     version: 3,
                     expires_after: "1m",
                     idle_timeout: "1m",
-                    allow: { tools: ["get_session_state"] },
+                    allow: { tools: ["get_session"] },
                     resources: { apps: [], desktop: { display: false } },
                 })
             );
