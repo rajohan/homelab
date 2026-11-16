@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 
 import { fireEvent, render, screen } from "@testing-library/react";
 
@@ -61,5 +61,33 @@ test("quota distinguishes zero allowance from missing and stale telemetry", () =
         expect(screen.getByText(/Last reported values/)).toBeInTheDocument();
     } finally {
         view.unmount();
+    }
+});
+
+test("quota expires without a successful catalog response", () => {
+    const observedAt = "2026-11-16T12:00:00Z";
+    const time = spyOn(Date, "now").mockReturnValue(Date.parse(observedAt));
+    const component = () => (
+        <ProviderQuota
+            fresh
+            quotas={[
+                {
+                    provider: "chatgpt",
+                    observedAt,
+                    windows: [{ label: "Primary", remainingPercent: 75, resetsAt: null }],
+                },
+            ]}
+        />
+    );
+    const view = render(component());
+    try {
+        expect(screen.getByText(/ChatGPT: 75% left/)).toBeInTheDocument();
+        time.mockReturnValue(Date.parse(observedAt) + 100_000);
+        view.rerender(component());
+        expect(screen.getByText(/ChatGPT: unavailable/)).toBeInTheDocument();
+        expect(screen.getByText(/Last reported values/)).toBeInTheDocument();
+    } finally {
+        view.unmount();
+        time.mockRestore();
     }
 });

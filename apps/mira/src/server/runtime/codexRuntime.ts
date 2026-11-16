@@ -435,10 +435,7 @@ export class CodexRuntime {
                     return;
                 const part = delta.output;
                 const section = `${part.itemId}:${part.summaryIndex}`;
-                if (thinkingItem !== section) {
-                    thinking = "";
-                    thinkingOffset = 0;
-                }
+                if (thinkingItem !== null && thinkingItem !== section) thinking += "\n\n";
                 thinkingItem = section;
                 // oxlint-disable-next-line typescript/no-misused-spread -- Preserve Unicode code points for PostgreSQL offsets.
                 const characters = [...(thinking + part.delta)];
@@ -448,7 +445,7 @@ export class CodexRuntime {
                     phase: "thinking",
                     tool: null,
                     thinking,
-                    thinkingId: section,
+                    thinkingId: part.turnId,
                     thinkingOffset,
                 });
             } else if (event.method === "item/agentMessage/delta") {

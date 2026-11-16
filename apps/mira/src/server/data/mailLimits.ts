@@ -7,8 +7,9 @@ export const miraMailLimits = {
     retainedEvents: 1000,
     retentionDays: 7,
     dailyRuns: 24,
-    dailyBudgetSeconds: 1800,
-    runBudgetSeconds: 120,
+    // Preserve fifteen full default-budget runs within the daily time allowance.
+    dailyBudgetSeconds: 15 * 900,
+    runBudgetSeconds: 3600,
     subscribers: 10,
 } as const;
 

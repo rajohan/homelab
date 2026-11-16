@@ -19,7 +19,7 @@ UPDATE mira_messages m SET attachment_replies=coalesce((SELECT jsonb_object_agg(
 WHERE jsonb_array_length(m.attachment_ids)>0;
 --> statement-breakpoint
 CREATE FUNCTION link_mira_reply_files() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE file_id text; reply_id text;
+DECLARE file_id text; reply_id text; reconciled_id text; file_time timestamptz;
 BEGIN
     IF jsonb_array_length(NEW.attachment_ids)=0 THEN NEW.attachment_replies='{}'::jsonb; RETURN NEW; END IF;
     IF jsonb_array_length(NEW.parts)>0 THEN
@@ -28,6 +28,12 @@ BEGIN
     END IF;
     reply_id=coalesce(NEW.parts->-1->>'id',NEW.id::text);
     FOR file_id IN SELECT jsonb_array_elements_text(NEW.attachment_ids) LOOP
+        IF TG_OP='UPDATE' AND NEW.parts IS DISTINCT FROM OLD.parts AND jsonb_array_length(NEW.parts)>0 THEN
+            SELECT created_at INTO file_time FROM mira_attachments WHERE id=file_id::uuid;
+            SELECT value->>'id' INTO reconciled_id FROM jsonb_array_elements(NEW.parts) WITH ORDINALITY
+                WHERE (value->>'createdAt')::timestamptz<=file_time ORDER BY ordinality DESC LIMIT 1;
+            NEW.attachment_replies=jsonb_set(NEW.attachment_replies,ARRAY[file_id],to_jsonb(coalesce(reconciled_id,NEW.parts->0->>'id')));
+        END IF;
         IF NOT NEW.attachment_replies ? file_id THEN
             NEW.attachment_replies=jsonb_set(NEW.attachment_replies,ARRAY[file_id],to_jsonb(reply_id));
         END IF;

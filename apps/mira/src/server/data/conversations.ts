@@ -264,7 +264,7 @@ export async function enqueueTurn(
         automationId: source.automationId,
         taskId,
     });
-    const defaultBudget = manual && !taskId && !source.automationId ? 0 : 900;
+    const defaultBudget = manual && !taskId && !source.automationId ? 0 : 300;
     const budgetSeconds =
         source.budgetSeconds ??
         (assistanceMinutes > 0 ? assistanceMinutes * 60 : defaultBudget);

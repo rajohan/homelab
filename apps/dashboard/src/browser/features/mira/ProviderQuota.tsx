@@ -1,5 +1,14 @@
 import type { MiraQuota } from "@homelab/contracts/mira";
 import { formatDateTime } from "@homelab/ui";
+import { useSyncExternalStore } from "react";
+
+function subscribeClock(notify: () => void) {
+    const timer = setInterval(notify, 10_000);
+    return () => clearInterval(timer);
+}
+function readClock() {
+    return Math.floor(Date.now() / 10_000) * 10_000;
+}
 
 /** Show provider-reported allowance with freshness and explicit missing-data states.
  * @returns Compact quota windows that do not imply that model access is guaranteed.
@@ -11,8 +20,10 @@ export function ProviderQuota({
 }: {
     readonly quotas: MiraQuota[];
     readonly fresh: boolean;
-    readonly now: number;
+    readonly now?: number;
 }) {
+    const clock = useSyncExternalStore(subscribeClock, readClock, readClock);
+    const currentTime = now ?? clock;
     return (
         <details className="border-b border-primary-700 px-4 py-2 text-xs text-primary-400">
             <summary className="cursor-pointer">
@@ -21,7 +32,9 @@ export function ProviderQuota({
                     .map((provider) => {
                         const quota = quotas.find((entry) => entry.provider === provider);
                         const valid =
-                            fresh && quota && now - Date.parse(quota.observedAt) < 90_000;
+                            fresh &&
+                            quota &&
+                            currentTime - Date.parse(quota.observedAt) < 90_000;
                         return `${provider === "chatgpt" ? "ChatGPT" : "Synthetic"}: ${valid && quota.windows.length > 0 ? `${Math.round(Math.min(...quota.windows.map((entry) => entry.remainingPercent)))}% left` : "unavailable"}`;
                     })
                     .join(" · ")}
@@ -30,7 +43,9 @@ export function ProviderQuota({
                 {(["chatgpt", "synthetic"] as const).map((provider) => {
                     const quota = quotas.find((entry) => entry.provider === provider);
                     const stale =
-                        !fresh || !quota || now - Date.parse(quota.observedAt) >= 90_000;
+                        !fresh ||
+                        !quota ||
+                        currentTime - Date.parse(quota.observedAt) >= 90_000;
                     return (
                         <div key={provider} className="space-y-1">
                             <p className="font-medium text-primary-200">

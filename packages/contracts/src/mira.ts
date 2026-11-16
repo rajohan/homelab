@@ -232,7 +232,7 @@ export interface MiraActivity {
     tool: string | null;
     /** Provider-supplied display summary; never raw hidden reasoning. */
     thinking?: string;
-    /** Stable provider display section and Unicode offset of its bounded visible tail. */
+    /** Stable provider turn and Unicode offset of its bounded visible tail. */
     thinkingId?: string;
     thinkingOffset?: number;
 }

@@ -1185,7 +1185,7 @@ test("mail-triggered runs share daily count and reserved-time limits without blo
         const usage = await fixture.client<
             { total: number; seconds: number; maximum: number }[]
         >`SELECT count(*)::int AS total,sum(budget_seconds)::int AS seconds,max(budget_seconds)::int AS maximum FROM mira_runs WHERE owner='operator'`;
-        expect(usage[0]).toEqual({ total: 15, seconds: 1800, maximum: 120 });
+        expect(usage[0]).toEqual({ total: 15, seconds: 13_500, maximum: 900 });
         await acceptAgentMailMessage(fixture.client, binding, "time-exhausted");
         expect(await scheduleMiraRuns(fixture.client)).toBe(0);
         await fixture.client`UPDATE mira_runs SET budget_seconds=30 WHERE owner='operator'`;

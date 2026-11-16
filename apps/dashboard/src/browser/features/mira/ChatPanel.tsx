@@ -295,9 +295,8 @@ export function ChatPanel({
                 />
             </header>
             <ProviderQuota
-                now={catalog.dataUpdatedAt}
                 quotas={catalog.data?.quotas ?? []}
-                fresh={catalog.data?.fresh ?? false}
+                fresh={!catalog.isError && (catalog.data?.fresh ?? false)}
             />
             {(!status.data?.ready || status.data.message) && (
                 <p className="shrink-0 border-b border-primary-700 px-4 py-2 text-xs text-primary-400">
@@ -424,7 +423,7 @@ export function ChatPanel({
                     settings={conversation.settings ?? miraDefaultChatSettings}
                     models={catalog.data?.models ?? []}
                     defaultModel={catalog.data?.defaultModel ?? null}
-                    fresh={catalog.data?.fresh ?? false}
+                    fresh={!catalog.isError && (catalog.data?.fresh ?? false)}
                     display={display}
                     onDisplayChange={(next) => {
                         setDisplay(next);

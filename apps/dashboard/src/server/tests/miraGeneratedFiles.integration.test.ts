@@ -438,6 +438,47 @@ test("generated attachments remain on their original reply after later commentar
     }
 });
 
+test("delayed reply flush associates a generated file with its creation reply", async () => {
+    const f = await fixture();
+    try {
+        const started = Date.now() - 10_000;
+        const initial = {
+            id: Bun.randomUUIDv7(),
+            offset: 0,
+            createdAt: new Date(started).toISOString(),
+        };
+        const current = {
+            id: Bun.randomUUIDv7(),
+            offset: 5,
+            createdAt: new Date(started + 1000).toISOString(),
+        };
+        const later = {
+            id: Bun.randomUUIDv7(),
+            offset: 12,
+            createdAt: new Date(started + 3000).toISOString(),
+        };
+        await f.client`UPDATE mira_messages SET content='First',parts=${JSON.stringify([initial])}::text::jsonb WHERE id=${f.run.assistantMessageId}`;
+        // The provider emitted the current reply, but its buffered write has not completed.
+        const result = await f.create("delayed.txt");
+        const file = result.result!.file;
+        await f.client`UPDATE mira_attachments SET created_at=${new Date(started + 2000)} WHERE id=${file.id}`;
+        await f.client`UPDATE mira_messages SET content='FirstCurrent',parts=${JSON.stringify([initial, current])}::text::jsonb WHERE id=${f.run.assistantMessageId}`;
+        await f.client`UPDATE mira_messages SET content='FirstCurrentLater',parts=${JSON.stringify([initial, current, later])}::text::jsonb WHERE id=${f.run.assistantMessageId}`;
+        const chat = await f.api.conversations.read({ id: f.chat.id });
+        expect(chat.messages.find((row) => row.id === current.id)?.attachmentIds).toEqual(
+            [file.id]
+        );
+        expect(chat.messages.find((row) => row.id === initial.id)?.attachmentIds).toEqual(
+            []
+        );
+        expect(chat.messages.find((row) => row.id === later.id)?.attachmentIds).toEqual(
+            []
+        );
+    } finally {
+        await f.close();
+    }
+});
+
 test("activity pages include recent tools beyond 32 and preserve work notes across phases", async () => {
     const f = await fixture();
     try {
