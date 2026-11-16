@@ -313,8 +313,8 @@ export async function openNativeComputer(
                 if (grant.mode === "view")
                     throw new Error("Computer access is view-only.");
                 signal.throwIfAborted();
-                // 0.38's typed TypeTextInput omits delivery_mode. Use the official wire
-                // shape for this fixed tool only; neither tool names nor targets are model inputs.
+                // Use the official type_text wire shape to bind the approved delivery mode.
+                // Neither the fixed tool name nor its target comes from model input.
                 const result = await native.callTool(
                     "type_text",
                     JSON.stringify({
