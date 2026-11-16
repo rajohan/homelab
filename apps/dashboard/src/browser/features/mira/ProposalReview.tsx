@@ -46,7 +46,7 @@ function displayValue(value: unknown): string {
 
 /**
  * Show every immutable proposed field before an explicit human decision.
- * @returns An inline approval card whose retry keeps the same receipt and argument hash.
+ * @returns An approval review whose retry keeps the same receipt and argument hash.
  */
 export function ProposalReview({
     proposal,
@@ -92,7 +92,7 @@ export function ProposalReview({
                     ))}
                 </dl>
                 {decide.error && <ErrorNotice error={decide.error} />}
-                <ActionGroup>
+                <ActionGroup className="justify-end">
                     <Button
                         busy={decide.isPending}
                         onClick={() => void submit(true).catch(() => {})}

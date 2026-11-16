@@ -15,6 +15,7 @@ import {
     miraQuestionAnswerSchema,
     miraReportFilterSchema,
     miraReportInputSchema,
+    miraRunListSchema,
     miraRunReadSchema,
     miraRunResolveSchema,
     miraStateChangeSchema,
@@ -129,7 +130,6 @@ import {
     listMiraPublications,
     saveMiraPublication,
 } from "@homelab/mira/data/publications";
-import { listMiraRuns } from "@homelab/mira/data/queue";
 import { readMiraRun } from "@homelab/mira/data/runHistory";
 import { resolveMiraRun } from "@homelab/mira/data/runResolution";
 import { inspectMiraSkill, listMiraSkills } from "@homelab/mira/data/skills";
@@ -170,6 +170,7 @@ import type { OperationsContext } from "../operations/context";
 import { OperationFailure } from "../operations/errors";
 import { miraBrowserRouter } from "./browserRoutes";
 import { miraComputerRouter } from "./computerRoutes";
+import { listMiraRunHistory } from "./runHistory";
 
 function execute<T>(
     context: OperationsContext,
@@ -539,9 +540,9 @@ export const miraRouter = trpc.router({
                 execute(ctx, (mira) => readMiraRun(mira, input.id, input.before))
             ),
         list: trpc.procedure
-            .input(miraPageSchema)
+            .input(miraRunListSchema)
             .query(({ ctx, input }) =>
-                execute(ctx, (mira) => listMiraRuns(mira, input.before))
+                execute(ctx, (mira) => listMiraRunHistory(mira, input))
             ),
         cancel: trpc.procedure
             .input(record)

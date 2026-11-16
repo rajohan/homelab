@@ -760,7 +760,9 @@ test("run history opens the selected old result and shows its uncertain tool rec
         expect(requested.some((url) => decodeURIComponent(url).includes(run.id))).toBe(
             true
         );
-        await userEvent.setup().click(screen.getByRole("button", { name: "Close" }));
+        await userEvent
+            .setup()
+            .click(screen.getByRole("button", { name: "Close dialog" }));
         await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     } finally {
         cleanup();
@@ -1562,7 +1564,7 @@ test("Moltbook library opens the selected review and returns to its owned drafts
         );
         await user.click(screen.getByRole("menuitem", { name: "Review and send" }));
         expect(screen.getByRole("button", { name: "Send publicly" })).toBeInTheDocument();
-        await user.click(screen.getByRole("button", { name: "Close" }));
+        await user.click(screen.getByRole("button", { name: "Close dialog" }));
         await user.click(screen.getByRole("button", { name: "New draft" }));
         expect(screen.getByLabelText("Community")).toBeInTheDocument();
         await user.click(screen.getByRole("button", { name: "Cancel" }));
@@ -1776,7 +1778,7 @@ test("cloud history opens the selected draft and returns to its list without sta
         expect(
             screen.getByRole("button", { name: "Start on Daytona" })
         ).toBeInTheDocument();
-        await user.click(screen.getByRole("button", { name: "Close" }));
+        await user.click(screen.getByRole("button", { name: "Close dialog" }));
         await user.click(screen.getByRole("button", { name: "Edit" }));
         expect(screen.getAllByRole("dialog")).toHaveLength(1);
         expect(screen.getByLabelText("Command")).toHaveValue(job.content.command);

@@ -1,5 +1,6 @@
 import type { MiraDaytonaJob } from "@homelab/contracts/miraDaytona";
 import {
+    ActionGroup,
     Badge,
     Button,
     Card,
@@ -76,7 +77,7 @@ export function DaytonaJobs({
                             }
                             description={`${job.executionTarget === "main" ? "Main" : "Daytona"} · ${daytonaCleanupDescriptions[job.cleanup]}`}
                             actions={
-                                <>
+                                <ActionGroup stretch={false}>
                                     <Button
                                         variant="secondary"
                                         onClick={() => setSelected(job)}
@@ -91,7 +92,7 @@ export function DaytonaJobs({
                                             Edit
                                         </Button>
                                     )}
-                                </>
+                                </ActionGroup>
                             }
                         />
                         {job.message && (

@@ -1,4 +1,5 @@
 import type { MiraRunSummary } from "@homelab/contracts/mira";
+import type { TableSort } from "@homelab/contracts/tableSort";
 import {
     Badge,
     Button,
@@ -29,11 +30,15 @@ export function MiraRunTable({
     onStop,
     stoppingId,
     continuation,
+    sort,
+    onSortChange,
 }: {
     readonly rows: readonly MiraRunSummary[];
     readonly onStop: (id: string) => void;
     readonly stoppingId: string | undefined;
     readonly continuation: InfiniteScrollContinuation;
+    readonly sort?: TableSort | null;
+    readonly onSortChange?: (sort: TableSort | null) => void;
 }) {
     const [selected, setSelected] = useState<string | null>(null);
     return (
@@ -44,9 +49,11 @@ export function MiraRunTable({
                 rows={rows}
                 getKey={(run) => run.id}
                 continuation={continuation}
+                {...(onSortChange ? { sort: sort ?? null, onSortChange } : {})}
                 columns={[
                     {
                         id: "conversation",
+                        sortValue: (run) => run.title,
                         label: "Conversation",
                         mobile: "title",
                         render: (run) => (
@@ -67,6 +74,7 @@ export function MiraRunTable({
                     },
                     {
                         id: "state",
+                        sortValue: (run) => run.state,
                         label: "Status",
                         width: "w-36",
                         render: (run) => (
@@ -87,6 +95,7 @@ export function MiraRunTable({
                     },
                     {
                         id: "time",
+                        sortValue: (run) => run.createdAt,
                         label: "Queued",
                         width: "w-48",
                         render: (run) => formatDateTime(run.createdAt),

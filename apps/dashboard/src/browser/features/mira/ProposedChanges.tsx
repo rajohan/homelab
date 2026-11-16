@@ -1,4 +1,4 @@
-import { Button, ErrorNotice } from "@homelab/ui";
+import { Button, ErrorNotice, IconButton, Modal } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
@@ -8,11 +8,13 @@ import { ProposalReview } from "./ProposalReview";
 import { QuestionReview } from "./QuestionReview";
 
 /**
- * Keep browsable approval and question cards directly above the shared Chat composer.
- * @returns Pending durable requests; changing cards preserves unsent question drafts.
+ * Keep durable requests accessible without covering the conversation.
+ * @returns Compact request navigation, collapsible questions and explicit approval dialogs.
  */
 export function ProposedChanges({ conversationId }: { readonly conversationId: string }) {
     const [selected, setSelected] = useState<string>();
+    const [minimized, setMinimized] = useState(false);
+    const [reviewing, setReviewing] = useState<string>();
     const query = useQuery({
         queryKey: ["operations", "mira", "proposals", conversationId],
         queryFn: () => api.mira.proposals.list.query({ id: conversationId }),
@@ -23,66 +25,101 @@ export function ProposedChanges({ conversationId }: { readonly conversationId: s
         0,
         requests.findIndex((request) => request.id === selected)
     );
+    const current = requests[index];
+    const question = current?.tool === "mira_request_user_input";
+    const review = requests.find((request) => request.id === reviewing);
     if (requests.length === 0 && !query.error) return null;
     return (
         <section
             aria-label="Requests from Mira"
-            className="shrink-0 border-t border-primary-700 bg-primary-900/40 px-4 py-3"
+            className="flex max-h-[40%] min-h-0 shrink flex-col border-t border-primary-700 bg-primary-900/40"
         >
             {query.error && <ErrorNotice error={query.error} />}
-            {requests.length > 0 && (
+            {current && (
                 <>
-                    <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 shrink-0 items-center justify-between gap-2 px-3 py-1.5">
                         <p
-                            className="text-sm font-medium text-primary-100"
+                            className="min-w-0 truncate text-xs font-medium text-primary-100"
                             aria-live="polite"
                         >
-                            {requests[index]?.tool === "mira_request_user_input"
-                                ? "Your input is needed"
-                                : "Approval needed"}
+                            {question ? "Your input is needed" : "Approval needed"}
                         </p>
-                        <div className="flex items-center gap-2">
-                            <Button
-                                variant="secondary"
-                                aria-label="Previous request"
-                                disabled={index === 0}
-                                onClick={() => setSelected(requests[index - 1]?.id)}
-                            >
-                                <ChevronLeft size={16} />
-                            </Button>
-                            <span className="text-xs text-primary-400" aria-live="polite">
-                                {index + 1} of {requests.length}
-                            </span>
-                            <Button
-                                variant="secondary"
-                                aria-label="Next request"
-                                disabled={index === requests.length - 1}
-                                onClick={() => setSelected(requests[index + 1]?.id)}
-                            >
-                                <ChevronRight size={16} />
-                            </Button>
+                        <div className="flex shrink-0 items-center gap-1">
+                            {requests.length > 1 && (
+                                <>
+                                    <IconButton
+                                        icon={ChevronLeft}
+                                        label="Previous request"
+                                        disabled={index === 0}
+                                        onClick={() =>
+                                            setSelected(requests[index - 1]?.id)
+                                        }
+                                    />
+                                    <span
+                                        className="text-xs text-primary-400"
+                                        aria-live="polite"
+                                    >
+                                        {index + 1} of {requests.length}
+                                    </span>
+                                    <IconButton
+                                        icon={ChevronRight}
+                                        label="Next request"
+                                        disabled={index === requests.length - 1}
+                                        onClick={() =>
+                                            setSelected(requests[index + 1]?.id)
+                                        }
+                                    />
+                                </>
+                            )}
+                            {question ? (
+                                <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    aria-expanded={!minimized}
+                                    onClick={() => setMinimized(!minimized)}
+                                >
+                                    {minimized ? "Show question" : "Minimize"}
+                                </Button>
+                            ) : (
+                                <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => setReviewing(current.id)}
+                                >
+                                    Review
+                                </Button>
+                            )}
                         </div>
                     </div>
-                    <div className="max-h-[45dvh] overflow-y-auto overscroll-contain">
-                        {requests.map((request, requestIndex) => (
-                            <div key={request.id} hidden={requestIndex !== index}>
-                                {request.tool === "mira_request_user_input" ? (
+                    <div
+                        hidden={!question || minimized}
+                        className="max-h-[min(20rem,35dvh)] min-h-0 overflow-y-auto overscroll-contain px-3 pb-2"
+                    >
+                        {requests
+                            .filter(
+                                (request) => request.tool === "mira_request_user_input"
+                            )
+                            .map((request) => (
+                                <div key={request.id} hidden={request.id !== current.id}>
                                     <QuestionReview proposal={request} />
-                                ) : (
-                                    <ProposalReview
-                                        proposal={request}
-                                        onClose={() => {
-                                            void query.refetch();
-                                        }}
-                                    />
-                                )}
-                            </div>
-                        ))}
+                                </div>
+                            ))}
                     </div>
-                    <p className="mt-2 text-xs text-primary-400">
-                        Saved in this conversation until answered or expired (24 hours).
-                    </p>
                 </>
+            )}
+            {review && (
+                <Modal
+                    title="Review proposed change"
+                    onClose={() => setReviewing(undefined)}
+                >
+                    <ProposalReview
+                        proposal={review}
+                        onClose={() => {
+                            setReviewing(undefined);
+                            void query.refetch();
+                        }}
+                    />
+                </Modal>
             )}
         </section>
     );
