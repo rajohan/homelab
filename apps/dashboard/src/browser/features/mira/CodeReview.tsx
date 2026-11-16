@@ -167,13 +167,6 @@ export function CodeReview({
                             Inspect GitHub
                         </Button>
                     )}
-                    <Button
-                        variant="secondary"
-                        disabled={approve.isPending}
-                        onClick={onClose}
-                    >
-                        Close
-                    </Button>
                 </ActionGroup>
             </div>
         </Modal>

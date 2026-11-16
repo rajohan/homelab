@@ -32,6 +32,7 @@ export function ActionGroup({
         return () => observer.disconnect();
     }, [element, stretch]);
     const actions = Children.toArray(children);
+    if (actions.length === 0) return null;
     const ordered =
         wide && actions.length > 1 ? [...actions.slice(1), actions[0]] : actions;
     return (

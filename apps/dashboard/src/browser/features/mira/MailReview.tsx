@@ -152,13 +152,6 @@ export function MailReview({
                             Confirm and send
                         </Button>
                     )}
-                    <Button
-                        variant="secondary"
-                        disabled={approve.isPending}
-                        onClick={onClose}
-                    >
-                        Close
-                    </Button>
                 </ActionGroup>
             </div>
         </Modal>

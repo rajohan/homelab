@@ -13,8 +13,8 @@ Chat and Automations share the same server-backed model settings and UI controls
 Chat settings stay editable during queued and running work. Model, thinking, code
 target and assistance choices apply to the next run; existing runs keep their frozen
 settings. Display preferences apply immediately. A permission-mode change revokes
-existing delegated approvals without stopping the response or granting the active
-run broader access. Turning memory or history off prevents further retrieval in
+existing delegated approvals without stopping the response. New actions in the
+same active run use the current server-owned mode; old approvals remain revoked. Turning memory or history off prevents further retrieval in
 the active run; context already sent to a provider cannot be withdrawn.
 The optional Synthetic adapter uses the documented OpenAI-compatible Chat Completions
 API at `https://api.synthetic.new/openai/v1`. It does not modify the Codex runtime or

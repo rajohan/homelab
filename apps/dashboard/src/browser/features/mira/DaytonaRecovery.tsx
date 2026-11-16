@@ -207,13 +207,6 @@ export function DaytonaRecovery({
                             Confirm external cleanup
                         </Button>
                     )}
-                    <Button
-                        variant="secondary"
-                        onClick={onClose}
-                        disabled={resolve.isPending}
-                    >
-                        Close
-                    </Button>
                 </ActionGroup>
             </form>
         </Modal>

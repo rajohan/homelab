@@ -163,9 +163,6 @@ export function SocialReview({
                             Open post
                         </a>
                     )}
-                    <Button variant="secondary" disabled={busy} onClick={onClose}>
-                        Close
-                    </Button>
                 </ActionGroup>
             </div>
         </Modal>
