@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/rajohan/homelab/compare/v0.18.0...v0.18.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **mira:** stabilize chat activity and clarify files and provider quotas ([#210](https://github.com/rajohan/homelab/issues/210)) ([2ef2607](https://github.com/rajohan/homelab/commit/2ef26078411ed072dac089a799c9443cd51eb31d))
+
 ## [0.18.0](https://github.com/rajohan/homelab/compare/v0.17.0...v0.18.0) (2026-11-16)
 
 
