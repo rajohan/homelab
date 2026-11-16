@@ -362,7 +362,9 @@ export function ChatPanel({
                 }
                 onManage={() => setDialog("computer")}
             />
-            {!conversation.archivedAt && <ProposedChanges key={id} conversationId={id} />}
+            {!conversation.archivedAt && (
+                <ProposedChanges key={`proposals:${id}`} conversationId={id} />
+            )}
             {!conversation.archivedAt && (
                 <ChatComposer
                     text={text}

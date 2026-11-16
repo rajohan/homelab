@@ -47,7 +47,12 @@ import type { MiraOperationsConfiguration } from "../operations/configuration";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
 import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
-import { loadSyntheticModels, readSyntheticQuota } from "../runtime/syntheticRuntime";
+import {
+    loadSyntheticModels,
+    readSyntheticQuota,
+    syntheticQuotaAvailable,
+    syntheticQuotaWindows,
+} from "../runtime/syntheticRuntime";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { miraSkillCatalogHash } from "../skills/catalog";
 import { cleanupMiraResources } from "./cleanup";
@@ -279,47 +284,9 @@ export async function runMiraExecutor(options: {
                             observed.push({
                                 provider: "synthetic",
                                 observedAt: new Date().toISOString(),
-                                windows: [
-                                    {
-                                        label: "Subscription",
-                                        remainingPercent:
-                                            quota.subscription.limit > 0
-                                                ? Math.max(
-                                                      0,
-                                                      Math.min(
-                                                          100,
-                                                          100 *
-                                                              (1 -
-                                                                  quota.subscription
-                                                                      .requests /
-                                                                      quota.subscription
-                                                                          .limit)
-                                                      )
-                                                  )
-                                                : 0,
-                                        resetsAt: quota.subscription.renewsAt ?? null,
-                                    },
-                                    ...(quota.planWeeklyLimit
-                                        ? [
-                                              {
-                                                  label: "Weekly",
-                                                  remainingPercent:
-                                                      quota.planWeeklyLimit
-                                                          .percentRemaining,
-                                                  resetsAt:
-                                                      quota.planWeeklyLimit.renewsAt ??
-                                                      null,
-                                              },
-                                          ]
-                                        : []),
-                                ],
+                                windows: syntheticQuotaWindows(quota),
                             });
-                        if (
-                            quota &&
-                            quota.subscription.limit - quota.subscription.requests >= 1 &&
-                            (quota.planWeeklyLimit === undefined ||
-                                quota.planWeeklyLimit.percentRemaining > 0)
-                        )
+                        if (quota && syntheticQuotaAvailable(quota))
                             aliases = await loadSyntheticModels(
                                 options.synthetic,
                                 signal

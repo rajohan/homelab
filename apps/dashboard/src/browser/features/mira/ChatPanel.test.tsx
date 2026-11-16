@@ -120,6 +120,7 @@ test.each([
                     model: "vision",
                     manual: true,
                     state: "running",
+                    activity: { phase: "thinking", tool: null, thinking: "Current work" },
                     automationId: null,
                     taskId: null,
                     cancelRequested: false,
@@ -146,12 +147,52 @@ test.each([
                         },
                     ],
                 });
+                query.setQueryData(
+                    ["operations", "mira", "activity", data.run.id, "tools"],
+                    {
+                        rows: [
+                            {
+                                id: "tool-1",
+                                tool: "mira_github_work",
+                                state: "succeeded",
+                                message: null,
+                            },
+                        ],
+                        total: 1,
+                        nextCursor: null,
+                    }
+                );
                 query.setQueryData(key, data);
             });
             await screen.findByRole("heading", { name: "Active conversation" });
             expect(screen.getByRole("button", { name: "Chat settings" })).toBeEnabled();
+            const initialLog = screen.getByRole("log");
+            for (let index = 0; index < 8; index++) {
+                fireEvent.change(screen.getByRole("textbox", { name: "Message Mira" }), {
+                    target: { value: `Draft ${index}` },
+                });
+                expect(screen.getAllByRole("log")).toHaveLength(1);
+                expect(screen.getByRole("log")).toBe(initialLog);
+                expect(screen.getAllByText("Work notes")).toHaveLength(1);
+                expect(screen.getAllByText("1 tools")).toHaveLength(1);
+            }
+            for (let index = 0; index < 3; index++) {
+                act(() => {
+                    query.setQueryData(key, {
+                        ...data,
+                        run: { ...data.run, message: `Polling update ${index}` },
+                    });
+                });
+                await screen.findByText(`Polling update ${index}`);
+                expect(screen.getAllByRole("log")).toHaveLength(1);
+                expect(screen.getByRole("log")).toBe(initialLog);
+                expect(screen.getAllByText("Work notes")).toHaveLength(1);
+                expect(screen.getAllByText("1 tools")).toHaveLength(1);
+            }
             fireEvent.click(screen.getByRole("button", { name: "Computer access" }));
             await screen.findByRole("dialog", { name: "Computer access" });
+            expect(view.container.querySelectorAll('[role="log"]')).toHaveLength(1);
+            expect(view.container.querySelector('[role="log"]')).toBe(initialLog);
             expect(
                 screen.queryByText(/Computer tools need a model/)
             ).not.toBeInTheDocument();

@@ -579,7 +579,6 @@ test("Synthetic serializes quota and stream consumption across runs and releases
                 quotaReads++;
                 return Response.json({
                     subscription: { limit: 1, requests: posts },
-                    planWeeklyLimit: { percentRemaining: 100 },
                 });
             }
             posts++;

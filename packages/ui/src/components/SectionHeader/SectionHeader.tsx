@@ -16,7 +16,7 @@ export function SectionHeader({
     badge,
     compactActions = false,
 }: {
-    readonly title: string;
+    readonly title: ReactNode;
     readonly description?: string;
     readonly icon: LucideIcon;
     readonly actions?: ReactNode;

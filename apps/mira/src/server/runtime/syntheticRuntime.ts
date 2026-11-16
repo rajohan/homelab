@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 
+import type { MiraQuota } from "@homelab/contracts/mira";
 import * as v from "valibot";
 
 import type { CodexRuntime } from "./codexRuntime";
@@ -19,6 +20,10 @@ const quotaSchema = v.object({
     }),
     planWeeklyLimit: v.optional(
         v.object({
+            nextRegenAt: v.optional(v.pipe(v.string(), v.isoTimestamp())),
+            nextRegenPercent: v.optional(
+                v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(100))
+            ),
             renewsAt: v.optional(v.pipe(v.string(), v.isoTimestamp())),
             percentRemaining: v.pipe(
                 v.number(),
@@ -29,6 +34,62 @@ const quotaSchema = v.object({
         })
     ),
 });
+
+/**
+ * Keep regenerating weekly credits separate from legacy subscription request windows.
+ * @param quota - Validated provider response; timestamps are never predicted locally.
+ * @returns Display windows using provider-reported percentages and replenishment events.
+ */
+export function syntheticQuotaWindows(
+    quota: v.InferOutput<typeof quotaSchema>
+): MiraQuota["windows"] {
+    if (quota.planWeeklyLimit) {
+        const weekly = quota.planWeeklyLimit;
+        return [
+            {
+                label: "Weekly credits",
+                remainingPercent: weekly.percentRemaining,
+                resetsAt: null,
+                ...(weekly.nextRegenAt ? { replenishesAt: weekly.nextRegenAt } : {}),
+                ...(weekly.nextRegenPercent === undefined
+                    ? {}
+                    : { replenishesPercent: weekly.nextRegenPercent }),
+            },
+        ];
+    }
+    return [
+        {
+            label: "Subscription requests",
+            remainingPercent:
+                quota.subscription.limit > 0
+                    ? Math.max(
+                          0,
+                          Math.min(
+                              100,
+                              100 *
+                                  (1 -
+                                      quota.subscription.requests /
+                                          quota.subscription.limit)
+                          )
+                      )
+                    : 0,
+            resetsAt: quota.subscription.renewsAt ?? null,
+        },
+    ];
+}
+
+/**
+ * Decide availability from the quota model reported by the provider.
+ * @param quota - Validated weekly-credit or legacy request quota.
+ * @returns Whether the applicable subscription allowance is positive.
+ */
+export function syntheticQuotaAvailable(
+    quota: v.InferOutput<typeof quotaSchema>
+): boolean {
+    return quota.planWeeklyLimit
+        ? quota.planWeeklyLimit.percentRemaining > 0
+        : quota.subscription.limit - quota.subscription.requests >= 1;
+}
 
 /**
  * Inspect remaining request and weekly-credit allowance; provider billing settings remain authoritative.
@@ -83,7 +144,7 @@ export async function readSyntheticQuota(
  * @param configuration - Owner-bound credential.
  * @param signal - Request cancellation.
  * @param request - Fixed-origin transport used by trusted tests.
- * @returns Whether the provider reports at least one request and remaining weekly allowance.
+ * @returns Whether the provider reports remaining allowance for its current quota model.
  */
 export async function syntheticSubscriptionAvailable(
     configuration: SyntheticConfiguration,
@@ -91,12 +152,7 @@ export async function syntheticSubscriptionAvailable(
     request: typeof fetch = fetch
 ): Promise<boolean> {
     const quota = await readSyntheticQuota(configuration, signal, request);
-    return (
-        quota !== null &&
-        quota.subscription.limit - quota.subscription.requests >= 1 &&
-        (quota.planWeeklyLimit === undefined ||
-            quota.planWeeklyLimit.percentRemaining > 0)
-    );
+    return quota !== null && syntheticQuotaAvailable(quota);
 }
 
 // Both executor lanes share this credential queue. Only Synthetic requests wait here;

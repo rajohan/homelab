@@ -59,7 +59,9 @@ export function MiraComputers() {
                     icon={Monitor}
                     description="Manage the computers connected to your account."
                 />
-                <div className="grid gap-2 @min-[48rem]/computers:grid-cols-2">
+                <div
+                    className={`grid gap-2 ${download ? "@min-[48rem]/computers:grid-cols-2" : ""}`}
+                >
                     {download && (
                         <a
                             href={download.url}

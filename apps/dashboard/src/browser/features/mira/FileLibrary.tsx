@@ -4,6 +4,7 @@ import {
     ConfirmDialog,
     DropdownMenu,
     fileTypeIcon,
+    formatDateTime,
     InfiniteScrollTrigger,
     LoadingState,
     Modal,
@@ -67,15 +68,24 @@ export function FileLibrary({
     return (
         <Modal title="Mira files" onClose={onClose} size="wide">
             <div className="space-y-4">
+                <p className="text-sm text-primary-400">Newest files first</p>
                 {query.isPending && <LoadingState label="Loading files…" />}
                 {query.data?.pages
                     .flatMap((page) => page.rows)
                     .map((file) => (
                         <Card key={file.id} className="space-y-3 bg-primary-900/40">
                             <SectionHeader
-                                title={file.name}
+                                title={
+                                    <button
+                                        type="button"
+                                        className="cursor-pointer text-left hover:underline focus-visible:outline-2 focus-visible:outline-accent-400"
+                                        onClick={() => setPreview(file)}
+                                    >
+                                        {file.name}
+                                    </button>
+                                }
                                 icon={fileTypeIcon(file)}
-                                description={`${(file.bytes / 1024).toFixed(1)} KiB`}
+                                description={`${(file.bytes / 1024).toFixed(1)} KiB · Added ${formatDateTime(file.createdAt)}`}
                                 compactActions
                                 actions={
                                     <DropdownMenu
