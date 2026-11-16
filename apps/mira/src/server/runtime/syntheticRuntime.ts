@@ -79,6 +79,19 @@ export function syntheticQuotaWindows(
 }
 
 /**
+ * Decide availability from the quota model reported by the provider.
+ * @param quota - Validated weekly-credit or legacy request quota.
+ * @returns Whether the applicable subscription allowance is positive.
+ */
+export function syntheticQuotaAvailable(
+    quota: v.InferOutput<typeof quotaSchema>
+): boolean {
+    return quota.planWeeklyLimit
+        ? quota.planWeeklyLimit.percentRemaining > 0
+        : quota.subscription.limit - quota.subscription.requests >= 1;
+}
+
+/**
  * Inspect remaining request and weekly-credit allowance; provider billing settings remain authoritative.
  * @param configuration - Server-only account credential.
  * @param signal - Inspection or turn cancellation.
@@ -131,7 +144,7 @@ export async function readSyntheticQuota(
  * @param configuration - Owner-bound credential.
  * @param signal - Request cancellation.
  * @param request - Fixed-origin transport used by trusted tests.
- * @returns Whether the provider reports at least one request and remaining weekly allowance.
+ * @returns Whether the provider reports remaining allowance for its current quota model.
  */
 export async function syntheticSubscriptionAvailable(
     configuration: SyntheticConfiguration,
@@ -139,12 +152,7 @@ export async function syntheticSubscriptionAvailable(
     request: typeof fetch = fetch
 ): Promise<boolean> {
     const quota = await readSyntheticQuota(configuration, signal, request);
-    return (
-        quota !== null &&
-        quota.subscription.limit - quota.subscription.requests >= 1 &&
-        (quota.planWeeklyLimit === undefined ||
-            quota.planWeeklyLimit.percentRemaining > 0)
-    );
+    return quota !== null && syntheticQuotaAvailable(quota);
 }
 
 // Both executor lanes share this credential queue. Only Synthetic requests wait here;

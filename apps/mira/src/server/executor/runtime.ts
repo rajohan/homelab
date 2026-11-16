@@ -50,6 +50,7 @@ import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
 import {
     loadSyntheticModels,
     readSyntheticQuota,
+    syntheticQuotaAvailable,
     syntheticQuotaWindows,
 } from "../runtime/syntheticRuntime";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
@@ -285,12 +286,7 @@ export async function runMiraExecutor(options: {
                                 observedAt: new Date().toISOString(),
                                 windows: syntheticQuotaWindows(quota),
                             });
-                        if (
-                            quota &&
-                            quota.subscription.limit - quota.subscription.requests >= 1 &&
-                            (quota.planWeeklyLimit === undefined ||
-                                quota.planWeeklyLimit.percentRemaining > 0)
-                        )
+                        if (quota && syntheticQuotaAvailable(quota))
                             aliases = await loadSyntheticModels(
                                 options.synthetic,
                                 signal

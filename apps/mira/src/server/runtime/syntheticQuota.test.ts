@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 
-import { readSyntheticQuota, syntheticQuotaWindows } from "./syntheticRuntime";
+import {
+    readSyntheticQuota,
+    syntheticQuotaAvailable,
+    syntheticQuotaWindows,
+    syntheticSubscriptionAvailable,
+} from "./syntheticRuntime";
 
 test("weekly credit regeneration survives validation without displaying a legacy request reset", async () => {
     const request: typeof fetch = Object.assign(
@@ -57,3 +62,35 @@ test("missing regeneration telemetry is not replaced with an invented countdown"
         },
     ]);
 });
+
+test.each([
+    [100, 100, 36, true],
+    [100, 0, 0, false],
+    [100, 99.5, undefined, false],
+    [100, 99, undefined, true],
+] as const)(
+    "availability follows the same current quota model as the display (%s/%s, weekly %s)",
+    async (limit, requests, weekly, available) => {
+        const quota = {
+            subscription: { limit, requests },
+            ...(weekly === undefined
+                ? {}
+                : { planWeeklyLimit: { percentRemaining: weekly } }),
+        };
+        const request: typeof fetch = Object.assign(
+            () => Promise.resolve(Response.json(quota)),
+            { preconnect: fetch.preconnect }
+        );
+        expect(syntheticQuotaAvailable(quota)).toBe(available);
+        expect(
+            await syntheticSubscriptionAvailable(
+                { owner: "fixture", apiKey: "fixture" },
+                new AbortController().signal,
+                request
+            )
+        ).toBe(available);
+        expect(syntheticQuotaWindows(quota)[0]?.remainingPercent).toBe(
+            weekly ?? 100 * (1 - requests / limit)
+        );
+    }
+);
