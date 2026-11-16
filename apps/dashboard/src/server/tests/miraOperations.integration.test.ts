@@ -4,6 +4,7 @@ import { rejects } from "node:assert/strict";
 import { capabilities } from "@homelab/contracts/operations";
 import { MiraFailure } from "@homelab/mira/data/context";
 import { decideMiraProposal, listMiraProposals } from "@homelab/mira/data/proposals";
+import { claimMiraRun, finishMiraRun } from "@homelab/mira/data/queue";
 import { createMiraOperationsTools } from "@homelab/mira/operations/tools";
 
 import { createMiraTools } from "../../../../mira/src/server/executor/tools";
@@ -54,7 +55,7 @@ async function fixture(mode: "ask" | "approve_for_me" | "full_access") {
     );
     const receiptId = crypto.randomUUID();
     await database.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES(${receiptId},${current.run.id},${receiptId},'mira_homelab_command',${"0".repeat(64)},'running')`;
-    const invoke = (signal = new AbortController().signal) =>
+    const invoke = (signal = new AbortController().signal, id = receiptId) =>
         tools
             .find((tool) => tool.name === "mira_homelab_command")!
             .action(
@@ -64,7 +65,7 @@ async function fixture(mode: "ask" | "approve_for_me" | "full_access") {
                     reason: "Test exact approval",
                 },
                 signal,
-                { ...current.context, receiptId }
+                { ...current.context, receiptId: id }
             );
     return {
         ...database,
@@ -75,6 +76,30 @@ async function fixture(mode: "ask" | "approve_for_me" | "full_access") {
         invoke,
         receiptId,
         configuration,
+        resume: async (id: string = receiptId, run = current.run) => {
+            const resumed = crypto.randomUUID();
+            await database.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES(${resumed},${run.id},${resumed},'mira_homelab_resume',${"0".repeat(64)},'running')`;
+            return createMiraOperationsTools(
+                database.client,
+                run,
+                configuration,
+                (_target, command) => {
+                    calls.push(command.command);
+                    return Promise.resolve({
+                        exitCode: 0,
+                        stdout: "synthetic",
+                        stderr: "",
+                        truncated: false,
+                        trust: "untrusted_host_output",
+                    });
+                }
+            )
+                .find((tool) => tool.name === "mira_homelab_resume")!
+                .action({ id }, new AbortController().signal, {
+                    ...current.context,
+                    receiptId: resumed,
+                });
+        },
     };
 }
 
@@ -119,7 +144,9 @@ test.each(["ask", "approve_for_me"] as const)(
                 inputHash: proposal.inputHash,
                 approve: true,
             });
-            expect(await pending).toMatchObject({ exitCode: 0 });
+            expect(await pending).toMatchObject({ state: "awaiting_approval" });
+            expect(await f.resume()).toMatchObject({ exitCode: 0 });
+            await rejects(f.resume(), /already consumed/);
             expect(f.calls).toEqual(["printf synthetic"]);
             const [receipt] = await f.client<
                 { proposal: unknown }[]
@@ -178,13 +205,14 @@ test.each(["reject", "stop", "revoke"])(
                 await f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${f.run.id}`;
             else
                 await f.client`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=${f.run.id}`;
-            await rejects(pending);
+            expect(await pending).toMatchObject({ state: "awaiting_approval" });
+            await rejects(f.resume());
             expect(f.calls).toEqual([]);
             if (operation === "reject") {
                 const [receipt] = await f.client<
                     { proposal: unknown }[]
                 >`SELECT proposal FROM mira_tool_receipts WHERE id=${f.receiptId}`;
-                expect(receipt?.proposal).toBeNull();
+                expect(receipt?.proposal).not.toBeNull();
             }
             await rejects(
                 decideMiraProposal(
@@ -273,7 +301,7 @@ test("a command that finishes while authority changes is not reported as rolled 
     }
 });
 
-test("the public tool wrapper expires pending approvals when the operator stops", async () => {
+test("the public tool wrapper preserves pending requests but stopped work cannot be approved", async () => {
     const f = await fixture("ask");
     const tool = createMiraTools(
         f.client,
@@ -296,12 +324,23 @@ test("the public tool wrapper expires pending approvals when the operator stops"
     try {
         const proposal = await waitForProposal(f);
         await f.client`UPDATE mira_runs SET cancel_requested=true WHERE id=${f.run.id}`;
-        expect(JSON.parse((await pending) as string)).toMatchObject({ ok: false });
+        expect(JSON.parse((await pending) as string)).toMatchObject({
+            ok: true,
+            result: { state: "awaiting_approval" },
+        });
+        await rejects(
+            f.approved.proposals.decide({
+                id: proposal.id,
+                inputHash: proposal.inputHash,
+                approve: true,
+            }),
+            /stopped/
+        );
         const [row] = await f.client<
             { state: string; proposal: unknown }[]
         >`SELECT state,proposal FROM mira_tool_receipts WHERE id=${proposal.id}`;
-        expect(row?.state).toBe("expired");
-        expect(row?.proposal).toBeNull();
+        expect(row?.state).toBe("awaiting_approval");
+        expect(row?.proposal).not.toBeNull();
         expect(
             await listMiraProposals(
                 { client: f.client, owner: f.run.owner, actor: "human:operator" },
@@ -360,3 +399,214 @@ test("failed commands stay failed in the public wrapper while output stays out o
         await f.close();
     }
 });
+
+test("host approval survives a completed reply and resumes its exact command once", async () => {
+    const f = await fixture("ask");
+    try {
+        await f.invoke();
+        const proposal = await waitForProposal(f);
+        expect(
+            await finishMiraRun(f.client, f.run, {
+                state: "completed",
+                text: "Waiting for approval.",
+                message: null,
+            })
+        ).toBe(true);
+        expect(await f.api.proposals.list({ id: f.run.conversationId })).toHaveLength(1);
+        const decision = {
+            id: proposal.id,
+            inputHash: proposal.inputHash,
+            approve: true,
+        };
+        await f.approved.proposals.decide(decision);
+        await f.approved.proposals.decide(decision);
+        const run = await claimMiraRun(f.client, crypto.randomUUID(), "foreground");
+        expect(run).not.toBeNull();
+        expect(await f.resume(proposal.id, run!)).toMatchObject({ exitCode: 0 });
+        await rejects(f.resume(proposal.id, run!), /already consumed/);
+        expect(f.calls).toEqual(["printf synthetic"]);
+    } finally {
+        await f.close();
+    }
+});
+
+test.each(["approve", "ask", "deny"] as const)(
+    "automatic reviewer %s is separate from the requesting tool",
+    async (decision) => {
+        const f = await fixture("approve_for_me");
+        let reviews = 0;
+        try {
+            const tool = createMiraOperationsTools(
+                f.client,
+                f.run,
+                f.configuration,
+                (_target, command) => {
+                    f.calls.push(command.command);
+                    return Promise.resolve({
+                        exitCode: 0,
+                        stdout: "",
+                        stderr: "",
+                        truncated: false,
+                        trust: "untrusted_host_output",
+                    });
+                },
+                (command) => {
+                    reviews++;
+                    expect(command.command).toBe("printf synthetic");
+                    return Promise.resolve({
+                        decision,
+                        reason: "Synthetic review verdict",
+                    });
+                }
+            ).find((entry) => entry.name === "mira_homelab_command")!;
+            const result = await tool.action(
+                {
+                    target: "main",
+                    command: "printf synthetic",
+                    reason: "Requested fixture",
+                },
+                new AbortController().signal,
+                { ...f.context, receiptId: f.receiptId }
+            );
+            expect(reviews).toBe(1);
+            expect(f.calls).toHaveLength(decision === "approve" ? 1 : 0);
+            expect(result).toMatchObject(
+                decision === "approve" ? { exitCode: 0 } : { state: "awaiting_approval" }
+            );
+        } finally {
+            await f.close();
+        }
+    }
+);
+
+test("revoking permissions during automatic review prevents automatic execution", async () => {
+    const f = await fixture("approve_for_me");
+    try {
+        const tool = createMiraOperationsTools(
+            f.client,
+            f.run,
+            f.configuration,
+            () => Promise.reject(new Error("Must not dispatch")),
+            async () => {
+                await f.client`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE id=${f.run.id}`;
+                return { decision: "approve", reason: "Too late" };
+            }
+        ).find((entry) => entry.name === "mira_homelab_command")!;
+        await rejects(
+            tool.action(
+                { target: "main", command: "printf synthetic", reason: "Revoked review" },
+                new AbortController().signal,
+                { ...f.context, receiptId: f.receiptId }
+            ),
+            /stopped/
+        );
+    } finally {
+        await f.close();
+    }
+});
+
+test("questions persist after completion, accept free text once and queue one continuation", async () => {
+    const f = await fixture("ask");
+    try {
+        // The fixture's unused host receipt is unrelated to this question.
+        await f.client`UPDATE mira_tool_receipts SET state='failed' WHERE id=${f.receiptId}`;
+        const tool = createMiraTools(f.client, f.run).find(
+            (entry) => entry.name === "mira_request_user_input"
+        )!;
+        const result: unknown = JSON.parse(
+            (await tool.execute(
+                {
+                    questions: [
+                        {
+                            id: "target",
+                            title: "Which target?",
+                            options: ["Main", "Daytona"],
+                        },
+                        { id: "details", title: "Any constraints?" },
+                    ],
+                },
+                new AbortController().signal,
+                { callId: crypto.randomUUID(), threadId: "fixture", turnId: "fixture" }
+            )) as string
+        );
+        expect(result).toMatchObject({ ok: true });
+        const [proposal] = await f.api.proposals.list({ id: f.run.conversationId });
+        expect(proposal?.tool).toBe("mira_request_user_input");
+        await finishMiraRun(f.client, f.run, {
+            state: "completed",
+            text: "Waiting for your choices.",
+            message: null,
+        });
+        expect(await f.api.proposals.list({ id: f.run.conversationId })).toHaveLength(1);
+        await rejects(
+            f.api.proposals.answer({
+                id: proposal!.id,
+                inputHash: "1".repeat(64),
+                answers: { target: "Main", details: "No downtime" },
+            }),
+            /differs/
+        );
+        await rejects(
+            f.api.proposals.answer({
+                id: proposal!.id,
+                inputHash: proposal!.inputHash,
+                answers: { target: "Main" },
+            }),
+            /every question/
+        );
+        const answer = {
+            id: proposal!.id,
+            inputHash: proposal!.inputHash,
+            answers: { target: "A custom target", details: "No downtime" },
+        };
+        expect(await f.api.proposals.answer(answer)).toMatchObject({ state: "answered" });
+        expect(await f.api.proposals.answer(answer)).toMatchObject({ state: "answered" });
+        await rejects(
+            f.api.proposals.answer({
+                ...answer,
+                answers: { target: "Changed", details: "No downtime" },
+            }),
+            /already answered/
+        );
+        expect(await f.api.proposals.list({ id: f.run.conversationId })).toHaveLength(0);
+        const runs = await f.client<
+            { id: string }[]
+        >`SELECT id FROM mira_runs WHERE conversation_id=${f.run.conversationId} AND state='queued'`;
+        expect(runs).toHaveLength(1);
+    } finally {
+        await f.close();
+    }
+});
+
+test.each(["consumed", "expired"] as const)(
+    "%s requests do not block a fresh review of the same host command",
+    async (previous) => {
+        const f = await fixture("ask");
+        try {
+            await f.invoke();
+            const proposal = await waitForProposal(f);
+            if (previous === "consumed") {
+                await f.approved.proposals.decide({
+                    id: proposal.id,
+                    inputHash: proposal.inputHash,
+                    approve: true,
+                });
+                await f.resume();
+            } else {
+                await f.client`UPDATE mira_tool_receipts SET created_at=clock_timestamp()-interval '25 hours' WHERE id=${proposal.id}`;
+            }
+            const id = crypto.randomUUID();
+            await f.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES(${id},${f.run.id},${id},'mira_homelab_command',${"0".repeat(64)},'running')`;
+            expect(await f.invoke(undefined, id)).toMatchObject({
+                requestId: id,
+                state: "awaiting_approval",
+            });
+            const pending = await f.api.proposals.list({ id: f.run.conversationId });
+            expect(pending).toHaveLength(1);
+            expect(pending[0]?.id).toBe(id);
+            expect(f.calls).toHaveLength(previous === "consumed" ? 1 : 0);
+        } finally {
+            await f.close();
+        }
+    }
+);

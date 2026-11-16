@@ -30,7 +30,7 @@ import {
 } from "../data/documents";
 import { readMiraFile } from "../data/files";
 import { listMiraMail, saveMiraMail } from "../data/mail";
-import { parseMiraProposal } from "../data/proposals";
+import { createMiraQuestionTools, parseMiraProposal } from "../data/proposals";
 import type { MiraClaim } from "../data/queue";
 import { readMiraRecallPolicy } from "../data/recall";
 import {
@@ -58,7 +58,7 @@ import type { MoltbookReadConfiguration } from "../integrations/moltbook/configu
 import { createMoltbookTools } from "../integrations/moltbook/tools";
 import type { MiraOperationsConfiguration } from "../operations/configuration";
 import { MiraHostCommandFailure } from "../operations/ssh";
-import { createMiraOperationsTools } from "../operations/tools";
+import { createMiraOperationsTools, type MiraHostReviewer } from "../operations/tools";
 import type { RuntimeTool } from "../runtime/protocol";
 import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
@@ -133,6 +133,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param moltbook - Optional social read settings, retained only by the service.
  * @param github - Optional GitHub mapping and dedicated read credential, retained only in the service closure.
  * @param search - Owner-bound search for manual Synthetic chat turns.
+ * @param reviewer - Server-selected independent host command reviewer.
  * @param operations - Explicit host administration, separate from sandbox execution.
  * @param localCode - Optional Main mapping; the run freezes its target before inference.
  * @param daytona - Nonsecret cloud job mapping; model tools cannot execute or approve.
@@ -149,7 +150,8 @@ export function createMiraTools(
     github?: GitHubBinding | GitHubConfiguration,
     localCode?: LocalCodeBinding,
     search?: SyntheticConfiguration,
-    operations?: MiraOperationsConfiguration
+    operations?: MiraOperationsConfiguration,
+    reviewer?: MiraHostReviewer
 ): RuntimeTool<RuntimeToolResult>[] {
     const context: MiraContext = {
         client,
@@ -159,7 +161,8 @@ export function createMiraTools(
     };
     let uncertain = false;
     const definitions: MiraToolDefinition[] = [
-        ...createMiraOperationsTools(client, run, operations),
+        ...createMiraOperationsTools(client, run, operations, undefined, reviewer),
+        ...createMiraQuestionTools(run),
         ...createMiraRecallTools(client, run),
         ...createMiraComputerTools(),
         ...createMiraBrowserTools(),

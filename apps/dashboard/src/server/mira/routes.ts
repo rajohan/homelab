@@ -12,6 +12,7 @@ import {
     miraPageSchema,
     miraProgressInputSchema,
     miraProposalDecisionSchema,
+    miraQuestionAnswerSchema,
     miraReportFilterSchema,
     miraReportInputSchema,
     miraRunReadSchema,
@@ -116,7 +117,11 @@ import {
     listMiraMail,
     saveMiraMail,
 } from "@homelab/mira/data/mail";
-import { decideMiraProposal, listMiraProposals } from "@homelab/mira/data/proposals";
+import {
+    answerMiraQuestion,
+    decideMiraProposal,
+    listMiraProposals,
+} from "@homelab/mira/data/proposals";
 import {
     approveMiraPublication,
     cancelMiraPublication,
@@ -397,6 +402,11 @@ export const miraRouter = trpc.router({
             ),
     }),
     proposals: trpc.router({
+        answer: trpc.procedure
+            .input(miraQuestionAnswerSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => answerMiraQuestion(mira, input))
+            ),
         list: trpc.procedure
             .input(record)
             .query(({ ctx, input }) =>
