@@ -219,7 +219,7 @@ fetches a URL or reads a caller-supplied filesystem path.
 
 Limits apply before sending: eight items, two images, two MiB total decoded image
 bytes, 256 KiB total UTF-8 text, dimensions up to 8192 per side and 16,777,216
-pixels per image, and three MiB for serialized content. Image-size 2.0.4 checks
+pixels per image, and three MiB for serialized content. Image-size 2.1.0 checks
 format and dimensions from headers without decoding pixels. This is a metadata
 and resource boundary, not a guarantee that every compressed image can decode.
 Invalid output produces a fixed failure response without returning input bytes.
