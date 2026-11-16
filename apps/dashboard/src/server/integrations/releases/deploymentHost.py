@@ -246,7 +246,7 @@ def browser_bindings(target, configuration, observed, code=None):
     if bool(target.get("localCodeConfigFile")) != (code is not None):
         raise Refusal("code_configuration")
     if code is not None:
-        if (not isinstance(code, dict) or set(code) != {"kind", "owner", "hostId", "imageId", "egress"} or
+        if (not isinstance(code, dict) or set(code) - {"releasePreviousBinding"} != {"kind", "owner", "hostId", "imageId", "egress"} or
                 code["kind"] != "main" or not isinstance(code["owner"], str) or not 1 <= len(code["owner"]) <= 320 or
                 code["hostId"] != configuration.get("hostId") or
                 not isinstance(code["hostId"], str) or not re.fullmatch(r"[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}", code["hostId"]) or
@@ -609,6 +609,10 @@ def run(directory):
                 bindings = browser_bindings(target, configurations["browser"], intent["expected"]["containers"], configurations.get("code"))
                 configurations["browser"]["imageId"] = identities["mira-browser"]
                 if "code" in configurations:
+                    configurations["code"]["releasePreviousBinding"] = {
+                        key: copy.deepcopy(configurations["code"][key])
+                        for key in ("kind", "owner", "hostId", "imageId", "egress")
+                    }
                     configurations["code"]["imageId"] = identities["daytona-check"]
             phase("stopping", changesStarted=True)
             command(["/usr/bin/systemctl", "stop", *target["units"]], target["directory"], timeout=120)

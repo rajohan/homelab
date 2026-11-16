@@ -7,13 +7,27 @@ import { browserEgressSchema } from "../browsing/egress";
 import type { MiraContext, MiraQuery } from "../data/context";
 import type { DaytonaBinding } from "../integrations/daytona/configuration";
 
-export const localCodeBindingSchema = v.strictObject({
+const localCodeTargetSchema = v.strictObject({
     kind: v.literal("main"),
     owner: v.pipe(v.string(), v.minLength(1), v.maxLength(320)),
     hostId: v.pipe(v.string(), v.uuid()),
     imageId: v.pipe(v.string(), v.regex(/^sha256:[a-f0-9]{64}$/)),
     egress: browserEgressSchema,
 });
+export const localCodeBindingSchema = v.pipe(
+    v.strictObject({
+        ...localCodeTargetSchema.entries,
+        releasePreviousBinding: v.optional(localCodeTargetSchema),
+    }),
+    v.check(
+        (value) =>
+            !value.releasePreviousBinding ||
+            (value.owner === value.releasePreviousBinding.owner &&
+                value.hostId === value.releasePreviousBinding.hostId &&
+                value.egress.networkId === value.releasePreviousBinding.egress.networkId),
+        "A release cannot transfer code consent to another owner, host or network."
+    )
+);
 export type LocalCodeBinding = v.InferOutput<typeof localCodeBindingSchema>;
 export type CodeJobBinding = DaytonaBinding | LocalCodeBinding;
 
@@ -84,10 +98,12 @@ export function isLocalCodeBinding(binding: CodeJobBinding): binding is LocalCod
  * @returns Fingerprint of the fixed local execution policy and validated selection.
  */
 export function localCodeBindingHash(binding: LocalCodeBinding): string {
+    const { releasePreviousBinding: _previous, ...target } = v.parse(
+        localCodeBindingSchema,
+        binding
+    );
     return new Bun.CryptoHasher("sha256")
-        .update(
-            JSON.stringify(["local-code-v1", v.parse(localCodeBindingSchema, binding)])
-        )
+        .update(JSON.stringify(["local-code-v1", target]))
         .digest("hex");
 }
 
@@ -109,7 +125,8 @@ export async function localCodePermission(
 }
 
 /**
- * Publish the local host's nonsecret availability without enabling code execution.
+ * Publish availability and carry exact existing consent across an authorized release.
+ * A release marker comes only from installed host configuration, never a model tool.
  * @param query - Trusted host's product connection.
  * @param binding - Validated current owner, host, image and network.
  * @returns Exact persisted heartbeat timestamp for conditional retirement on shutdown.
@@ -118,6 +135,15 @@ export async function publishLocalCodeBinding(
     query: MiraQuery,
     binding: LocalCodeBinding
 ): Promise<string> {
+    const checked = v.parse(localCodeBindingSchema, binding);
+    const previous = checked.releasePreviousBinding;
+    const hash = localCodeBindingHash(checked);
+    if (previous && localCodeBindingHash(previous) !== hash) {
+        // Preserve pauses and never enable an integration. The exact predecessor CAS
+        // cannot transfer consent from another target or revive an old queued job.
+        await query`UPDATE mira_switches SET binding_hash=${hash},version=version+1,changed_at=clock_timestamp()
+            WHERE owner=${checked.owner} AND key='code:main' AND binding_hash=${localCodeBindingHash(previous)}`;
+    }
     const [row] = await query<
         { stamp: string }[]
     >`INSERT INTO mira_integration_receivers(key,binding_hash,heartbeat_at) VALUES('code:main',${localCodeBindingHash(binding)},clock_timestamp()) ON CONFLICT(key) DO UPDATE SET binding_hash=EXCLUDED.binding_hash,heartbeat_at=EXCLUDED.heartbeat_at RETURNING heartbeat_at::text AS stamp`;

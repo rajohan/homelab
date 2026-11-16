@@ -42,7 +42,7 @@ export function createMiraActionTools(
         {
             name: "mira_action_execute",
             description:
-                "Execute an existing draft for the operator's requested work. First read its complete saved content, version and contentHash. Kind job runs a code job; code publishes a tested draft GitHub PR; mail sends email; publication publishes here.now; social posts/replies on Moltbook. Ask for approval always requires a separate human decision. Approve for me permits only fixed Homelab source/edit/test jobs; Full access also permits the other enabled actions. This cannot grant integration access, merge, deploy, bypass browser/PC consent or start paused automations. Queued means accepted for execution, not completed: inspect the normal action status afterward.",
+                "Execute an existing draft for the operator's requested work. First read its complete saved content, version and contentHash. Kind job runs a code job; code publishes a tested draft GitHub PR; mail sends email; publication publishes here.now; social posts/replies on Moltbook. Ask for approval always requires a separate human decision. Approve for me permits fixed Homelab source/edit/test jobs and tested draft GitHub PRs; Full access also permits the other enabled actions. This cannot grant integration access, merge, deploy, bypass browser/PC consent or start paused automations. Queued means accepted for execution, not completed: inspect the normal action status afterward.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,

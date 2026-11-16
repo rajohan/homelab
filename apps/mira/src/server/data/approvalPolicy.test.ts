@@ -38,6 +38,8 @@ test("permission settings are explicit and cannot classify arbitrary commands as
     expect(miraJobApprovalScope(crypto.randomUUID(), content)).toBe("external");
     expect(miraModeAllows("ask", "task")).toBe(false);
     expect(miraModeAllows("approve_for_me", "task")).toBe(true);
+    expect(miraModeAllows("ask", "code")).toBe(false);
+    expect(miraModeAllows("approve_for_me", "code")).toBe(true);
     expect(miraModeAllows("approve_for_me", "external")).toBe(false);
     expect(miraModeAllows("full_access", "external")).toBe(true);
 });

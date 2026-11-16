@@ -498,7 +498,7 @@ test("revoking permissions during automatic review prevents automatic execution"
                 new AbortController().signal,
                 { ...f.context, receiptId: f.receiptId }
             ),
-            /stopped/
+            /Permissions changed/
         );
     } finally {
         await f.close();
@@ -560,6 +560,14 @@ test("questions persist after completion, accept free text once and queue one co
             answers: { target: "A custom target", details: "No downtime" },
         };
         expect(await f.api.proposals.answer(answer)).toMatchObject({ state: "answered" });
+        const [message] = await f.client<
+            { content: string }[]
+        >`SELECT m.content FROM mira_messages m JOIN mira_runs r ON r.user_message_id=m.id WHERE r.request_key=${`operator:${proposal!.id}`}`;
+        expect(message?.content).toBe("A custom target\n\nNo downtime");
+        const [question] = await f.client<
+            { content: string }[]
+        >`SELECT content FROM mira_messages WHERE id=${proposal!.id}`;
+        expect(question?.content).toBe("Which target?\n\nAny constraints?");
         expect(await f.api.proposals.answer(answer)).toMatchObject({ state: "answered" });
         await rejects(
             f.api.proposals.answer({
@@ -610,3 +618,37 @@ test.each(["consumed", "expired"] as const)(
         }
     }
 );
+
+test("a mode change allows a fresh exact approval to resume inside the same active run", async () => {
+    const f = await fixture("full_access");
+    try {
+        const chat = await f.api.conversations.read({ id: f.run.conversationId });
+        await f.api.conversations.settings({
+            id: f.run.conversationId,
+            version: chat.conversation.version,
+            settings: { ...chat.conversation.settings, permissionMode: "ask" },
+        });
+        // A new call after the mode edit, not a replay of a previous command.
+        const fresh = crypto.randomUUID();
+        await f.client`INSERT INTO mira_tool_receipts(id,run_id,call_id,tool,input_hash,state) VALUES(${fresh},${f.run.id},${fresh},'mira_homelab_command',${"0".repeat(64)},'running')`;
+        expect(await f.invoke(new AbortController().signal, fresh)).toMatchObject({
+            state: "awaiting_approval",
+        });
+        const [proposal] = await listMiraProposals(
+            { client: f.client, owner: "operator", actor: "human:operator" },
+            f.run.conversationId
+        );
+        expect(proposal?.id).toBe(fresh);
+        await f.approved.proposals.decide({
+            id: fresh,
+            inputHash: proposal!.inputHash,
+            approve: true,
+        });
+        await f.resume(fresh);
+        expect(f.calls).toEqual(["printf synthetic"]);
+        await rejects(f.resume(fresh));
+        expect(f.calls).toHaveLength(1);
+    } finally {
+        await f.close();
+    }
+});

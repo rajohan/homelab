@@ -939,3 +939,140 @@ test("Approve for me queues Main checks and revocation prevents container creati
         await f.close();
     }
 });
+
+test("release rollover preserves code consent and pauses but not old job approvals", async () => {
+    const f = await fixture();
+    try {
+        const old = await f.queue();
+        const next: LocalCodeBinding = {
+            ...binding,
+            imageId: `sha256:${"9".repeat(64)}`,
+            egress: {
+                ...binding.egress,
+                proxyId: "8".repeat(64),
+                proxyImageId: `sha256:${"7".repeat(64)}`,
+            },
+            releasePreviousBinding: binding,
+        };
+        await publishLocalCodeBinding(f.client, next);
+        expect(await localCodePermission(f.client, next)).toBe(2);
+        expect(await localCodePermission(f.client, binding)).toBeNull();
+        await publishLocalCodeBinding(f.client, next);
+        expect(await localCodePermission(f.client, next)).toBe(2);
+        let calls = 0;
+        await dispatchMiraLocalCode(
+            { ...f.options, binding: next },
+            {
+                execute: async (...args) => {
+                    calls++;
+                    return execute(...args);
+                },
+                cleanup,
+            }
+        );
+        expect(calls).toBe(0);
+        expect(await f.read(old.id)).toMatchObject({ state: "draft" });
+        await f.client`UPDATE mira_switches SET enabled=false,reason='Operator pause' WHERE key='code:main'`;
+        const later = {
+            ...next,
+            imageId: `sha256:${"6".repeat(64)}`,
+            releasePreviousBinding: {
+                kind: next.kind,
+                owner: next.owner,
+                hostId: next.hostId,
+                imageId: next.imageId,
+                egress: next.egress,
+            },
+        };
+        await publishLocalCodeBinding(f.client, later);
+        expect(await localCodePermission(f.client, later)).toBeNull();
+        const [paused] = await f.client<
+            { enabled: boolean; reason: string | null }[]
+        >`SELECT enabled,reason FROM mira_switches WHERE key='code:main'`;
+        expect(paused).toEqual({ enabled: false, reason: "Operator pause" });
+        await rejects(
+            publishLocalCodeBinding(f.client, { ...later, hostId: crypto.randomUUID() })
+        );
+        await rejects(publishLocalCodeBinding(f.client, { ...later, owner: "another" }));
+        await rejects(
+            publishLocalCodeBinding(f.client, {
+                ...later,
+                egress: { ...later.egress, networkId: "0".repeat(64) },
+            })
+        );
+    } finally {
+        await f.close();
+    }
+});
+
+test("Main jobs use a new permission mode throughout the same active run", async () => {
+    const f = await fixture();
+    try {
+        const api = appRouter.createCaller({
+            operations: f,
+            principal: { kind: "human", id: "operator", capabilities },
+        }).mira;
+        const { run } = await permissionRun(f.client, api, "ask", "main");
+        const tools = createMiraTextTestTools(
+            f.client,
+            run,
+            f.options.filesDirectory,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            binding
+        );
+        const permission = async (permissionMode: "ask" | "approve_for_me") => {
+            const read = await api.conversations.read({ id: run.conversationId });
+            await api.conversations.settings({
+                id: run.conversationId,
+                version: read.conversation.version,
+                settings: { ...read.conversation.settings, permissionMode },
+            });
+        };
+        const draft = async () => {
+            const id = crypto.randomUUID();
+            return saveMiraDaytona(
+                f.context,
+                {
+                    id,
+                    version: 0,
+                    conversationId: run.conversationId,
+                    taskId: null,
+                    content: daytonaCheckContent({ id, commit, patchSha256: null }),
+                    executionTarget: "main",
+                },
+                binding
+            );
+        };
+        const first = await draft();
+        expect(await permissionAction(tools, "job", first)).toMatchObject({ ok: false });
+        await permission("approve_for_me");
+        expect(await permissionAction(tools, "job", first)).toMatchObject({ ok: true });
+        expect(await dispatchMiraLocalCode(f.options, { execute, cleanup })).toBe(true);
+        expect(await f.read(first.id)).toMatchObject({
+            state: "completed",
+            cleanup: "confirmed",
+        });
+        const second = await draft();
+        expect(await permissionAction(tools, "job", second)).toMatchObject({ ok: true });
+        await permission("ask");
+        await permission("approve_for_me");
+        expect(await miraActionApproval(f.client, "operator", "job", second.id)).toBe(
+            false
+        );
+        const third = await draft();
+        expect(await permissionAction(tools, "job", third)).toMatchObject({ ok: true });
+        expect(await miraActionApproval(f.client, "operator", "job", third.id)).toBe(
+            true
+        );
+        const [active] = await f.client<
+            { state: string }[]
+        >`SELECT state FROM mira_runs WHERE id=${run.id}`;
+        expect(active).toEqual({ state: "running" });
+    } finally {
+        await f.close();
+    }
+});

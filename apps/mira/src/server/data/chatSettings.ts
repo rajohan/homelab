@@ -165,7 +165,7 @@ export async function saveMiraChatSettings(
             (conversation.settings.permissionMode ?? "ask") !==
             (input.settings.permissionMode ?? "ask")
         )
-            await query`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE conversation_id=${input.id} AND owner=${context.owner} AND approval_revoked_at IS NULL`;
+            await query`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE conversation_id=${input.id} AND owner=${context.owner}`;
         await query`UPDATE mira_conversations SET settings = ${JSON.stringify(input.settings)}::text::jsonb, version = version + 1, updated_at = now() WHERE id = ${input.id}`;
         await auditMira(query, context, "conversation.settings_changed", input.id);
     });

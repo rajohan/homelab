@@ -238,7 +238,9 @@ for (const revoke of [
             if (revoke === "settings" || revoke === "active-settings") {
                 await f.permission("ask");
                 await f.permission("full_access");
-                expect(await miraRunPermission(f.client, f.context)).toBe("ask");
+                expect(await miraRunPermission(f.client, f.context)).toBe(
+                    revoke === "active-settings" ? "full_access" : "ask"
+                );
             }
             if (revoke === "archive") {
                 let read = await f.api.conversations.read({ id: f.run.conversationId });
@@ -356,6 +358,49 @@ test("automation runs do not inherit Chat delegation and explicit human approval
             true
         );
         expect(await miraActionApproval(f.client, "other", "mail", draft.id)).toBe(false);
+    } finally {
+        await f.close();
+    }
+});
+
+test("mode changes apply to new actions in the same lease without reviving old approvals", async () => {
+    const f = await fixture("full_access");
+    try {
+        const old = await f.draft();
+        expect(
+            await f.execute("mira_action_execute", {
+                kind: "mail",
+                id: old.id,
+                version: old.version,
+                contentHash: old.contentHash,
+            })
+        ).toMatchObject({ ok: true });
+        await f.permission("ask");
+        expect(await miraRunPermission(f.client, f.context)).toBe("ask");
+        await f.permission("approve_for_me");
+        expect(await miraRunPermission(f.client, f.context)).toBe("approve_for_me");
+        expect(await f.execute("mira_task_create", task)).toMatchObject({ ok: true });
+        await f.permission("full_access");
+        const next = await f.draft();
+        expect(
+            await f.execute("mira_action_execute", {
+                kind: "mail",
+                id: next.id,
+                version: next.version,
+                contentHash: next.contentHash,
+            })
+        ).toMatchObject({ ok: true });
+        expect(await miraActionApproval(f.client, "operator", "mail", old.id)).toBe(
+            false
+        );
+        expect(await miraActionApproval(f.client, "operator", "mail", next.id)).toBe(
+            true
+        );
+        await f.permission("ask");
+        await f.permission("full_access");
+        expect(await miraActionApproval(f.client, "operator", "mail", next.id)).toBe(
+            false
+        );
     } finally {
         await f.close();
     }

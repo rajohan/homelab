@@ -200,7 +200,7 @@ export async function approveMiraCode(
             query,
             context,
             row.conversationId,
-            "external"
+            "code"
         );
         if (
             row.contentHash !== input.contentHash ||
