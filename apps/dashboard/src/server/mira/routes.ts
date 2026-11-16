@@ -68,6 +68,7 @@ import {
     saveMiraAutomation,
     setMiraEnabled,
 } from "@homelab/mira/data/automations";
+import { readChatActivity } from "@homelab/mira/data/chatActivity";
 import { listMiraModels, saveMiraChatSettings } from "@homelab/mira/data/chatSettings";
 import { sendMiraMessage } from "@homelab/mira/data/chatSteering";
 import {
@@ -448,7 +449,7 @@ export const miraRouter = trpc.router({
                 execute(ctx, (mira) => listMiraFiles(mira, input.before))
             ),
         metadata: trpc.procedure
-            .input(v.pipe(v.array(idSchema), v.maxLength(8)))
+            .input(v.pipe(v.array(idSchema), v.maxLength(100)))
             .query(({ ctx, input }) =>
                 execute(ctx, (mira) => miraFileMetadata(mira, input))
             ),
@@ -475,6 +476,15 @@ export const miraRouter = trpc.router({
         })
     ),
     models: trpc.procedure.query(({ ctx }) => execute(ctx, listMiraModels)),
+    activity: trpc.procedure
+        .input(
+            v.strictObject({
+                id: idSchema,
+                kind: v.picklist(["tools", "notes"]),
+                before: v.optional(idSchema),
+            })
+        )
+        .query(({ ctx, input }) => execute(ctx, (mira) => readChatActivity(mira, input))),
     conversations: trpc.router({
         settings: trpc.procedure
             .input(miraChatSettingsUpdateSchema)

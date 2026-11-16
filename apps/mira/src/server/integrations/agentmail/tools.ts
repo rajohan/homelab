@@ -135,11 +135,11 @@ export function createAgentMailTools(
                 const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
                 const available = await client<
                     { id: string }[]
-                >`SELECT m.id FROM mira_messages m JOIN mira_conversations c ON c.id=m.conversation_id WHERE m.id=${run.assistantMessageId} AND m.conversation_id=${run.conversationId} AND c.owner=${run.owner} AND c.deleted_at IS NULL AND (jsonb_array_length(m.attachment_ids)<8 OR m.attachment_ids @> ${JSON.stringify([id])}::text::jsonb)`;
+                >`SELECT m.id FROM mira_messages m JOIN mira_conversations c ON c.id=m.conversation_id WHERE m.id=${run.assistantMessageId} AND m.conversation_id=${run.conversationId} AND c.owner=${run.owner} AND c.deleted_at IS NULL AND (jsonb_array_length(m.attachment_ids)<100 OR m.attachment_ids @> ${JSON.stringify([id])}::text::jsonb)`;
                 if (!available[0])
                     throw new MiraFailure(
                         "CONFLICT",
-                        "This conversation is unavailable or the run already imported eight files."
+                        "This conversation is unavailable or the run already imported 100 files."
                     );
                 const file = await saveMiraFile(
                     context,
@@ -150,11 +150,11 @@ export function createAgentMailTools(
                         await auditMira(query, context, "file.mail_imported", id);
                         const linked = await query<
                             { id: string }[]
-                        >`UPDATE mira_messages m SET attachment_ids=CASE WHEN attachment_ids @> ${JSON.stringify([id])}::text::jsonb THEN attachment_ids ELSE attachment_ids || ${JSON.stringify([id])}::text::jsonb END WHERE m.id=${run.assistantMessageId} AND m.conversation_id=${run.conversationId} AND (jsonb_array_length(attachment_ids)<8 OR attachment_ids @> ${JSON.stringify([id])}::text::jsonb) AND EXISTS(SELECT 1 FROM mira_conversations c WHERE c.id=m.conversation_id AND c.owner=${run.owner} AND c.deleted_at IS NULL) RETURNING m.id`;
+                        >`UPDATE mira_messages m SET attachment_ids=CASE WHEN attachment_ids @> ${JSON.stringify([id])}::text::jsonb THEN attachment_ids ELSE attachment_ids || ${JSON.stringify([id])}::text::jsonb END WHERE m.id=${run.assistantMessageId} AND m.conversation_id=${run.conversationId} AND (jsonb_array_length(attachment_ids)<100 OR attachment_ids @> ${JSON.stringify([id])}::text::jsonb) AND EXISTS(SELECT 1 FROM mira_conversations c WHERE c.id=m.conversation_id AND c.owner=${run.owner} AND c.deleted_at IS NULL) RETURNING m.id`;
                         if (!linked[0])
                             throw new MiraFailure(
                                 "CONFLICT",
-                                "This conversation is unavailable or the run already imported eight files."
+                                "This conversation is unavailable or the run already imported 100 files."
                             );
                     }
                 );

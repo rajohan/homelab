@@ -63,7 +63,7 @@ export function AutomationEditor({
                 : Date.now() + 3_600_000
         )
     );
-    const [budget, setBudget] = useState(String(automation?.budgetSeconds ?? 180));
+    const [budget, setBudget] = useState(String(automation?.budgetSeconds ?? 900));
     const save = useOperation(() => {
         const input = {
             title,
@@ -254,7 +254,7 @@ export function AutomationEditor({
                         required
                         type="number"
                         min={30}
-                        max={900}
+                        max={3600}
                         value={budget}
                         onChange={(event) => setBudget(event.target.value)}
                     />

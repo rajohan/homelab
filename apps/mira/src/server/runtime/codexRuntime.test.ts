@@ -501,11 +501,19 @@ test("each resumed turn receives explicit model settings and only its own activi
         expect(JSON.parse(first.text)).toEqual(chosen);
         expect(activity).toEqual([
             { phase: "thinking", tool: null },
-            { phase: "thinking", tool: null, thinking: "Readable summary" },
+            {
+                phase: "thinking",
+                tool: null,
+                thinking: "Readable summary",
+                thinkingId: "turn-1",
+                thinkingOffset: 0,
+            },
             {
                 phase: "thinking",
                 tool: null,
                 thinking: "Readable summary\n\nNext section",
+                thinkingId: "turn-1",
+                thinkingOffset: 0,
             },
             { phase: "replying", tool: null },
         ]);

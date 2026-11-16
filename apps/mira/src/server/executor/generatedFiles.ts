@@ -71,11 +71,11 @@ export async function saveGeneratedMiraFile(
     const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
     const available = await client<
         { id: string }[]
-    >`SELECT r.id FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id JOIN mira_messages m ON m.id=r.assistant_message_id AND m.conversation_id=c.id WHERE r.id=${run.id} AND r.owner=${run.owner} AND c.owner=${run.owner} AND c.deleted_at IS NULL AND r.conversation_id=${run.conversationId} AND r.assistant_message_id=${run.assistantMessageId} AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=${run.leaseToken} AND r.lease_expires_at>clock_timestamp() AND (jsonb_array_length(m.attachment_ids)<8 OR m.attachment_ids @> ${JSON.stringify([id])}::text::jsonb)`;
+    >`SELECT r.id FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id JOIN mira_messages m ON m.id=r.assistant_message_id AND m.conversation_id=c.id WHERE r.id=${run.id} AND r.owner=${run.owner} AND c.owner=${run.owner} AND c.deleted_at IS NULL AND r.conversation_id=${run.conversationId} AND r.assistant_message_id=${run.assistantMessageId} AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=${run.leaseToken} AND r.lease_expires_at>clock_timestamp() AND (jsonb_array_length(m.attachment_ids)<100 OR m.attachment_ids @> ${JSON.stringify([id])}::text::jsonb)`;
     if (!available[0])
         throw new MiraFailure(
             "CONFLICT",
-            "This run is unavailable or its response already contains eight files."
+            "This run is unavailable or its response already contains 100 files."
         );
     const context: MiraContext = {
         client,
@@ -93,11 +93,11 @@ export async function saveGeneratedMiraFile(
             await auditMira(query, context, "file.generated", id);
             const linked = await query<
                 { id: string }[]
-            >`UPDATE mira_messages m SET attachment_ids=CASE WHEN attachment_ids @> ${JSON.stringify([id])}::text::jsonb THEN attachment_ids ELSE attachment_ids || ${JSON.stringify([id])}::text::jsonb END WHERE m.id=${run.assistantMessageId} AND m.conversation_id=${run.conversationId} AND (jsonb_array_length(attachment_ids)<8 OR attachment_ids @> ${JSON.stringify([id])}::text::jsonb) AND EXISTS(SELECT 1 FROM mira_conversations c WHERE c.id=m.conversation_id AND c.owner=${run.owner} AND c.deleted_at IS NULL) RETURNING m.id`;
+            >`UPDATE mira_messages m SET attachment_ids=CASE WHEN attachment_ids @> ${JSON.stringify([id])}::text::jsonb THEN attachment_ids ELSE attachment_ids || ${JSON.stringify([id])}::text::jsonb END WHERE m.id=${run.assistantMessageId} AND m.conversation_id=${run.conversationId} AND (jsonb_array_length(attachment_ids)<100 OR attachment_ids @> ${JSON.stringify([id])}::text::jsonb) AND EXISTS(SELECT 1 FROM mira_conversations c WHERE c.id=m.conversation_id AND c.owner=${run.owner} AND c.deleted_at IS NULL) RETURNING m.id`;
             if (!linked[0])
                 throw new MiraFailure(
                     "CONFLICT",
-                    "This conversation is unavailable or the response already contains eight files."
+                    "This conversation is unavailable or the response already contains 100 files."
                 );
         }
     );

@@ -1185,7 +1185,7 @@ test("mail-triggered runs share daily count and reserved-time limits without blo
         const usage = await fixture.client<
             { total: number; seconds: number; maximum: number }[]
         >`SELECT count(*)::int AS total,sum(budget_seconds)::int AS seconds,max(budget_seconds)::int AS maximum FROM mira_runs WHERE owner='operator'`;
-        expect(usage[0]).toEqual({ total: 15, seconds: 1800, maximum: 120 });
+        expect(usage[0]).toEqual({ total: 15, seconds: 13_500, maximum: 900 });
         await acceptAgentMailMessage(fixture.client, binding, "time-exhausted");
         expect(await scheduleMiraRuns(fixture.client)).toBe(0);
         await fixture.client`UPDATE mira_runs SET budget_seconds=30 WHERE owner='operator'`;
@@ -1856,7 +1856,7 @@ test.each(["cancelled", "expired"] as const)(
     }
 );
 
-test("mail import limits leave no rejected reservations even when imports race for the eighth slot", async () => {
+test("mail import limits leave no rejected reservations even when imports race for the last of 100 slots", async () => {
     const f = await operationFixture();
     const directory = await mkdtemp(path.join(tmpdir(), "mira-import-capacity-"));
     const binding = await provisionTestAgentMail(f.client);
@@ -1904,9 +1904,11 @@ test("mail import limits leave no rejected reservations even when imports race f
                     { callId, threadId: "synthetic", turnId: "synthetic" }
                 )
             );
-        for (let index = 0; index < 7; index++) {
+        for (let index = 0; index < 99; index++) {
             const imported = await execute(`file-${index}`);
             expect(imported.ok).toBe(true);
+            // Exercise run capacity without consuming the unrelated minute-rate allowance.
+            await f.client`UPDATE mira_attachments SET created_at=now()-interval '2 minutes'`;
         }
         const original = fileData.saveMiraFile;
         let arrivals = 0;
@@ -1921,18 +1923,18 @@ test("mail import limits leave no rejected reservations even when imports race f
         save.mockRestore();
         save = undefined;
         expect(competing.filter((result) => result.ok)).toHaveLength(1);
-        expect(competing.find((result) => !result.ok)?.message).toContain("eight files");
+        expect(competing.find((result) => !result.ok)?.message).toContain("100 files");
         const retained = await f.client<
             { id: string; ready: boolean }[]
         >`SELECT id,ready_at IS NOT NULL AS ready FROM mira_attachments ORDER BY id`;
-        expect(retained).toHaveLength(8);
+        expect(retained).toHaveLength(100);
         expect(retained.every((file) => file.ready)).toBe(true);
         const diskFiles = await readdir(directory);
         expect(diskFiles.toSorted()).toEqual(retained.map((file) => file.id).toSorted());
         for (let index = 0; index < 3; index++) {
             const rejected = await execute(`excess-${index}`);
             expect(rejected.ok).toBe(false);
-            expect(rejected.message).toContain("eight files");
+            expect(rejected.message).toContain("100 files");
         }
         const repeated = await execute("file-0", "repeat-existing");
         expect(repeated.ok).toBe(true);
@@ -1947,7 +1949,7 @@ test("mail import limits leave no rejected reservations even when imports race f
         expect(
             conversation.messages.find((message) => message.role === "assistant")
                 ?.attachmentIds
-        ).toHaveLength(8);
+        ).toHaveLength(100);
     } finally {
         save?.mockRestore();
         download.mockRestore();

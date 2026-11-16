@@ -15,9 +15,11 @@ const quotaSchema = v.object({
     subscription: v.object({
         limit: v.pipe(v.number(), v.finite(), v.minValue(0)),
         requests: v.pipe(v.number(), v.finite(), v.minValue(0)),
+        renewsAt: v.optional(v.pipe(v.string(), v.isoTimestamp())),
     }),
     planWeeklyLimit: v.optional(
         v.object({
+            renewsAt: v.optional(v.pipe(v.string(), v.isoTimestamp())),
             percentRemaining: v.pipe(
                 v.number(),
                 v.finite(),
@@ -33,13 +35,13 @@ const quotaSchema = v.object({
  * @param configuration - Server-only account credential.
  * @param signal - Inspection or turn cancellation.
  * @param request - Fixed-origin HTTP transport, injectable by trusted tests.
- * @returns Whether the current subscription reports remaining allowance.
+ * @returns Validated provider quota values, or null when unavailable.
  */
-export async function syntheticSubscriptionAvailable(
+export async function readSyntheticQuota(
     configuration: SyntheticConfiguration,
     signal: AbortSignal,
     request: typeof fetch = fetch
-): Promise<boolean> {
+) {
     const response = await request("https://api.synthetic.new/v2/quotas", {
         headers: { Authorization: `Bearer ${configuration.apiKey}` },
         redirect: "error",
@@ -47,10 +49,10 @@ export async function syntheticSubscriptionAvailable(
     });
     if (!response.ok) {
         await response.body?.cancel();
-        return false;
+        return null;
     }
     const reader = response.body?.getReader();
-    if (!reader) return false;
+    if (!reader) return null;
     const chunks: Uint8Array[] = [];
     let size = 0;
     try {
@@ -70,15 +72,31 @@ export async function syntheticSubscriptionAvailable(
             quotaSchema,
             JSON.parse(Buffer.concat(chunks).toString("utf8"))
         );
-        return (
-            quota.subscription.limit - quota.subscription.requests >= 1 &&
-            (quota.planWeeklyLimit === undefined ||
-                quota.planWeeklyLimit.percentRemaining > 0)
-        );
+        return quota;
     } finally {
         await reader.cancel().catch(() => {});
         reader.releaseLock();
     }
+}
+
+/** Check the subscription allowance before sending a metered request.
+ * @param configuration - Owner-bound credential.
+ * @param signal - Request cancellation.
+ * @param request - Fixed-origin transport used by trusted tests.
+ * @returns Whether the provider reports at least one request and remaining weekly allowance.
+ */
+export async function syntheticSubscriptionAvailable(
+    configuration: SyntheticConfiguration,
+    signal: AbortSignal,
+    request: typeof fetch = fetch
+): Promise<boolean> {
+    const quota = await readSyntheticQuota(configuration, signal, request);
+    return (
+        quota !== null &&
+        quota.subscription.limit - quota.subscription.requests >= 1 &&
+        (quota.planWeeklyLimit === undefined ||
+            quota.planWeeklyLimit.percentRemaining > 0)
+    );
 }
 
 // Both executor lanes share this credential queue. Only Synthetic requests wait here;

@@ -1264,7 +1264,7 @@ for (const reason of [
             if (reason === "deleted")
                 await f.client`UPDATE mira_conversations SET deleted_at=clock_timestamp() WHERE id=${f.chat.id}`;
             if (reason === "capacity")
-                await f.client`UPDATE mira_messages SET attachment_ids=${JSON.stringify(Array.from({ length: 8 }, () => crypto.randomUUID()))}::text::jsonb WHERE id=${f.run.assistantMessageId}`;
+                await f.client`UPDATE mira_messages SET attachment_ids=${JSON.stringify(Array.from({ length: 100 }, () => crypto.randomUUID()))}::text::jsonb WHERE id=${f.run.assistantMessageId}`;
             const bytes =
                 reason === "binary"
                     ? new Uint8Array([0, 255])

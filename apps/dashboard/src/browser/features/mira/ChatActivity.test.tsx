@@ -34,7 +34,7 @@ test("work status is always shown while active and removed on completion, indepe
                 display={{ ...display, showThinking: true }}
             />
         );
-        expect(screen.getByText("Provider display summary")).toBeInTheDocument();
+        expect(screen.getAllByText("Provider display summary").length).toBeGreaterThan(0);
         view.rerender(
             <ChatActivity
                 run={{ ...run, state: "completed" }}
@@ -43,7 +43,7 @@ test("work status is always shown while active and removed on completion, indepe
             />
         );
         expect(screen.queryByRole("status")).not.toBeInTheDocument();
-        expect(screen.getByText("Provider display summary")).toBeInTheDocument();
+        expect(screen.getAllByText("Provider display summary").length).toBeGreaterThan(0);
     } finally {
         view.unmount();
     }

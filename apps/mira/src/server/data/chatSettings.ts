@@ -4,6 +4,7 @@ import {
     type miraChatSettingsUpdateSchema,
     type MiraModel,
     miraModelSchema,
+    miraQuotaSchema,
 } from "@homelab/contracts/mira";
 import * as v from "valibot";
 
@@ -78,17 +79,22 @@ async function readCatalog(query: MiraQuery, owner: string) {
     const [row] = await query<
         {
             models: unknown;
+            quotas: unknown;
             model: string | null;
             fresh: boolean;
             syntheticOwner: string | null;
         }[]
-    >`SELECT models, model, synthetic_owner AS "syntheticOwner", ready AND heartbeat_at > now() - interval '45 seconds' AS fresh FROM mira_runtime_status WHERE id = 1`;
+    >`SELECT models, quotas, model, synthetic_owner AS "syntheticOwner", ready AND heartbeat_at > now() - interval '45 seconds' AS fresh FROM mira_runtime_status WHERE id = 1`;
     const parsed = v.safeParse(
         v.pipe(v.array(miraModelSchema), v.maxLength(2100)),
         row?.models ?? []
     );
     const models = parsed.success ? parsed.output : [];
+    const quota = v.safeParse(v.array(miraQuotaSchema), row?.quotas ?? []);
     return {
+        quotas: (quota.success ? quota.output : []).filter(
+            (entry) => entry.provider !== "synthetic" || row?.syntheticOwner === owner
+        ),
         models: models.filter(
             (entry) => !isSyntheticModel(entry.model) || row?.syntheticOwner === owner
         ),

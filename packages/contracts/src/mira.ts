@@ -166,7 +166,7 @@ export const miraAutomationInputSchema = v.strictObject({
     title,
     prompt: v.pipe(body, v.minLength(1)),
     schedule: miraScheduleSchema,
-    budgetSeconds: v.pipe(v.number(), v.integer(), v.minValue(30), v.maxValue(900)),
+    budgetSeconds: v.pipe(v.number(), v.integer(), v.minValue(30), v.maxValue(3600)),
     kind: v.picklist(["brief", "summary", "improvement", "custom"]),
 });
 export const miraAutomationUpdateSchema = v.strictObject({
@@ -232,6 +232,9 @@ export interface MiraActivity {
     tool: string | null;
     /** Provider-supplied display summary; never raw hidden reasoning. */
     thinking?: string;
+    /** Stable provider turn and Unicode offset of its bounded visible tail. */
+    thinkingId?: string;
+    thinkingOffset?: number;
 }
 export interface MiraRun {
     followupResolution?: MiraRunResolution | null;
@@ -406,3 +409,21 @@ export interface MiraToolReceipt {
     createdAt: string;
     finishedAt: string | null;
 }
+
+export const miraQuotaSchema = v.object({
+    provider: v.picklist(["chatgpt", "synthetic"]),
+    observedAt: v.string(),
+    windows: v.array(
+        v.object({
+            label: v.string(),
+            remainingPercent: v.pipe(
+                v.number(),
+                v.finite(),
+                v.minValue(0),
+                v.maxValue(100)
+            ),
+            resetsAt: v.nullable(v.string()),
+        })
+    ),
+});
+export type MiraQuota = v.InferOutput<typeof miraQuotaSchema>;

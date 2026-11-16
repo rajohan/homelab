@@ -32,7 +32,6 @@ import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { BrowserAccessDialog } from "./BrowserAccessDialog";
 import { BrowserAccessPanel } from "./BrowserAccessPanel";
-import { ChatActivity } from "./ChatActivity";
 import { ChatComposer } from "./ChatComposer";
 import { readChatDisplay, saveChatDisplay } from "./chatDisplay";
 import { ChatSettings } from "./ChatSettings";
@@ -40,7 +39,9 @@ import { ChatTranscript } from "./ChatTranscript";
 import { ComputerAccessDialog } from "./ComputerAccessDialog";
 import { ComputerAccessPanel } from "./ComputerAccessPanel";
 import { FileLibrary } from "./FileLibrary";
+import { LiveChatActivity } from "./LiveChatActivity";
 import { ProposedChanges } from "./ProposedChanges";
+import { ProviderQuota } from "./ProviderQuota";
 import { readChatUpdate } from "./readChatUpdate";
 
 /**
@@ -293,6 +294,10 @@ export function ChatPanel({
                     }
                 />
             </header>
+            <ProviderQuota
+                quotas={catalog.data?.quotas ?? []}
+                fresh={!catalog.isError && (catalog.data?.fresh ?? false)}
+            />
             {(!status.data?.ready || status.data.message) && (
                 <p className="shrink-0 border-b border-primary-700 px-4 py-2 text-xs text-primary-400">
                     {status.data?.message ?? "Checking Mira connection…"}
@@ -319,12 +324,13 @@ export function ChatPanel({
                     },
                 }}
                 activity={
-                    <ChatActivity
-                        key={String(display.expandTools)}
-                        run={run}
-                        tools={latest.tools ?? []}
-                        display={display}
-                    />
+                    run ? (
+                        <LiveChatActivity
+                            key={`${run.id}:${display.expandTools}`}
+                            run={run}
+                            display={display}
+                        />
+                    ) : null
                 }
             />
             {run?.message && (
@@ -417,7 +423,7 @@ export function ChatPanel({
                     settings={conversation.settings ?? miraDefaultChatSettings}
                     models={catalog.data?.models ?? []}
                     defaultModel={catalog.data?.defaultModel ?? null}
-                    fresh={catalog.data?.fresh ?? false}
+                    fresh={!catalog.isError && (catalog.data?.fresh ?? false)}
                     display={display}
                     onDisplayChange={(next) => {
                         setDisplay(next);

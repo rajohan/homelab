@@ -100,7 +100,7 @@ export function ChatSettings({
                 />
                 <div className="space-y-3 border-t border-primary-700 pt-4">
                     <Switch
-                        label="Show thinking"
+                        label="Show work notes"
                         checked={display.showThinking}
                         onChange={(showThinking) =>
                             onDisplayChange({ ...display, showThinking })

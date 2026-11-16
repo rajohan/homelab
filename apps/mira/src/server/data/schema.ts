@@ -4,6 +4,7 @@ import {
     miraDefaultChatSettings,
     type MiraMessagePart,
     type MiraModel,
+    type MiraQuota,
     type MiraRunResolution,
     type MiraSchedule,
 } from "@homelab/contracts/mira";
@@ -72,6 +73,10 @@ export const miraMessages = pgTable(
             .references(() => miraConversations.id),
         role: text().notNull(),
         content: text().notNull().default(""),
+        attachmentReplies: jsonb("attachment_replies")
+            .$type<Record<string, string>>()
+            .notNull()
+            .default({}),
         parts: jsonb().$type<MiraMessagePart[]>().notNull().default([]),
         state: text().notNull(),
         attachmentIds: jsonb("attachment_ids").$type<string[]>().notNull().default([]),
@@ -203,7 +208,7 @@ export const miraAutomations = pgTable(
     },
     (t) => [
         index("mira_automations_due").on(t.nextRunAt),
-        check("mira_automations_budget", sql`${t.budgetSeconds} between 30 and 900`),
+        check("mira_automations_budget", sql`${t.budgetSeconds} between 30 and 3600`),
         check(
             "mira_automations_delivery",
             sql`${t.delivery} in ('reports','changes','silent')`
@@ -468,6 +473,7 @@ export const miraRuntimeStatus = pgTable(
         message: text(),
         heartbeatAt: time("heartbeat_at").notNull(),
         models: jsonb().$type<MiraModel[]>().notNull().default([]),
+        quotas: jsonb().$type<MiraQuota[]>().notNull().default([]),
         integrations: jsonb()
             .$type<{ owner: string; key: string }[]>()
             .notNull()
@@ -1280,4 +1286,17 @@ export const miraBrowserConsoles = pgTable(
             sql`(${t.frame} IS NULL) = (${t.frameAt} IS NULL)`
         ),
     ]
+);
+
+export const miraWorkNotes = pgTable(
+    "mira_work_notes",
+    {
+        id: uuid().primaryKey(),
+        runId: uuid("run_id")
+            .notNull()
+            .references(() => miraRuns.id, { onDelete: "cascade" }),
+        content: text().notNull(),
+        createdAt: time("created_at").notNull().defaultNow(),
+    },
+    (t) => [index("mira_work_notes_run").on(t.runId, t.createdAt, t.id)]
 );

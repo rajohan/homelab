@@ -496,7 +496,11 @@ export async function executeMiraTurn(
                     },
                     onActivity: (next) => {
                         const thinking = next.thinking ?? activity.thinking;
-                        activity = { ...next, ...(thinking ? { thinking } : {}) };
+                        activity = {
+                            ...activity,
+                            ...next,
+                            ...(thinking ? { thinking } : {}),
+                        };
                     },
                     onDelta: (delta, itemId) => {
                         const separator =

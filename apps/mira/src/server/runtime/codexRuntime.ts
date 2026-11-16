@@ -139,6 +139,48 @@ export class CodexRuntime {
         };
     }
 
+    /** Read the provider's quota windows without returning account or billing identity.
+     * @returns Validated usage percentages and reset times, or no windows when unavailable.
+     */
+    async quota() {
+        const window = v.nullish(
+            v.object({
+                usedPercent: v.pipe(v.number(), v.finite()),
+                windowDurationMins: v.nullish(v.number()),
+                resetsAt: v.nullish(v.number()),
+            })
+        );
+        const snapshot = v.object({ primary: window, secondary: window });
+        const result = v.parse(
+            v.object({
+                rateLimits: snapshot,
+                rateLimitsByLimitId: v.nullish(v.record(v.string(), snapshot)),
+            }),
+            await this.connection.request("account/rateLimits/read", {})
+        );
+        const buckets = result.rateLimitsByLimitId
+            ? Object.entries(result.rateLimitsByLimitId)
+            : [["codex", result.rateLimits] as const];
+        return buckets.flatMap(([name, limits]) =>
+            [limits.primary, limits.secondary].flatMap((entry, index) =>
+                entry
+                    ? [
+                          {
+                              label: `${name} · ${entry.windowDurationMins ? `${entry.windowDurationMins / 60}h` : ["Primary", "Secondary"][index]}`,
+                              remainingPercent: Math.max(
+                                  0,
+                                  Math.min(100, 100 - entry.usedPercent)
+                              ),
+                              resetsAt: entry.resetsAt
+                                  ? new Date(entry.resetsAt * 1000).toISOString()
+                                  : null,
+                          },
+                      ]
+                    : []
+            )
+        );
+    }
+
     /**
      * List advertised model choices; actual inference must still prove access.
      * @returns The paginated model catalog.
@@ -350,6 +392,7 @@ export class CodexRuntime {
         let output = "";
         let lastMessageId: string | null = null;
         let thinking = "";
+        let thinkingOffset = 0;
         let thinkingItem: string | null = null;
         const completion = Promise.withResolvers<TurnResult>();
         // The notification can arrive before the turn/start response.
@@ -394,8 +437,17 @@ export class CodexRuntime {
                 const section = `${part.itemId}:${part.summaryIndex}`;
                 if (thinkingItem !== null && thinkingItem !== section) thinking += "\n\n";
                 thinkingItem = section;
-                thinking = (thinking + part.delta).slice(-32_000);
-                options.onActivity?.({ phase: "thinking", tool: null, thinking });
+                // oxlint-disable-next-line typescript/no-misused-spread -- Preserve Unicode code points for PostgreSQL offsets.
+                const characters = [...(thinking + part.delta)];
+                thinkingOffset += Math.max(0, characters.length - 32_000);
+                thinking = characters.slice(-32_000).join("");
+                options.onActivity?.({
+                    phase: "thinking",
+                    tool: null,
+                    thinking,
+                    thinkingId: part.turnId,
+                    thinkingOffset,
+                });
             } else if (event.method === "item/agentMessage/delta") {
                 const delta = v.parse(deltaSchema, event.params);
                 if (
