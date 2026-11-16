@@ -65,13 +65,40 @@ export function ProviderQuota({
                                                 {Math.round(window.remainingPercent)}%
                                                 remaining
                                             </p>
-                                            <meter
-                                                aria-label={`${provider} ${window.label} remaining`}
-                                                min={0}
-                                                max={100}
-                                                value={window.remainingPercent}
-                                                className="w-full"
-                                            />
+                                            <div className="my-1 h-2 overflow-hidden rounded-full bg-primary-800">
+                                                <meter
+                                                    aria-label={`${provider} ${window.label} remaining`}
+                                                    min={0}
+                                                    max={100}
+                                                    value={window.remainingPercent}
+                                                    className="sr-only"
+                                                />
+                                                <div
+                                                    aria-hidden="true"
+                                                    className="h-full rounded-full bg-accent-400"
+                                                    style={{
+                                                        width: `${window.remainingPercent}%`,
+                                                    }}
+                                                />
+                                            </div>
+                                            {window.label === "Weekly credits" &&
+                                                provider === "synthetic" && (
+                                                    <p>
+                                                        Credits replenish gradually
+                                                        throughout the week.
+                                                    </p>
+                                                )}
+                                            {window.replenishesAt && (
+                                                <p>
+                                                    Next replenishment
+                                                    {window.replenishesPercent ===
+                                                    undefined
+                                                        ? ""
+                                                        : ` (+${window.replenishesPercent}%)`}
+                                                    :{" "}
+                                                    {formatDateTime(window.replenishesAt)}
+                                                </p>
+                                            )}
                                             {window.resetsAt && (
                                                 <p>
                                                     Resets{" "}

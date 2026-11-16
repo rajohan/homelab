@@ -1,5 +1,5 @@
 import type { MiraRun } from "@homelab/contracts/mira";
-import { Badge, type InfiniteScrollContinuation, Markdown } from "@homelab/ui";
+import { Badge, type InfiniteScrollContinuation, MarkdownText } from "@homelab/ui";
 import { Brain, LoaderCircle, MessageSquare, Wrench } from "lucide-react";
 import { useState } from "react";
 
@@ -89,8 +89,11 @@ export function ChatActivity({
                     <summary className="cursor-pointer px-3 py-2 text-primary-300">
                         <span className="font-medium">Work notes</span>
                         <span className="mt-1 block truncate font-normal text-primary-400">
-                            {thinking?.split("\n").findLast(Boolean) ??
-                                notes?.at(-1)?.message}
+                            <MarkdownText>
+                                {thinking?.split("\n").findLast(Boolean) ??
+                                    notes?.at(-1)?.message ??
+                                    ""}
+                            </MarkdownText>
                         </span>
                     </summary>
                     <ActivityFeed
@@ -100,11 +103,11 @@ export function ChatActivity({
                         {notes?.length ? (
                             notes.map((note) => (
                                 <div key={note.id}>
-                                    <Markdown>{note.message ?? ""}</Markdown>
+                                    <MarkdownText>{note.message ?? ""}</MarkdownText>
                                 </div>
                             ))
                         ) : (
-                            <Markdown>{thinking ?? ""}</Markdown>
+                            <MarkdownText>{thinking ?? ""}</MarkdownText>
                         )}
                     </ActivityFeed>
                 </details>

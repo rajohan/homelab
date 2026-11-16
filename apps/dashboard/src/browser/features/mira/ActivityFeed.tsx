@@ -80,7 +80,7 @@ export function ActivityFeed({
                 <Button
                     variant="secondary"
                     size="sm"
-                    className="absolute right-2 bottom-2 shadow-lg"
+                    className="absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap shadow-lg"
                     onClick={() => {
                         following.current = true;
                         anchor.current = null;

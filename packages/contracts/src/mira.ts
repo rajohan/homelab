@@ -423,6 +423,10 @@ export const miraQuotaSchema = v.object({
                 v.maxValue(100)
             ),
             resetsAt: v.nullable(v.string()),
+            replenishesAt: v.optional(v.string()),
+            replenishesPercent: v.optional(
+                v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(100))
+            ),
         })
     ),
 });

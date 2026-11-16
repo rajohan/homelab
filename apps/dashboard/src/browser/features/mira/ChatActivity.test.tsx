@@ -92,3 +92,29 @@ test("display migration preserves tool choices without preserving a hidden work 
         localStorage.removeItem("homelab:mira:chat-display:v1");
     }
 });
+
+test("work notes remove Markdown emphasis from the summary and expanded text", () => {
+    const view = render(
+        <ChatActivity
+            run={{
+                ...run,
+                activity: {
+                    phase: "thinking",
+                    tool: null,
+                    thinking: "**Reviewing deployment**",
+                },
+            }}
+            tools={[]}
+            display={{ ...display, showThinking: true }}
+        />
+    );
+    try {
+        const summary = view.container.querySelector("summary")!;
+        expect(summary.textContent).toContain("Reviewing deployment");
+        expect(summary.textContent).not.toContain("**");
+        expect(view.container.querySelector("strong")).toBeNull();
+        expect(view.container.textContent).not.toContain("**");
+    } finally {
+        view.unmount();
+    }
+});

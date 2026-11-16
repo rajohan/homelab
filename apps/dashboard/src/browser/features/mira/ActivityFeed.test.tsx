@@ -91,3 +91,36 @@ test("quota expires without a successful catalog response", () => {
         time.mockRestore();
     }
 });
+
+test("Synthetic credits display replenishment separately from a fixed reset", () => {
+    const observedAt = "2026-11-16T12:00:00Z";
+    const view = render(
+        <ProviderQuota
+            fresh
+            now={Date.parse(observedAt)}
+            quotas={[
+                {
+                    provider: "synthetic",
+                    observedAt,
+                    windows: [
+                        {
+                            label: "Weekly credits",
+                            remainingPercent: 36,
+                            resetsAt: null,
+                            replenishesAt: "2026-11-16T14:00:00Z",
+                            replenishesPercent: 2,
+                        },
+                    ],
+                },
+            ]}
+        />
+    );
+    try {
+        expect(screen.getByText(/Synthetic: 36% left/)).toBeInTheDocument();
+        expect(screen.getByRole("meter")).toHaveAttribute("value", "36");
+        expect(screen.getByText(/Next replenishment \(\+2%\)/)).toBeInTheDocument();
+        expect(screen.queryByText(/^Resets/)).not.toBeInTheDocument();
+    } finally {
+        view.unmount();
+    }
+});
