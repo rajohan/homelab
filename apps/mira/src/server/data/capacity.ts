@@ -1,5 +1,11 @@
 import type { MiraQuery } from "./context";
 
+/** Bound each dispatcher through execution and cleanup: two lanes allow eight turns. */
+export const miraRunConcurrencyPerLane = 4;
+
+/** Keep two general-lane slots available to scheduled work and automatic follow-up. */
+export const miraGeneralManualRunLimit = 2;
+
 /**
  * Reserve bounded queue space while retaining capacity for manually started work.
  * @param query - Enqueue transaction; its capacity lock remains held through insertion.

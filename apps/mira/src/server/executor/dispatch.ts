@@ -1,5 +1,6 @@
 import { setTimeout as delay } from "node:timers/promises";
 
+import { miraRunConcurrencyPerLane } from "../data/capacity";
 import type { MaintenanceGate } from "./maintenanceGate";
 
 /**
@@ -20,6 +21,10 @@ export async function dispatchMiraRuns<Run>(options: {
     let failure: { error: unknown } | undefined;
     try {
         while (!signal.aborted) {
+            if (active.size >= miraRunConcurrencyPerLane) {
+                await Promise.race(active);
+                continue;
+            }
             if (options.ready()) {
                 const admitted = Promise.withResolvers<boolean>();
                 const work = options.maintenance

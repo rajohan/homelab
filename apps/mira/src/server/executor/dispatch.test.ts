@@ -3,13 +3,13 @@ import { expect, test } from "bun:test";
 import { dispatchMiraRuns } from "./dispatch";
 import { MaintenanceGate } from "./maintenanceGate";
 
-test("independent turns start together and shutdown waits for every cleanup", async () => {
+test("bounded turns start together and shutdown waits for every cleanup", async () => {
     const maintenance = new MaintenanceGate();
     maintenance.update(null);
     const stop = new AbortController();
     const started = Promise.withResolvers<void>();
     const cleanup = Promise.withResolvers<void>();
-    const runs = [1, 2, 3, 4];
+    const runs = [1, 2, 3, 4, 5];
     const observed: number[] = [];
     let cleaned = 0;
     let finished = false;
@@ -35,6 +35,7 @@ test("independent turns start together and shutdown waits for every cleanup", as
     try {
         await started.promise;
         expect(observed).toEqual([1, 2, 3, 4]);
+        expect(runs).toEqual([5]);
         maintenance.update("deployment");
         stop.abort();
         await Promise.resolve();
@@ -132,4 +133,49 @@ test("a failed turn cancels its siblings and drains cleanup before rejecting", a
     expect(rejected).toBe(true);
     expect(cleaned).toBe(true);
     expect(maintenance.drained).toBe("deployment");
+});
+
+test("another run is claimed only after an occupied slot finishes cleanup", async () => {
+    const maintenance = new MaintenanceGate();
+    maintenance.update(null);
+    const stop = new AbortController();
+    const firstFour = Promise.withResolvers<void>();
+    const fifth = Promise.withResolvers<void>();
+    const cleanup = Array.from({ length: 5 }, () => Promise.withResolvers<void>());
+    const runs = [0, 1, 2, 3, 4];
+    let claims = 0;
+    let active = 0;
+    let peak = 0;
+    const pending = dispatchMiraRuns({
+        signal: stop.signal,
+        maintenance,
+        ready: () => true,
+        claim: () => {
+            claims++;
+            return Promise.resolve(runs.shift() ?? null);
+        },
+        execute: async (run) => {
+            active++;
+            peak = Math.max(peak, active);
+            if (run === 3) firstFour.resolve();
+            if (run === 4) fifth.resolve();
+            await cleanup[run]!.promise;
+            active--;
+        },
+    });
+    try {
+        await firstFour.promise;
+        expect(claims).toBe(4);
+        expect(active).toBe(4);
+        cleanup[0]!.resolve();
+        await fifth.promise;
+        expect(claims).toBe(5);
+        expect(active).toBe(4);
+        expect(peak).toBe(4);
+    } finally {
+        stop.abort();
+        for (const release of cleanup) release.resolve();
+        await pending;
+    }
+    expect(active).toBe(0);
 });

@@ -120,7 +120,10 @@ isolated synthetic preview before production deployment.
   external delivery still requires the operator's separate review and approval.
 - Independent conversations and automations execute concurrently; an active Chat
   does not occupy the capacity needed by a scheduled brief or another conversation.
-  Foreground dispatch still prioritizes manual requests. Each conversation and task
+  Each lane admits up to four turns (eight total), including cleanup. At most two
+  general-lane slots accept new manual work, preserving two slots for automations
+  and automatic task follow-up even during long chats. Foreground dispatch still
+  prioritizes manual requests. Each conversation and task
   retains one active run, and deployment drain waits for every admitted turn to finish
   cleanup. Agent runs do not consume infrastructure workers. Leases, durable tool
   receipts and cancellation fencing prevent expired workers from recording new
