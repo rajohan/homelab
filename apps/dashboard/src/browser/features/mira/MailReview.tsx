@@ -3,16 +3,16 @@ import {
     ActionGroup,
     Badge,
     Button,
-    buttonStyles,
     Card,
     ErrorNotice,
     Modal,
     SectionHeader,
 } from "@homelab/ui";
-import { Download, Mail, Paperclip, Send } from "lucide-react";
+import { Mail, Paperclip, Send } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { AttachmentFileActions } from "./AttachmentFileActions";
 import { miraStatusTone } from "./statusTone";
 
 /**
@@ -110,14 +110,7 @@ export function MailReview({
                                             {file.mediaType})
                                         </span>
                                     </span>
-                                    <a
-                                        href={`/api/mira/files/${file.id}`}
-                                        className={buttonStyles({ variant: "secondary" })}
-                                        download={file.name}
-                                    >
-                                        <Download size={16} aria-hidden="true" />
-                                        Download
-                                    </a>
+                                    <AttachmentFileActions file={file} />
                                 </div>
                             ))}
                         </div>

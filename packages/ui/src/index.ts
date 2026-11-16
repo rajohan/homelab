@@ -68,3 +68,6 @@ export {
 export { queryRefresh } from "./lib/queryRefresh";
 
 export { SyntaxSource } from "./components/Markdown/SyntaxSource";
+
+export { TextFilePreview } from "./components/Markdown/TextFilePreview";
+export { fileTypeIcon, fileTypeIcons } from "./lib/fileTypeIcon";

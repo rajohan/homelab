@@ -332,3 +332,65 @@ test("duplicate attachment IDs are rejected before a chat enters the queue", asy
         await rm(directory, { recursive: true, force: true });
     }
 });
+
+test("JSON previews format complete input before truncation and preserve original downloads", async () => {
+    const database = await operationFixture();
+    const directory = await mkdtemp(path.join(tmpdir(), "mira-formatted-preview-"));
+    const context = {
+        operations: { ...database, miraFilesDirectory: directory },
+        principal: { kind: "human" as const, id: "operator", capabilities },
+    };
+    const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: (request) => miraFileRequest(request, context),
+    });
+    const base = `http://127.0.0.1:${server.port}/api/mira/files`;
+    try {
+        const id = crypto.randomUUID();
+        const source = JSON.stringify({
+            status: "passed",
+            values: Array.from({ length: 12_000 }, (_value, index) => ({ index })),
+        });
+        const saved = await fetch(base, {
+            method: "POST",
+            body: source,
+            headers: { "x-file-id": id, "x-file-name": "result.json" },
+        });
+        expect(saved.status).toBe(201);
+        const response = await fetch(`${base}/${id}?preview=text`);
+        const preview = (await response.json()) as { text: string; truncated: boolean };
+        expect(preview.text).toStartWith('{\n  "status": "passed",\n');
+        expect(preview.text.length).toBe(64_000);
+        expect(preview.truncated).toBe(true);
+        expect(response.headers.get("content-security-policy")).toContain("sandbox");
+        const download = await fetch(`${base}/${id}`);
+        expect(await download.text()).toBe(source);
+        const precise = crypto.randomUUID();
+        const numbers = '{"id":9007199254740993,"negative":-0,"huge":1e400}';
+        await fetch(base, {
+            method: "POST",
+            body: numbers,
+            headers: { "x-file-id": precise, "x-file-name": "numbers.json" },
+        });
+        const numericResponse = await fetch(`${base}/${precise}?preview=text`);
+        const numericPreview = (await numericResponse.json()) as { text: string };
+        expect(numericPreview.text).toContain('"id": 9007199254740993');
+        expect(numericPreview.text).toContain('"negative": -0');
+        expect(numericPreview.text).toContain('"huge": 1e400');
+        const invalid = crypto.randomUUID();
+        const raw = '{ "unfinished":';
+        await fetch(base, {
+            method: "POST",
+            body: raw,
+            headers: { "x-file-id": invalid, "x-file-name": "invalid.json" },
+        });
+        const fallbackResponse = await fetch(`${base}/${invalid}?preview=text`);
+        const fallback = (await fallbackResponse.json()) as { text: string };
+        expect(fallback.text).toBe(raw);
+    } finally {
+        await server.stop(true);
+        await database.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});

@@ -1,11 +1,17 @@
 import type { SyntaxHighlighterProps } from "react-syntax-highlighter";
 import bash from "react-syntax-highlighter/dist/esm/languages/hljs/bash";
+import csharp from "react-syntax-highlighter/dist/esm/languages/hljs/csharp";
 import css from "react-syntax-highlighter/dist/esm/languages/hljs/css";
+import diff from "react-syntax-highlighter/dist/esm/languages/hljs/diff";
 import dockerfile from "react-syntax-highlighter/dist/esm/languages/hljs/dockerfile";
+import go from "react-syntax-highlighter/dist/esm/languages/hljs/go";
+import ini from "react-syntax-highlighter/dist/esm/languages/hljs/ini";
 import javascript from "react-syntax-highlighter/dist/esm/languages/hljs/javascript";
 import json from "react-syntax-highlighter/dist/esm/languages/hljs/json";
 import markdown from "react-syntax-highlighter/dist/esm/languages/hljs/markdown";
+import powershell from "react-syntax-highlighter/dist/esm/languages/hljs/powershell";
 import python from "react-syntax-highlighter/dist/esm/languages/hljs/python";
+import rust from "react-syntax-highlighter/dist/esm/languages/hljs/rust";
 import sql from "react-syntax-highlighter/dist/esm/languages/hljs/sql";
 import typescript from "react-syntax-highlighter/dist/esm/languages/hljs/typescript";
 import xml from "react-syntax-highlighter/dist/esm/languages/hljs/xml";
@@ -22,6 +28,12 @@ const codeTagProps: SyntaxHighlighterProps["codeTagProps"] = {
 };
 const languages: Readonly<Record<string, unknown>> = {
     css,
+    csharp,
+    diff,
+    go,
+    ini,
+    powershell,
+    rust,
     dockerfile,
     html: xml,
     javascript,
@@ -45,6 +57,11 @@ const aliases: Readonly<Record<string, string>> = {
     py: "python",
     md: "markdown",
     yml: "yaml",
+    toml: "ini",
+    ps1: "powershell",
+    rs: "rust",
+    cs: "csharp",
+    patch: "diff",
 };
 for (const [name, definition] of Object.entries(languages))
     SyntaxHighlighter.registerLanguage(name, languageDefinition(definition));
