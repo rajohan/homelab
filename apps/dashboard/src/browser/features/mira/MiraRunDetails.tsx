@@ -1,7 +1,6 @@
 import {
     ActionGroup,
     Badge,
-    Button,
     DataTable,
     ErrorNotice,
     formatDateTime,
@@ -143,9 +142,6 @@ export function MiraRunDetails({
                 )}
                 {run && !query.isError && !query.hasNextPage && footer}
                 <ActionGroup stretch={false}>
-                    <Button variant="secondary" onClick={onClose}>
-                        Close
-                    </Button>
                     {run && !query.isError && !query.hasNextPage && actions}
                 </ActionGroup>
             </div>

@@ -263,28 +263,11 @@ export function ComputerAccessDialog({
                             >
                                 Request access
                             </Button>
-                            <Button
-                                variant="secondary"
-                                disabled={request.isPending}
-                                onClick={onClose}
-                            >
-                                Close
-                            </Button>
                         </ActionGroup>
                     </form>
                 )}
                 {request.error && <ErrorNotice error={request.error} />}
                 {stop.error && <ErrorNotice error={stop.error} />}
-                {(!running || current) && (
-                    <Button
-                        variant="secondary"
-                        fullWidth
-                        disabled={request.isPending}
-                        onClick={onClose}
-                    >
-                        Close
-                    </Button>
-                )}
             </div>
         </Modal>
     );

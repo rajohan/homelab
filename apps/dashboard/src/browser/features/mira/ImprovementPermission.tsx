@@ -183,13 +183,6 @@ export function ImprovementPermission({
                             Revoke permission
                         </Button>
                     )}
-                    <Button
-                        variant="secondary"
-                        disabled={save.isPending || resolve.isPending}
-                        onClick={onClose}
-                    >
-                        Close
-                    </Button>
                 </ActionGroup>
             </div>
         </Modal>

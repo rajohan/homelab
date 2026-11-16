@@ -125,13 +125,6 @@ export function PublicationReview({
                             Open here.now
                         </a>
                     )}
-                    <Button
-                        variant="secondary"
-                        disabled={approve.isPending}
-                        onClick={onClose}
-                    >
-                        Close
-                    </Button>
                 </ActionGroup>
             </div>
         </Modal>
