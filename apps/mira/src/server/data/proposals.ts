@@ -340,6 +340,10 @@ export async function answerMiraQuestion(
                 "BAD_REQUEST",
                 "Answer every question before submitting."
             );
+        // Older pending receipts have no assistant question message yet.
+        await query`INSERT INTO mira_messages(id,conversation_id,role,content,state,attachment_ids)
+            VALUES(${input.id},${link.conversationId},'assistant',${request.questions.map((question) => question.title).join("\n\n")},'completed','[]'::jsonb)
+            ON CONFLICT(id) DO NOTHING`;
         await sendMiraMessageInTransaction(query, context, {
             conversationId: link.conversationId,
             requestId: input.id,

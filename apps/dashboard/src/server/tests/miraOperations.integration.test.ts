@@ -658,3 +658,52 @@ test("a reserved receipt can save a fresh approval after a permission edit", asy
         await f.close();
     }
 });
+
+test("answering a pre-upgrade question restores its context exactly once", async () => {
+    const f = await fixture("ask");
+    try {
+        // The fixture's unused host receipt is unrelated to this question.
+        await f.client`UPDATE mira_tool_receipts SET state='failed' WHERE id=${f.receiptId}`;
+        const tool = createMiraTools(f.client, f.run).find(
+            (entry) => entry.name === "mira_request_user_input"
+        )!;
+        const result: unknown = JSON.parse(
+            (await tool.execute(
+                {
+                    questions: [{ id: "target", title: "Which target?" }],
+                },
+                new AbortController().signal,
+                { callId: crypto.randomUUID(), threadId: "fixture", turnId: "fixture" }
+            )) as string
+        );
+        expect(result).toMatchObject({ ok: true });
+        const [proposal] = await f.api.proposals.list({ id: f.run.conversationId });
+        expect(proposal?.tool).toBe("mira_request_user_input");
+        // Before this release only the receipt existed, without a question message.
+        await f.client`DELETE FROM mira_messages WHERE id=${proposal!.id}`;
+        await finishMiraRun(f.client, f.run, {
+            state: "completed",
+            text: "Waiting for your answer.",
+            message: null,
+        });
+        const answer = {
+            id: proposal!.id,
+            inputHash: proposal!.inputHash,
+            answers: { target: "Main" },
+        };
+        expect(await f.api.proposals.answer(answer)).toMatchObject({ state: "answered" });
+        expect(await f.api.proposals.answer(answer)).toMatchObject({ state: "answered" });
+        const questions = await f.client<
+            { role: string; content: string }[]
+        >`SELECT role,content FROM mira_messages WHERE id=${proposal!.id}`;
+        expect(questions).toHaveLength(1);
+        expect(questions[0]).toEqual({ role: "assistant", content: "Which target?" });
+        const replies = await f.client<
+            { content: string }[]
+        >`SELECT m.content FROM mira_messages m JOIN mira_runs r ON r.user_message_id=m.id WHERE r.request_key=${`operator:${proposal!.id}`}`;
+        expect(replies).toHaveLength(1);
+        expect(replies[0]).toEqual({ content: "Main" });
+    } finally {
+        await f.close();
+    }
+});
