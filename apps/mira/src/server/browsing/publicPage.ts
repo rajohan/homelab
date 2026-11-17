@@ -20,9 +20,15 @@ export async function publicDocument(cdp: CDPSession, origins: readonly string[]
  * @param cdp - Private connection to the selected tab.
  * @param frameId - Current top-level frame only.
  * @param control - Whether input references can be created.
+ * @param operator - Trusted human observation; permits password entry without exposing its value.
  * @returns Human-readable content and server-owned handles for supported controls.
  */
-export async function publicOutline(cdp: CDPSession, frameId: string, control: boolean) {
+export async function publicOutline(
+    cdp: CDPSession,
+    frameId: string,
+    control: boolean,
+    operator = false
+) {
     const { nodes } = await cdp.send("Accessibility.getFullAXTree", {
         frameId,
         depth: 18,
@@ -39,6 +45,7 @@ export async function publicOutline(cdp: CDPSession, frameId: string, control: b
         )
         .slice(0, 200);
     const editable = new Set<number>();
+    const passwords = new Set<number>();
     await Promise.all(
         fields.map(async (field) => {
             const id = field.backendDOMNodeId!;
@@ -47,6 +54,7 @@ export async function publicOutline(cdp: CDPSession, frameId: string, control: b
                 .catch(() => null);
             if (!described) return;
             const { node } = described;
+            let password = false;
             if (node.localName === "input") {
                 const attributes = node.attributes ?? [];
                 const index = attributes.findIndex(
@@ -56,7 +64,8 @@ export async function publicOutline(cdp: CDPSession, frameId: string, control: b
                     index === -1
                         ? "text"
                         : attributes[index + 1]?.toLowerCase() || "text";
-                if (!textInputTypes.includes(type)) return;
+                password = type === "password";
+                if (!(password ? operator : textInputTypes.includes(type))) return;
             }
             if (
                 field.properties?.some((p) => p.name === "editable" && p.value.value) &&
@@ -65,7 +74,7 @@ export async function publicOutline(cdp: CDPSession, frameId: string, control: b
                         (p.name === "readonly" || p.name === "disabled") && p.value.value
                 )
             )
-                editable.add(id);
+                (password ? passwords : editable).add(id);
         })
     );
     const refs: {
@@ -108,7 +117,8 @@ export async function publicOutline(cdp: CDPSession, frameId: string, control: b
         )
             continue;
         const actions: ("click" | "type")[] = [];
-        if (editable.has(node.backendDOMNodeId)) actions.push("type");
+        if (editable.has(node.backendDOMNodeId) || passwords.has(node.backendDOMNodeId))
+            actions.push("type");
         else if (
             ["button", "link", "checkbox", "radio", "tab", "menuitem", "switch"].includes(
                 role
@@ -129,12 +139,14 @@ export async function publicOutline(cdp: CDPSession, frameId: string, control: b
  * @param frameId - Revalidated document frame.
  * @param node - Chromium identity captured in the latest observation.
  * @param action - Validated click or text input, passed only as values to a fixed function.
+ * @param operator - Authority retained from the unused host-verified human observation.
  */
 export async function publicInput(
     cdp: CDPSession,
     frameId: string,
     node: number,
-    action: { action: "click" } | { action: "type"; text: string; replace: boolean }
+    action: { action: "click" } | { action: "type"; text: string; replace: boolean },
+    operator = false
 ) {
     const { executionContextId } = await cdp.send("Page.createIsolatedWorld", {
         frameId,
@@ -150,11 +162,11 @@ export async function publicInput(
             objectId: object.objectId,
             userGesture: true,
             returnByValue: true,
-            arguments: [{ value: action }],
-            functionDeclaration: `function(action) {
-                if (!(this instanceof HTMLElement) || !this.isConnected || !this.checkVisibility() || this.matches(":disabled,input[type=password],input[type=file]")) return false;
+            arguments: [{ value: action }, { value: operator }],
+            functionDeclaration: `function(action, operator) {
+                if (!(this instanceof HTMLElement) || !this.isConnected || !this.checkVisibility() || this.matches(":disabled,input[type=file]") || !operator && this.matches("input[type=password]")) return false;
                 if (action.action === "click") { this.click(); return true; }
-                const nativeField = this instanceof HTMLTextAreaElement || this instanceof HTMLInputElement && ${JSON.stringify(textInputTypes)}.includes(this.type);
+                const nativeField = this instanceof HTMLTextAreaElement || this instanceof HTMLInputElement && (${JSON.stringify(textInputTypes)}.includes(this.type) || operator && this.type === "password");
                 if (!(nativeField || this.isContentEditable) || this.readOnly || this.matches("[aria-readonly=true],[aria-disabled=true]")) return false;
                 this.focus();
                 if (document.activeElement !== this) return false;
