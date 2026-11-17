@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/rajohan/homelab/compare/v0.19.0...v0.19.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **homelab:** complete shared-image rollout and finish chat replies promptly ([#220](https://github.com/rajohan/homelab/issues/220)) ([c7c9a45](https://github.com/rajohan/homelab/commit/c7c9a45b9b41835e523c12d41459087f13512a71))
+
 ## [0.19.0](https://github.com/rajohan/homelab/compare/v0.18.2...v0.19.0) (2026-11-17)
 
 
