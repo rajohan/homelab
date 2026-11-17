@@ -10,6 +10,8 @@ export const miraSkillIds = [
     "here-now",
     "moltbook",
     "frontend-improvement",
+    "impeccable",
+    "intent",
 ] as const;
 
 export const miraSkillIdSchema = v.picklist(miraSkillIds);

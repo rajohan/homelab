@@ -22,8 +22,23 @@ export interface RuntimeEvent {
 export const accountSchema = v.object({
     account: v.nullable(v.object({ type: v.string(), planType: v.optional(v.string()) })),
 });
+// Provider catalogs may advertise modalities that Mira's text/image transport does not use.
+const runtimeModelSchema = v.object({
+    ...miraModelSchema.entries,
+    inputModalities: v.optional(
+        v.pipe(
+            v.array(v.string()),
+            v.transform((modalities) =>
+                modalities.filter(
+                    (modality) => modality === "text" || modality === "image"
+                )
+            )
+        ),
+        ["text", "image"]
+    ),
+});
 export const modelsSchema = v.object({
-    data: v.pipe(v.array(miraModelSchema), v.maxLength(100)),
+    data: v.pipe(v.array(runtimeModelSchema), v.maxLength(100)),
     nextCursor: v.nullable(v.string()),
 });
 export const initializeSchema = v.object({ codexHome: v.string() });

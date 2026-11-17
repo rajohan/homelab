@@ -8,16 +8,17 @@ import type { MiraVoiceConnection } from "./voiceConnection";
  */
 export function VoiceStatus({ voice }: { readonly voice: MiraVoiceConnection }) {
     const state = useSyncExternalStore(voice.subscribe, voice.snapshot);
-    if (!state.transcript && !state.error && state.pending === 0) return null;
+    const transcript = state.microphone && !state.paused ? state.transcript : "";
+    if (!transcript && !state.error && state.pending === 0) return null;
     return (
         <div className="mb-2 space-y-2">
-            {state.transcript && (
+            {transcript && (
                 <p
                     className="text-sm wrap-anywhere text-primary-200"
                     aria-label="Voice transcript"
                     aria-live="polite"
                 >
-                    {state.transcript}
+                    {transcript}
                 </p>
             )}
             {state.error && (

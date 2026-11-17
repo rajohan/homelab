@@ -17,7 +17,7 @@ export function chatgptStatusMessage(state: MiraChatgptStatus["state"]): string 
             "ChatGPT sign-in has expired. Sign in again to continue waiting messages automatically.",
         disconnected:
             "ChatGPT is not signed in. Sign in to continue waiting messages automatically.",
-        error: "ChatGPT connection failed. Retrying automatically; waiting messages are saved.",
+        error: "ChatGPT availability could not be checked. Retrying automatically; waiting messages are saved.",
     };
     return messages[state];
 }
