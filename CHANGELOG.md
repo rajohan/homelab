@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.19.0](https://github.com/rajohan/homelab/compare/v0.18.2...v0.19.0) (2026-11-17)
+
+
+### Features
+
+* **mira:** simplify delivery and add recoverable chat and voice ([#217](https://github.com/rajohan/homelab/issues/217)) ([1547c4c](https://github.com/rajohan/homelab/commit/1547c4c3cb8e84b6bd57a7f3c096673a19f16a1a))
+
+
+### Dependencies
+
+* **deps:** bump the application-minor-and-patch group with 10 updates ([#219](https://github.com/rajohan/homelab/issues/219)) ([3eea1d6](https://github.com/rajohan/homelab/commit/3eea1d65a71a5198a3d56afb5592dc6f74d68313))
+
 ## [0.18.2](https://github.com/rajohan/homelab/compare/v0.18.1...v0.18.2) (2026-11-16)
 
 
