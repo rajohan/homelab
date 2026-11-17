@@ -87,6 +87,7 @@ export async function openPublicBrowser(
         | {
               id: string;
               until: number;
+              operator: boolean;
               loader: string;
               url: string;
               nodes: Map<string, number>;
@@ -139,7 +140,8 @@ export async function openPublicBrowser(
             const { outline, refs, handles } = await publicOutline(
                 cdp,
                 doc.id,
-                grant.mode === "control"
+                grant.mode === "control",
+                operator
             );
             const data = await page.screenshot({ type: "png", encoding: "base64" });
             const items = await Promise.all(
@@ -160,6 +162,7 @@ export async function openPublicBrowser(
             observation = {
                 id: observationId,
                 until: performance.now() + (operator ? 60_000 : 10_000),
+                operator,
                 loader: doc.loader,
                 url: doc.url,
                 nodes: handles,
@@ -238,7 +241,7 @@ export async function openPublicBrowser(
                         ?.actions.includes(action.action)
                 )
                     throw new Error("Request a fresh observation with control access.");
-                await publicInput(cdp, doc.id, node, action);
+                await publicInput(cdp, doc.id, node, action, seen.operator);
                 operation.throwIfAborted();
                 return { effect: "unverified" as const };
             },
