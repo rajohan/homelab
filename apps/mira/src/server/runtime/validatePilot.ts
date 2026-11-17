@@ -1,10 +1,12 @@
 import { lstat, open, readdir, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 
+import { dependencies } from "../../../../../package.json";
 import { runtimeEnvironment } from "../config/environment";
 import { parsePilotConfig, type PilotConfig } from "./configuration";
-import { assertSystemSkills } from "./systemSkills";
-import manifest from "./systemSkills.json";
+import { assertNoCustomSkills } from "./systemSkills";
+
+const codexVersion = dependencies["@openai/codex"];
 
 async function exists(file: string): Promise<boolean> {
     try {
@@ -71,7 +73,7 @@ export async function validatePilot(input: unknown): Promise<PilotConfig> {
     for (const name of ["AGENTS.md", "AGENTS.override.md", ".agents"])
         if (await exists(path.join(config.codexHome, name)))
             throw new Error("Mira runtime home contains inherited instructions.");
-    await assertSystemSkills(config.codexHome);
+    await assertNoCustomSkills(config.codexHome);
     const configFile = path.join(config.codexHome, "config.toml");
     if (await exists(configFile)) {
         const content = await readFile(configFile, "utf8");
@@ -90,8 +92,8 @@ export async function validatePilot(input: unknown): Promise<PilotConfig> {
     });
     if (
         version.exitCode !== 0 ||
-        version.stdout.toString().trim() !== `codex-cli ${manifest.version}`
+        version.stdout.toString().trim() !== `codex-cli ${codexVersion}`
     )
-        throw new Error(`Mira requires the pinned Codex ${manifest.version} executable.`);
+        throw new Error(`Mira requires the pinned Codex ${codexVersion} executable.`);
     return config;
 }

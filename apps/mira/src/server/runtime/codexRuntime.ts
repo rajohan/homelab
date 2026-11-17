@@ -28,7 +28,11 @@ import {
 } from "./rolloutContext";
 import { RpcProcess, type RpcProcessOptions } from "./rpcProcess";
 import { assertSkillCatalog } from "./skillCatalog";
-import { assertSystemSkills } from "./systemSkills";
+import {
+    assertNoCustomSkills,
+    assertSystemSkills,
+    readSystemSkills,
+} from "./systemSkills";
 import { runtimeContentItems, type RuntimeToolResult } from "./toolResult";
 
 interface ActiveTurn {
@@ -81,7 +85,8 @@ export class CodexRuntime {
     ): Promise<CodexRuntime> {
         if (!options.env.CODEX_HOME)
             throw new Error("Mira requires an explicit Codex home.");
-        await assertSystemSkills(options.env.CODEX_HOME);
+        await assertNoCustomSkills(options.env.CODEX_HOME);
+        const systemSkills = await readSystemSkills(options.command);
         const runtime = new CodexRuntime(options, webSearch);
         try {
             const initialized = v.parse(
@@ -100,7 +105,7 @@ export class CodexRuntime {
                 initialized.codexHome !== options.env.CODEX_HOME
             )
                 throw new Error("Mira runtime did not accept its isolated Codex home.");
-            await assertSystemSkills(options.env.CODEX_HOME);
+            await assertSystemSkills(options.env.CODEX_HOME, systemSkills);
             runtime.connection.notify("initialized", {});
             assertRuntimeIsolation(
                 await runtime.connection.request("config/read", {
@@ -114,9 +119,10 @@ export class CodexRuntime {
                     forceReload: true,
                 }),
                 options.env.CODEX_HOME,
-                options.cwd
+                options.cwd,
+                systemSkills
             );
-            await assertSystemSkills(options.env.CODEX_HOME);
+            await assertSystemSkills(options.env.CODEX_HOME, systemSkills);
             return runtime;
         } catch (error) {
             await runtime.close();

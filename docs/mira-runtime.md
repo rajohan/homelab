@@ -79,7 +79,8 @@ credentials or rely on undocumented endpoints.
 
 Use Bun from `.bun-version` and `bun install --frozen-lockfile`. Mira pins the official
 `@openai/codex` package, including its native platform package, in the root manifest.
-Use that package's native executable directly; system wrappers may change the user
+Run `bun run build mira` and use `apps/mira/dist/runtime/codex` directly; the build
+extracts the bundled skill fingerprints beside the executable. System wrappers may change the user
 or discard `CODEX_HOME`. Scripted launchers are rejected. The protocol was qualified with Codex CLI 0.164.0;
 regenerate schemas and rerun this pilot when a runtime update changes that contract.
 
@@ -92,7 +93,7 @@ Example nonsecret external configuration (replace paths for the selected host):
 
 ```json
 {
-    "command": "/opt/homelab/node_modules/.bun/@openai+codex@0.167.0-linux-x64/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/bin/codex",
+    "command": "/opt/homelab/apps/mira/dist/runtime/codex",
     "codexHome": "/var/lib/homelab-mira-pilot/codex",
     "workspace": "/var/lib/homelab-mira-pilot/workspace"
 }
@@ -194,7 +195,7 @@ filesystem/network restrictions and scoped service adapters.
 
 Initialization must return the canonical dedicated `codexHome` before account inspection. Effective configuration must retain every disabled capability, web search disabled by default, file-only credentials, the OpenAI provider and no custom provider definitions or MCP servers. Direct manual Chat enables live provider web search at thread start and resume. Synthetic Chat uses the subscription search endpoint and returns source URLs. Tasks and automations keep their existing tool sets. Thread start and resume must also report `modelProvider: openai`.
 
-The cached system skills are verified against the complete SHA-256 manifest from the pinned upstream `rust-v0.167.0` bundle. Extra, missing, altered or linked entries fail closed, regardless of the Codex marker. A Codex dependency update must update the manifest from the corresponding official source and rerun live qualification.
+The root `package.json` and `bun.lock` select the Codex version. The Mira build starts that exact native executable in a temporary unauthenticated profile, extracts its bundled system skills and writes their SHA-256 fingerprints beside the packaged executable. No second version or hand-maintained hash list is committed. The native runtime refreshes its own generated cache during initialization; Mira checks its contents and effective catalog before creating a thread. Extra, missing, altered or linked entries still fail closed. Dependency PRs update the package and lockfile; the build regenerates the skill metadata automatically.
 
 The follow-up qualification passed with the stricter checks on 2026-10-24: streamed response, registered tool call, resume after process replacement, interruption and recovery using the isolated Mira login.
 

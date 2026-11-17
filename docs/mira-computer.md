@@ -47,7 +47,7 @@ pipeline ships the Windows shell and verified SDK files together.
 References: [Microsoft WebView2 distribution](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution),
 [Microsoft WebView2 security guidance](https://learn.microsoft.com/microsoft-edge/webview2/concepts/security).
 
-The computer foundation uses the unmodified, pinned `@trycua/cua-driver` 0.48.0 SDK with the pinned Bun Canary revision. It provides a single-window adapter, a supervised private child process and a reproducible native X11 qualification. Chat tools, per-run access controls and the installed Windows composition are implemented. Production PC activation still requires interactive qualification, private routing and release delivery.
+The computer foundation uses the unmodified `@trycua/cua-driver` SDK selected by the root `package.json` and `bun.lock` with the pinned Bun Canary revision. It provides a single-window adapter, a supervised private child process and native X11 support. Chat tools, per-run access controls and the installed Windows composition are implemented. Production PC activation still requires interactive qualification, private routing and release delivery.
 
 ## Authority and observations
 
@@ -283,8 +283,10 @@ with the pinned Bun version and a frozen install. The builder creates
 `node_modules` containing the unchanged locked SDK, its Windows native DLL/N-API
 module, both JavaScript dependencies and the locked `@ubjs` Windows addon, including
 package metadata and notices.
-An unexpected dependency set or version requires requalification. No globally
-installed Bun, SDK or source checkout is needed at runtime. The output directory
+The builder resolves SDK, native module and transitive versions from the root
+lockfile and verifies the packaged metadata. Dependency PRs verify the affected
+APIs and packaging; there is no separate accepted-version list to update. No
+globally installed Bun, SDK or source checkout is needed at runtime. The output directory
 must be empty; the builder never deletes an existing installation.
 
 The Bun worker loads the SDK from its own executable directory. Automatic dotenv,

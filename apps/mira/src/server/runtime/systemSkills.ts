@@ -1,8 +1,34 @@
 import { constants } from "node:fs";
-import { lstat, open, readdir } from "node:fs/promises";
+import { lstat, open, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
-import manifest from "./systemSkills.json";
+import * as v from "valibot";
+
+import { dependencies } from "../../../../../package.json";
+
+export type SystemSkills = Readonly<Record<string, string | null>>;
+
+/** Read the skill fingerprints generated beside the packaged native executable.
+ * @param command - Trusted configured Codex executable.
+ * @returns The fingerprints extracted from the same locked package at build time.
+ */
+export async function readSystemSkills(command: string): Promise<SystemSkills> {
+    const manifest = v.parse(
+        v.object({
+            version: v.literal(dependencies["@openai/codex"]),
+            entries: v.record(
+                v.string(),
+                v.nullable(v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)))
+            ),
+        }),
+        JSON.parse(
+            await readFile(path.join(path.dirname(command), "system-skills.json"), "utf8")
+        )
+    );
+    if (Object.keys(manifest.entries).length === 0)
+        throw new Error("The packaged Codex system skills are missing.");
+    return manifest.entries;
+}
 
 async function skillDigest(file: string, maximum: number): Promise<string> {
     // Inspect and read the same opened object. Never reopen a pathname after checking it.
@@ -36,18 +62,17 @@ async function skillDigest(file: string, maximum: number): Promise<string> {
     }
 }
 
-/**
- * Reject custom or modified cached skills using the pinned upstream bundle manifest.
- * @param codexHome - Explicit Mira profile directory, never a browser-supplied path.
- * @returns Completion when the cache is absent or exactly matches the supported version.
+/** Reject custom skills before the native runtime refreshes its own generated cache.
+ * @param codexHome - Explicit Mira profile directory.
+ * @returns System cache path, or null when the native runtime has not created it yet.
  */
-export async function assertSystemSkills(codexHome: string): Promise<void> {
+export async function assertNoCustomSkills(codexHome: string): Promise<string | null> {
     const root = path.join(codexHome, "skills");
     let stat;
     try {
         stat = await lstat(root);
     } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
         throw error;
     }
     if (!stat.isDirectory() || stat.isSymbolicLink())
@@ -55,9 +80,25 @@ export async function assertSystemSkills(codexHome: string): Promise<void> {
     const entries = await readdir(root);
     if (entries.some((entry) => entry !== ".system"))
         throw new Error("Mira runtime home contains custom skills.");
-    if (entries.length === 0) return;
+    if (entries.length === 0) return null;
     const system = path.join(root, ".system");
-    const expected: Readonly<Record<string, string | null>> = manifest.entries;
+    const systemStat = await lstat(system);
+    if (!systemStat.isDirectory() || systemStat.isSymbolicLink())
+        throw new Error("Mira system skills must not contain links.");
+    return system;
+}
+
+/** Verify cached skills against fingerprints extracted from the packaged executable.
+ * @param codexHome - Explicit Mira profile directory, never a browser-supplied path.
+ * @param expected - Build-generated fingerprints from the locked native package.
+ * @returns Completion when the cache is absent or matches the installed runtime.
+ */
+export async function assertSystemSkills(
+    codexHome: string,
+    expected: SystemSkills
+): Promise<void> {
+    const system = await assertNoCustomSkills(codexHome);
+    if (!system) return;
     const seen = new Set<string>();
     const visit = async (directory: string, prefix: string): Promise<void> => {
         const directoryStat = await lstat(directory);

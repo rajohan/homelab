@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import tailwind from "bun-plugin-tailwind";
 
+import { buildSystemSkills } from "./buildSystemSkills";
+
 /**
  * Build the requested applications into their independently deployable packages.
  * @returns Completion after the selected builds and asset copies finish.
@@ -127,6 +129,7 @@ export async function main(): Promise<void> {
                     path.join(destination, executable)
                 );
             }
+            await buildSystemSkills(path.join(destination, "codex" + extension));
         }
         console.info(
             `Built ${app}: ${result.outputs.length} artifacts in apps/${app}/dist.`
