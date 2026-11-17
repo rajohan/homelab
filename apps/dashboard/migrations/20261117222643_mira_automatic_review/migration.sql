@@ -8,8 +8,11 @@ WHERE "settings" ? 'permissionMode';
 UPDATE "mira_runs" SET "settings"="settings"-'permissionMode', "approval_revoked_at"=clock_timestamp();
 --> statement-breakpoint
 -- A retired mode cannot leave a broader browser grant active after the transition.
-UPDATE "mira_browser_access" SET "state"='stopped', "policy"="policy"-'delegatedMode'
-WHERE "policy" ? 'delegatedMode';
+UPDATE "mira_browser_access"
+SET "state"=CASE WHEN "state"='pending' THEN 'closed' ELSE 'stopping' END,
+    "closed_at"=CASE WHEN "state"='pending' THEN clock_timestamp() ELSE NULL END,
+    "policy"=NULL
+WHERE "state" IN ('pending','active') AND "policy" ? 'delegatedMode';
 --> statement-breakpoint
 UPDATE "mira_mail_drafts" SET "message"='Review required: This pending action predates automatic review. Review or cancel it.', "updated_at"=clock_timestamp()
 WHERE "state"='draft';
