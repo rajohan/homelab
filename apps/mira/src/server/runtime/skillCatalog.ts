@@ -2,19 +2,21 @@ import path from "node:path";
 
 import * as v from "valibot";
 
-import manifest from "./systemSkills.json";
+import type { SystemSkills } from "./systemSkills";
 
 /**
  * Validate the complete effective skill catalog, including machine-admin discovery roots.
  * @param input - Fresh skills/list response for exactly the isolated workspace.
  * @param codexHome - Canonical private profile containing the verified pinned bundle.
  * @param workspace - Canonical empty workspace used for skill discovery and threads.
+ * @param entries - Build-generated fingerprints from the locked native package.
  * @throws {Error} Discovery fails, omits expected skills, or exposes any unrelated skill.
  */
 export function assertSkillCatalog(
     input: unknown,
     codexHome: string,
-    workspace: string
+    workspace: string,
+    entries: SystemSkills
 ): void {
     const skill = v.object({
         name: v.string(),
@@ -33,7 +35,7 @@ export function assertSkillCatalog(
         input
     );
     const expected = new Map(
-        Object.keys(manifest.entries)
+        Object.keys(entries)
             .filter((file) => file.endsWith("/SKILL.md"))
             .map((file) => [
                 path.join(codexHome, "skills", ".system", file),
