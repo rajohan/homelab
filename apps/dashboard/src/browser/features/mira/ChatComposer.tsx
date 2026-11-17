@@ -3,12 +3,16 @@ import { Button, IconButton, Textarea } from "@homelab/ui";
 import { Globe, Monitor, Send, Settings2, Square } from "lucide-react";
 
 import { AttachmentPicker } from "./AttachmentPicker";
+import { MiraVoice } from "./MiraVoice";
+import type { MiraVoiceConnection } from "./voiceConnection";
+import { VoiceStatus } from "./VoiceStatus";
 
 /**
  * Keep drafting, attachments and send/stop actions together at the foot of the chat workspace.
  * @returns An accessible composer using the shared inputs and buttons at every viewport size.
  */
 export function ChatComposer({
+    voice,
     text,
     onText,
     attachments,
@@ -27,6 +31,7 @@ export function ChatComposer({
     onComputer,
     onBrowser,
 }: {
+    readonly voice: MiraVoiceConnection;
     readonly text: string;
     readonly onText: (value: string) => void;
     readonly attachments: MiraAttachment[];
@@ -56,6 +61,7 @@ export function ChatComposer({
                 if (canSend) onSend();
             }}
         >
+            <VoiceStatus voice={voice} />
             <div className="rounded-xl border border-primary-600 bg-primary-950 p-2 focus-within:border-accent-400">
                 <AttachmentPicker
                     compact
@@ -66,6 +72,7 @@ export function ChatComposer({
                     disabled={sending || blocked}
                     controls={
                         <>
+                            <MiraVoice voice={voice} />
                             {onBrowser && (
                                 <IconButton
                                     icon={Globe}

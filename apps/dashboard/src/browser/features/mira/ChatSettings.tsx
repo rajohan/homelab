@@ -9,12 +9,15 @@ import type { ChatDisplaySettings } from "./chatDisplay";
 import { ModelSettings } from "./ModelSettings";
 import { PermissionSettings } from "./PermissionSettings";
 import { RecallSettings } from "./RecallSettings";
+import type { MiraVoiceConnection } from "./voiceConnection";
+import { VoiceSettings } from "./VoiceSettings";
 
 /**
  * Edit durable conversation preferences using the runtime's advertised model capabilities.
  * @returns A viewport-bounded shared dialog; selections take effect on the next submitted turn.
  */
 export function ChatSettings({
+    voice,
     id,
     version,
     settings,
@@ -25,6 +28,7 @@ export function ChatSettings({
     display,
     onDisplayChange,
 }: {
+    readonly voice: MiraVoiceConnection;
     readonly id: string;
     readonly version: number;
     readonly settings: MiraChatSettings;
@@ -98,6 +102,7 @@ export function ChatSettings({
                     onChange={setDraft}
                     disabled={save.isPending}
                 />
+                <VoiceSettings voice={voice} />
                 <div className="space-y-3 border-t border-primary-700 pt-4">
                     <Switch
                         label="Show work notes"

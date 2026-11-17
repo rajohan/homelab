@@ -38,7 +38,6 @@ import { ComputerAccessDialog } from "./ComputerAccessDialog";
 import { ComputerAccessPanel } from "./ComputerAccessPanel";
 import { FileLibrary } from "./FileLibrary";
 import { LiveChatActivity } from "./LiveChatActivity";
-import { MiraVoice } from "./MiraVoice";
 import { ProposedChanges } from "./ProposedChanges";
 import { ProviderQuota } from "./ProviderQuota";
 import { readChatUpdate } from "./readChatUpdate";
@@ -91,6 +90,9 @@ export function ChatPanel({
     });
     const latest = query.data;
     const archived = Boolean(latest?.conversation.archivedAt);
+    useEffect(() => {
+        if (latest?.messages && !archived) voice.messages(latest.messages);
+    }, [voice, latest?.messages, archived]);
     useEffect(() => {
         if (archived) return;
         voice.mount();
@@ -286,7 +288,7 @@ export function ChatPanel({
                 </div>
             )}
             <ChatTranscript
-                key={id}
+                key={`transcript:${id}`}
                 messages={messages}
                 onReadAloud={
                     conversation.archivedAt ? undefined : (message) => voice.read(message)
@@ -345,10 +347,8 @@ export function ChatPanel({
             />
             <ProposedChanges key={`proposals:${id}`} conversationId={id} />
             {!conversation.archivedAt && (
-                <MiraVoice key={id} voice={voice} messages={latest.messages} />
-            )}
-            {!conversation.archivedAt && (
                 <ChatComposer
+                    voice={voice}
                     text={text}
                     onText={setText}
                     attachments={attachments}
@@ -402,6 +402,7 @@ export function ChatPanel({
             )}
             {dialog === "settings" && (
                 <ChatSettings
+                    voice={voice}
                     id={id}
                     version={conversation.version}
                     settings={conversation.settings ?? miraDefaultChatSettings}

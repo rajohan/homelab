@@ -10,7 +10,7 @@ import { readMiraSocial } from "./social";
 type ActionKind = MiraActionCursor["kind"];
 
 /**
- * Read one page of conversation action summaries, with outstanding actions first.
+ * Read one page of drafts awaiting approval; execution history belongs in run activity.
  * @param context - Authenticated owner and database connection.
  * @param conversationId - Current conversation, or absent for actions without an accessible Chat conversation.
  * @param before - Original sort tuple from the preceding page, unaffected by later state changes.
@@ -31,7 +31,7 @@ export async function listMiraActionRequests(
         ), owned AS (
             SELECT id,kind,state,created_at,
                 state IN ('draft','queued','running','sending','publishing','verification_required','queued_verification','verifying','needs_attention') AS pending
-            FROM actions WHERE owner=${context.owner} AND (
+            FROM actions WHERE state='draft' AND owner=${context.owner} AND (
                 conversation_id=${conversationId ?? null}::uuid
                 OR (${conversationId ?? null}::uuid IS NULL AND NOT EXISTS (
                     SELECT 1 FROM mira_conversations c
