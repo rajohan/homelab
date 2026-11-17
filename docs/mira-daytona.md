@@ -1,10 +1,19 @@
 # Daytona cloud jobs and qualification
 
-Mira provides reviewed cloud-job drafts, a durable independent dispatcher and shared dashboard status, logs, results and cancellation. Chat tools can propose jobs and read recorded results; they cannot approve or execute commands. [Automatic frontend improvements](mira-improvements.md) use a separate explicit operator policy to queue only the fixed structured-edit check. Production activation and live account/snapshot qualification remain outstanding. Publishing this code does not provision a paid sandbox.
+Mira exposes direct code operations and recorded results through the existing
+isolated executor. Use `mira_code_read_sources`, `mira_code_edit` and
+`mira_code_check`, then inspect `mira_code_result`. Fixed local work needs no extra
+human approval in manual Chat. Cloud work retains its current permission and
+resource requirements. Automatic improvements use their separate explicit policy.
 
 ## Operator workflow
 
-Open **Cloud jobs** in Chat or on the Jobs page. Save a command and explicitly select up to four input files and four output filenames. Review the exact command and transfer list, then choose **Start cloud job**. The approval expires after fifteen minutes in the queue. Changes to the command, account, snapshot, pause control or linked content require a new review. The review dialog freezes a displayed draft and disables starting if a newer version arrives.
+Request the code work in Chat. The same call validates inputs, records the exact
+operation and queues it when permitted. If cloud execution needs a human decision,
+a concrete request appears above the composer. No separate draft workspace or
+manual start step is needed for covered work. Durable execution records, logs,
+artifacts, cancellation and cleanup remain in the existing dispatcher. A queued
+operation is not a completed check; inspect the actual outcome.
 
 Each input is at most 1 MiB, belongs to the signed-in owner and is fingerprinted before approval. Chat-proposed inputs must already be attached to that conversation. Input files remain protected from deletion while queued or active. The sandbox paths are `/tmp/homelab-mira/<job-id>/inputs/<name>` and the corresponding `outputs/<name>`. Selected results are imported through the existing immutable attachment store with its ownership, content-type and storage quotas. Generated results are passive UTF-8 text, PDF or PNG/JPEG/WebP; binaries and archives are not executed or extracted. Results stay available after the sandbox is deleted. Mira can read selected text/PDF outputs through the existing bounded attachment reader, restricted to jobs owned by the same conversation owner and linked to that conversation. Local recorded results remain readable while Daytona is paused. Images remain available for dashboard preview or explicit attachment to a new message.
 
@@ -88,7 +97,7 @@ Resolution stops retries and releases local admission, keeps Daytona paused, rec
 
 ## Fixed Homelab check profile
 
-`mira_daytona_check_draft` prepares an ordinary reviewed Cloud job for one exact
+`mira_code_check` prepares an ordinary reviewed Cloud job for one exact
 40-character public Homelab commit and, optionally, one patch text file already
 attached to that conversation. It cannot choose another repository, approve a
 job, provision resources, publish a branch or deploy. The existing pause,
@@ -140,7 +149,7 @@ Daytona allocation, provider networking or cleanup.
 
 ## Structured code edits
 
-The version 2 snapshot also supports `mira_daytona_edit_draft`. Mira can use
+The version 2 snapshot also supports `mira_code_edit`. Mira can use
 `mira_file_create` to attach a JSON edit plan to the current manual conversation,
 then select that file as `editsId` in the draft. The operator reviews and starts
 it through the existing Cloud jobs controls. This is an alternative to supplying
@@ -177,7 +186,7 @@ required repository checks and returns the normalized `changes.txt`, log and
 report, including `inputEditsSha256`. These remain untrusted sandbox artifacts.
 This prepares code changes for review; it does not publish a branch/PR, merge,
 deploy, give the sandbox a GitHub credential, or enable scheduled code writes.
-`mira_daytona_source_draft` first prepares source inspection at that same exact
+`mira_code_read_sources` first prepares source inspection at that same exact
 commit. It returns `source-tree.json` and, for up to twenty selected paths,
 `source-files.json` with the original UTF-8 text, mode and SHA-256. Select
 `AGENTS.md` and applicable nested instructions along with the files being changed;

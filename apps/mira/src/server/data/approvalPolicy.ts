@@ -1,29 +1,26 @@
-import {
-    type MiraPermissionMode,
-    miraPermissionModeSchema,
-} from "@homelab/contracts/mira";
 import type { MiraDaytonaContent } from "@homelab/contracts/miraDaytona";
-import * as v from "valibot";
 
 import { localCodeRequest } from "../sandbox/localProtocol";
 import { type MiraContext, MiraFailure, type MiraQuery } from "./context";
 
-export type MiraApprovalScope = "task" | "check" | "code" | "external";
+export type MiraApprovalScope = "task" | "local_code" | "check" | "code" | "external";
 export type MiraActionKind = "mail" | "publication" | "social" | "code" | "job";
 
 /**
  * Classify a saved job by its exact fixed profile, never by a model-supplied label.
  * @param id - Persisted job identity.
  * @param content - Immutable approved command and files.
- * @returns Checks for a fixed Homelab profile, external for arbitrary cloud commands.
+ * @param executionTarget - Persisted execution target; only the fixed local profile is freely runnable.
+ * @returns Local coding, cloud checks, or external execution scope.
  */
 export function miraJobApprovalScope(
     id: string,
-    content: MiraDaytonaContent
+    content: MiraDaytonaContent,
+    executionTarget?: string
 ): MiraApprovalScope {
     try {
         localCodeRequest(id, content);
-        return "check";
+        return executionTarget === "main" ? "local_code" : "check";
     } catch {
         return "external";
     }
@@ -45,7 +42,6 @@ export async function miraActionApproval(
 ): Promise<boolean> {
     type Origin = { runId: string | null; approvedAt: string | null };
     let row: Origin | undefined;
-    let scope: MiraApprovalScope = "external";
     switch (kind) {
         case "mail": {
             [row] = await query<
@@ -66,60 +62,42 @@ export async function miraActionApproval(
             break;
         }
         case "code": {
-            scope = "code";
             [row] = await query<
                 Origin[]
             >`SELECT approval_run_id AS "runId",approved_at::text AS "approvedAt" FROM mira_code_publications WHERE id=${id} AND owner=${owner}`;
             break;
         }
         case "job": {
-            const [job] = await query<
-                (Origin & { content: MiraDaytonaContent })[]
-            >`SELECT approval_run_id AS "runId",approved_at::text AS "approvedAt",content FROM mira_daytona_jobs WHERE id=${id} AND owner=${owner}`;
-            row = job;
-            if (job?.runId) scope = miraJobApprovalScope(id, job.content);
+            [row] = await query<
+                Origin[]
+            >`SELECT approval_run_id AS "runId",approved_at::text AS "approvedAt" FROM mira_daytona_jobs WHERE id=${id} AND owner=${owner}`;
         }
     }
     return (
-        row !== undefined &&
-        miraApprovalCurrent(query, owner, row.runId, scope, row.approvedAt)
+        row !== undefined && miraApprovalCurrent(query, owner, row.runId, row.approvedAt)
     );
 }
 
 /**
- * Decide the fixed operation classes covered by a human-selected Chat permission mode.
- * @param mode - Validated server-owned setting, never a model tool argument.
- * @param scope - Fixed handler classification; checks exclude arbitrary commands.
- * @returns Whether the action may proceed without a separate human decision.
+ * Check the live, owned manual run before local work or an independent action review.
+ * @param query - Current read or mutation transaction.
+ * @param context - Server-created actor and fenced run, never tool arguments.
+ * @returns Whether this exact manual run still has authority to work.
  */
-export function miraModeAllows(
-    mode: MiraPermissionMode,
-    scope: MiraApprovalScope
-): boolean {
-    return mode === "full_access" || (mode === "approve_for_me" && scope !== "external");
-}
-
-/**
- * Read the current conversation permission for an owned live Chat/task run.
- * @param query - Current transaction; callers serialize mutations with their existing locks.
- * @param context - Trusted tool context, including the lease token and exact actor.
- * @returns The current human-selected mode while this exact run and lease remain active.
- */
-export async function miraRunPermission(
+export async function miraManualRunAllowed(
     query: MiraQuery,
     context: MiraContext
-): Promise<MiraPermissionMode> {
-    if (!context.run || context.actor !== `mira:${context.run.id}`) return "ask";
-    const [row] = await query<{ mode: unknown }[]>`
-        SELECT c.settings->>'permissionMode' AS mode FROM mira_runs r
+): Promise<boolean> {
+    if (!context.run || context.actor !== `mira:${context.run.id}`) return false;
+    const [row] = await query<{ id: string }[]>`
+        SELECT r.id FROM mira_runs r
         JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner
         WHERE r.id=${context.run.id} AND r.owner=${context.owner} AND r.lease_token=${context.run.leaseToken}
         AND r.state='running' AND NOT r.cancel_requested AND r.lease_expires_at>clock_timestamp()
         AND r.automation_id IS NULL AND r.manual AND c.deleted_at IS NULL AND c.archived_at IS NULL
         AND NOT EXISTS(SELECT 1 FROM mira_tasks t WHERE t.id=r.task_id AND t.owner=r.owner
             AND (t.deleted_at IS NOT NULL OR t.work_stopped_at>=r.created_at))`;
-    const parsed = v.safeParse(miraPermissionModeSchema, row?.mode);
-    return parsed.success ? parsed.output : "ask";
+    return !!row;
 }
 
 /**
@@ -128,17 +106,28 @@ export async function miraRunPermission(
  * @param context - Human or fenced model actor; synthetic human identities are never accepted.
  * @param conversationId - Draft's actual owner-checked conversation, not a tool-supplied link.
  * @param scope - Required operation class.
+ * @param action - Exact action fingerprint required for externally reviewed operations.
  * @returns Origin run ID for delegated approvals, otherwise null for direct human consent.
  */
 export async function requireMiraApproval(
     query: MiraQuery,
     context: MiraContext,
     conversationId: string | null,
-    scope: MiraApprovalScope
+    scope: MiraApprovalScope,
+    action?: { id: string; contentHash: string }
 ): Promise<string | null> {
     if (!context.run && context.actor === `human:${context.owner}`) return null;
-    const mode = await miraRunPermission(query, context);
-    if (context.run && conversationId && miraModeAllows(mode, scope)) {
+    const reviewed =
+        scope !== "external" ||
+        (action !== undefined &&
+            context.reviewedAction?.id === action.id &&
+            context.reviewedAction.contentHash === action.contentHash);
+    if (
+        context.run &&
+        conversationId &&
+        reviewed &&
+        (await miraManualRunAllowed(query, context))
+    ) {
         const [row] = await query<
             { id: string }[]
         >`SELECT id FROM mira_runs WHERE id=${context.run.id} AND conversation_id=${conversationId} AND owner=${context.owner}`;
@@ -146,7 +135,7 @@ export async function requireMiraApproval(
     }
     throw new MiraFailure(
         "FORBIDDEN",
-        "This action requires the operator's approval or the appropriate Chat permission mode."
+        "This action requires an independent review or the operator's approval."
     );
 }
 
@@ -155,7 +144,6 @@ export async function requireMiraApproval(
  * @param query - Existing short dispatch transaction or read.
  * @param owner - Verified job owner.
  * @param runId - Captured approval origin; null means the existing human/policy approval path.
- * @param scope - Fixed class originally approved by this dispatcher.
  * @param approvedAt - Database approval timestamp; approvals predating the latest revocation never revive.
  * @returns False after cancellation, stale approval, archival or task stop; never revives an interrupted run.
  */
@@ -163,18 +151,16 @@ export async function miraApprovalCurrent(
     query: MiraQuery,
     owner: string,
     runId: string | null,
-    scope: MiraApprovalScope,
     approvedAt: string | null = null
 ): Promise<boolean> {
     if (runId === null) return true;
-    const [row] = await query<{ mode: unknown }[]>`
-        SELECT c.settings->>'permissionMode' AS mode FROM mira_runs r
+    const [row] = await query<{ id: string }[]>`
+        SELECT r.id FROM mira_runs r
         JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner
         WHERE r.id=${runId} AND r.owner=${owner} AND (r.approval_revoked_at IS NULL OR ${approvedAt}::timestamptz>r.approval_revoked_at) AND r.automation_id IS NULL AND r.manual
         AND NOT r.cancel_requested AND (r.state='completed' OR (r.state='running' AND r.lease_expires_at>clock_timestamp()))
         AND c.deleted_at IS NULL AND c.archived_at IS NULL
         AND NOT EXISTS(SELECT 1 FROM mira_tasks t WHERE t.id=r.task_id AND t.owner=r.owner
             AND (t.deleted_at IS NOT NULL OR t.work_stopped_at>=r.created_at))`;
-    const parsed = v.safeParse(miraPermissionModeSchema, row?.mode);
-    return parsed.success && miraModeAllows(parsed.output, scope);
+    return !!row;
 }

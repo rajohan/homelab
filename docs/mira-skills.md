@@ -41,12 +41,22 @@ package root and use the exact repository-relative key and package hash.
 The empty workspace and private credential profile stay separate;
 installation does not enable unrestricted shell access.
 
-Bundled helper sources, agent definitions, hooks and overlays do not become new
-execution tools. Use the current tool registry and permissions; follow an original
-workflow's documented fallback when a helper is unavailable and report that step
-accurately. In particular, Impeccable documents direct project-context loading when
-its launcher cannot run. No remote installer or upstream script runs during builds,
-loading or update discovery.
+The release also installs Impeccable's original executable launcher and its native
+engine at `scripts/bin/<os>-<arch>/impeccable`, the upstream documented sibling
+location. The engine version and SHA-256 come from the unchanged upstream
+`VERSION` and `engine-checksums.txt`, covered by the root manifest source pin.
+Builds download only that artifact and fail on a missing pin, oversized response
+or digest mismatch. Native discovery rechecks the installed engine. The existing
+updater refreshes these pins with the skill source; there is no separate manual
+engine update step or first-use installer.
+
+Invoke original helper commands through an authorized execution tool with its
+working directory set to the actual project checkout. A skill installation is not
+a project checkout. Helpers do not gain credentials, host access or browser
+permission from installation. Optional hooks, agents and live overlays retain
+their original separate setup and tool requirements. The manual Codex installation
+is supported upstream; this build does not run a remote npm installer. When a run
+lacks an execution tool, use the original documented fallback and report it.
 
 Existing confirmed project context can be reused. Follow the relevant original
 workflow, including its required artifacts and checks, without making the operator

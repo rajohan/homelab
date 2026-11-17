@@ -112,6 +112,8 @@ export async function dispatchMiraCode(
             await query`UPDATE mira_code_publications SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message=${review},version=version+1,updated_at=now() WHERE id=${row.id}`;
             return { handled: true as const };
         }
+        const [policy] = await query<{ draft: boolean }[]>`
+            SELECT EXISTS(SELECT 1 FROM mira_improvements WHERE id=${row.id} AND owner=${context.owner}) AS draft`;
         stopping.throwIfAborted();
         const token = crypto.randomUUID(),
             authoredAt = new Date(Math.floor(Date.now() / 1000) * 1000).toISOString();
@@ -119,7 +121,15 @@ export async function dispatchMiraCode(
             { id: string }[]
         >`UPDATE mira_code_publications SET state='publishing',attempt_token=${token},started_at=clock_timestamp(),authored_at=${authoredAt},phase=NULL,message=NULL,version=version+1,updated_at=now() WHERE id=${row.id} AND approved_at>clock_timestamp()-interval '15 minutes' RETURNING id`;
         return updated[0]
-            ? { handled: false as const, row, bytes, token, authoredAt, permission }
+            ? {
+                  handled: false as const,
+                  row,
+                  bytes,
+                  token,
+                  authoredAt,
+                  permission,
+                  draft: policy!.draft,
+              }
             : null;
     });
     if (!claim) return false;
@@ -159,6 +169,7 @@ export async function dispatchMiraCode(
         result = await new GitHubPublisher(configuration, request).publish(
             {
                 id: claim.row.id,
+                draft: claim.draft,
                 commit: claim.row.content.commit,
                 editsSha256: claim.row.content.edits.sha256,
                 title: claim.row.content.title,
@@ -185,7 +196,7 @@ export async function dispatchMiraCode(
         >`SELECT phase FROM mira_code_publications WHERE id=${claim.row.id} AND attempt_token=${claim.token} AND state IN ('publishing','needs_attention') FOR UPDATE`;
         if (!current) return;
         if (result)
-            await query`UPDATE mira_code_publications SET state='published',phase='pull_request:confirmed',branch=${result.branch},commit=${result.commit},number=${result.number},message='Draft pull request created. GitHub checks and review are still required.',version=version+1,updated_at=now() WHERE id=${claim.row.id}`;
+            await query`UPDATE mira_code_publications SET state='published',phase='pull_request:confirmed',branch=${result.branch},commit=${result.commit},number=${result.number},message=${result.draft ? "Draft pull request created. GitHub checks and review are still required." : "Pull request created for review. GitHub checks and required approvals still apply."},version=version+1,updated_at=now() WHERE id=${claim.row.id}`;
         else if (current.phase === null)
             await query`UPDATE mira_code_publications SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,attempt_token=NULL,started_at=NULL,authored_at=NULL,message=${review},version=version+1,updated_at=now() WHERE id=${claim.row.id}`;
         else

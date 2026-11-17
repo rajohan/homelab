@@ -80,7 +80,7 @@ export function createHereNowTools(
             name: "mira_herenow_publications",
             automatic: true,
             description:
-                "Read local publication drafts and outcomes in this conversation. This does not contact here.now or publish anything.",
+                "Read requested publication outcomes in this conversation. This does not publish or repeat an action.",
             inputSchema: { type: "object", properties: {}, additionalProperties: false },
             action: (input) => {
                 v.parse(v.strictObject({}), input);
@@ -91,11 +91,11 @@ export function createHereNowTools(
             },
         },
         {
-            name: "mira_herenow_publication_draft",
+            name: "mira_herenow_publish",
             automatic: false,
             transactional: true,
             description:
-                "Prepare a local public publication draft from files shared in this conversation. Supply a stable UUID and version 0 for a new draft, or the current version to edit. target=null creates a site; updating an existing public site requires its slug and current baseVersionId from a fresh read and replaces every file. No content is uploaded by this tool. Publication requires dashboard approval or Full access through mira_action_execute.",
+                "Publish the requested site using files shared in this conversation. Supply a stable UUID and version 0 for a new request. target=null creates a site; updating requires the slug and baseVersionId from a fresh owned-site read and replaces all files. Read mira_herenow_publications for the confirmed result.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,

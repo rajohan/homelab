@@ -14,7 +14,7 @@ import * as v from "valibot";
 
 import { browserWorkerGrant } from "../browsing/wire";
 import { browserNetworkForOwner } from "../config/environment";
-import { miraRunPermission } from "./approvalPolicy";
+import { miraManualRunAllowed } from "./approvalPolicy";
 import { retireBrowserCommands } from "./browserRetirement";
 import {
     auditMira,
@@ -105,18 +105,16 @@ export async function readBrowserAccess(
     id: string
 ): Promise<AccessRow | undefined> {
     const [row] = await query<AccessRow[]>`
-        SELECT g.id,g.run_id AS "runId",g.run_lease AS "runLease",g.mode,g.state,g.host_token AS "hostToken",(g.policy - 'delegatedMode') AS policy,g.expires_at AS "expiresAt",coalesce(console.controller,'mira') AS controller,
+        SELECT g.id,g.run_id AS "runId",g.run_lease AS "runLease",g.mode,g.state,g.host_token AS "hostToken",(g.policy - 'delegated') AS policy,g.expires_at AS "expiresAt",coalesce(console.controller,'mira') AS controller,
             (g.state IN ('pending','active') AND g.expires_at>clock_timestamp() AND r.manual
-                AND (NOT (g.policy ? 'connected') OR (r.automation_id IS NULL AND NOT (g.policy ? 'delegatedMode') AND ${browserNetworkForOwner(owner)}))
+                AND (NOT (g.policy ? 'connected') OR (r.automation_id IS NULL AND NOT (g.policy ? 'delegated') AND ${browserNetworkForOwner(owner)}))
                 AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease
                 AND r.lease_expires_at>clock_timestamp() AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
                 AND c.deleted_at IS NULL AND coalesce(u.enabled,true) AND b.enabled
                 AND (r.automation_id IS NULL OR (a.deleted_at IS NULL AND s.enabled AND
                     (a.schedule->>'event' IS DISTINCT FROM 'agentmail' OR i.enabled)))
-                AND (NOT (g.policy ? 'delegatedMode') OR (
-                    r.approval_revoked_at IS NULL AND r.automation_id IS NULL AND r.task_id IS NULL AND c.archived_at IS NULL
-                    AND g.policy->>'delegatedMode'=r.settings->>'permissionMode'
-                    AND c.settings->>'permissionMode'=r.settings->>'permissionMode'))
+                AND (NOT (g.policy ? 'delegated') OR (
+                    r.approval_revoked_at IS NULL AND r.automation_id IS NULL AND r.task_id IS NULL AND c.archived_at IS NULL))
                 AND g.controls=jsonb_build_array(coalesce(u.version,1),b.version,a.version,s.version,
                     CASE WHEN a.schedule->>'event'='agentmail' THEN i.version END)) IS TRUE AS available,
             greatest(0,least(5000,floor(extract(epoch FROM (least(g.expires_at,r.lease_expires_at,
@@ -216,9 +214,12 @@ async function reserveBrowserAccess(
     }
     return context.client.begin(async (query) => {
         await lockBrowserOwner(query, context.owner);
-        let delegatedMode;
         if (delegated) {
-            delegatedMode = await miraRunPermission(query, context);
+            if (!(await miraManualRunAllowed(query, context)))
+                throw new MiraFailure(
+                    "FORBIDDEN",
+                    "Browser access requires an active manual run."
+                );
             const [previousGrant] = await query<
                 { id: string }[]
             >`SELECT id FROM mira_browser_access WHERE owner=${context.owner} AND run_id=${request.runId} ORDER BY created_at DESC LIMIT 1`;
@@ -249,12 +250,7 @@ async function reserveBrowserAccess(
                     "FORBIDDEN",
                     "Ask the operator to grant Home network access in Chat for this run."
                 );
-            if (delegatedMode === "ask")
-                throw new MiraFailure(
-                    "FORBIDDEN",
-                    "Ask the operator to allow Browser access in Chat."
-                );
-            policy.mode = delegatedMode === "full_access" ? "control" : "view";
+            policy.mode = "view";
         }
         if (request.profileId && unrestrictedBrowserSites(policy.origins))
             throw new MiraFailure(
@@ -299,7 +295,7 @@ async function reserveBrowserAccess(
             WHERE r.id=${request.runId} AND r.owner=${context.owner} AND r.manual AND r.state='running' AND NOT r.cancel_requested
                 AND r.lease_expires_at>clock_timestamp() AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
                 AND (NOT ${Boolean(policy.connected)} OR r.automation_id IS NULL)
-                AND (NOT ${delegated} OR (r.lease_token=${context.run?.leaseToken ?? null} AND r.automation_id IS NULL AND r.task_id IS NULL AND r.approval_revoked_at IS NULL AND r.settings->>'permissionMode'=${delegatedMode ?? null} AND c.settings->>'permissionMode'=${delegatedMode ?? null} AND c.archived_at IS NULL))
+                AND (NOT ${delegated} OR (r.lease_token=${context.run?.leaseToken ?? null} AND r.automation_id IS NULL AND r.task_id IS NULL AND r.approval_revoked_at IS NULL AND c.archived_at IS NULL))
                 AND c.deleted_at IS NULL AND coalesce(u.enabled,true) AND b.enabled
                 AND (r.automation_id IS NULL OR (a.deleted_at IS NULL AND s.enabled AND
                     (a.schedule->>'event' IS DISTINCT FROM 'agentmail' OR i.enabled))) FOR SHARE OF r`;
@@ -312,7 +308,7 @@ async function reserveBrowserAccess(
         const [inserted] = await query<{ id: string }[]>`
             WITH timing AS MATERIALIZED(SELECT clock_timestamp() AS at)
             INSERT INTO mira_browser_access(id,owner,run_id,run_lease,controls,mode,policy,profile_id,expires_at,created_at)
-            SELECT ${id},${context.owner},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${policy.mode},${JSON.stringify({ ...policy, ...(delegatedMode ? { delegatedMode } : {}) })}::text::jsonb,${request.profileId ?? null},
+            SELECT ${id},${context.owner},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${policy.mode},${JSON.stringify({ ...policy, ...(delegated ? { delegated: true } : {}) })}::text::jsonb,${request.profileId ?? null},
                 least(${run.expiresAt}::timestamptz,timing.at+interval '5 minutes'),timing.at FROM timing WHERE ${run.expiresAt}::timestamptz>timing.at RETURNING id`;
         if (!inserted)
             throw new MiraFailure(

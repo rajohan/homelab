@@ -18,7 +18,8 @@ import {
 
 const uncertain =
     "Moltbook did not confirm this attempt. Inspect the known content before trying again; Mira will not repeat it automatically.";
-const review = "Approval expired or Moltbook access changed. Review this draft again.";
+const review =
+    "Review required: Approval expired or Moltbook access changed. Review this action again.";
 /**
  * Recover abandoned provider requests and retire stale consent without repeating external writes.
  * @param client - Durable product database.

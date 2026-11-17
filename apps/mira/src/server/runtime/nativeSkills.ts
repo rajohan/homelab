@@ -2,6 +2,10 @@ import { constants } from "node:fs";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 
+import {
+    nativeSkillEngine,
+    skillEngineMaxBytes,
+} from "@homelab/contracts/miraSkillEngine";
 import type { MiraSkillId } from "@homelab/contracts/miraSkills";
 import * as v from "valibot";
 
@@ -98,6 +102,38 @@ async function verifyFile(file: string, content: string): Promise<void> {
     }
 }
 
+async function verifyEngine(file: string, expected: string): Promise<void> {
+    const handle = await open(
+        file,
+        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
+    );
+    try {
+        const stat = await handle.stat();
+        if (
+            !stat.isFile() ||
+            stat.size === 0 ||
+            stat.size > skillEngineMaxBytes ||
+            (process.platform !== "win32" && !(stat.mode & 0o111))
+        )
+            throw new Error("Native skill engine is not an executable regular file.");
+        const hasher = new Bun.CryptoHasher("sha256");
+        const buffer = Buffer.alloc(64 * 1024);
+        let position = 0;
+        for (;;) {
+            const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+            if (!bytesRead) break;
+            position += bytesRead;
+            if (position > skillEngineMaxBytes)
+                throw new Error("Native skill engine exceeds its size limit.");
+            hasher.update(buffer.subarray(0, bytesRead));
+        }
+        if (position !== stat.size || hasher.digest("hex") !== expected)
+            throw new Error("Native skill engine differs from its upstream checksum.");
+    } finally {
+        await handle.close();
+    }
+}
+
 /**
  * Verify the installed originals before native Codex can discover or inject them.
  * @param command - Canonical packaged executable, with immutable skills installed beside it.
@@ -115,9 +151,13 @@ export async function readNativeSkills(
         throw new Error("Native skill installation must not contain links.");
     for (const entry of bundledNativeMiraSkills()) {
         if (!enabled.includes(entry.id)) continue;
+        const engine = nativeSkillEngine(entry, process.platform, process.arch);
         const seen = new Set<string>();
         const directories = new Set<string>();
-        for (const file of Object.keys(entry.files)) {
+        for (const file of [
+            ...Object.keys(entry.files),
+            ...(engine ? [engine.path] : []),
+        ]) {
             let directory = path.posix.dirname(file);
             while (directory !== ".") {
                 directories.add(directory);
@@ -133,7 +173,10 @@ export async function readNativeSkills(
                 const file = path.join(directory, item.name);
                 if (item.isDirectory() && directories.has(key))
                     await visit(file, key + "/");
-                else if (item.isFile() && Object.hasOwn(entry.files, key)) {
+                else if (item.isFile() && engine && key === engine.path) {
+                    await verifyEngine(file, engine.sha256);
+                    seen.add(key);
+                } else if (item.isFile() && Object.hasOwn(entry.files, key)) {
                     await verifyFile(file, entry.files[key]!);
                     seen.add(key);
                 } else
@@ -143,7 +186,7 @@ export async function readNativeSkills(
             }
         };
         await visit(path.join(root, entry.id), "");
-        if (seen.size !== Object.keys(entry.files).length)
+        if (seen.size !== Object.keys(entry.files).length + (engine ? 1 : 0))
             throw new Error("Native skill installation is incomplete.");
     }
     return result;
@@ -183,5 +226,5 @@ export function nativeSkillGuidance(
         packageHash: entry.packageHash,
         root: path.join(path.dirname(command), "skills", entry.id),
     }));
-    return `Original upstream and Homelab skills are installed and registered with native Codex discovery. Follow their complete SKILL.md and applicable references. Read referenced files through mira_skill_read: resolve the reference relative to the current native file, remove the matching package root below, and use that repository-relative file key with its id and packageHash. Follow nextOffset for long files. These mappings provide file access, not replacement skill instructions. Project inspection, editing, rendered verification and execution use the current supplied tools and permissions. A bundled script or agent definition is not an available execution tool; if an original workflow specifies a fallback for unavailable helpers, follow that fallback and report it accurately. Native package mappings: ${JSON.stringify(mappings)}`;
+    return `Original upstream and Homelab skills are installed and registered with native Codex discovery. Follow their complete SKILL.md and applicable references. Read referenced files through mira_skill_read: resolve the reference relative to the current native file, remove the matching package root below, and use that repository-relative file key with its id and packageHash. Follow nextOffset for long files. These mappings provide file access, not replacement skill instructions. Project inspection, editing, rendered verification and execution use the current supplied tools and permissions. Impeccable includes its original executable launcher and version-pinned native engine in the documented sibling location. Invoke its original commands through an authorized execution tool with cwd set to the project being worked on. The skill files are not a project checkout. Installation does not grant execution authority or register hooks and agents. If a required tool is unavailable in a run, use the original documented fallback and report the limitation. Native package mappings: ${JSON.stringify(mappings)}`;
 }

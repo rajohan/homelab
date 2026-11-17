@@ -461,6 +461,7 @@ export class CodexRuntime {
         text: string,
         options: {
             signal?: AbortSignal;
+            skillText?: string;
             timeoutMs?: number | null;
             onDelta?: (delta: string, messageId?: string) => void;
             onStarted?: (turnId: string) => Promise<void>;
@@ -632,7 +633,10 @@ export class CodexRuntime {
                     summary: "auto",
                     input: [
                         { type: "text", text, text_elements: [] },
-                        ...nativeSkillInputs(text, this.nativeSkills.skills),
+                        ...nativeSkillInputs(
+                            options.skillText ?? "",
+                            this.nativeSkills.skills
+                        ),
                         ...(options.attachments ?? []),
                     ],
                 })
@@ -736,9 +740,15 @@ export class CodexRuntime {
      * @param threadId - Previously acknowledged provider thread.
      * @param turnId - Expected active turn; never inferred from a late notification.
      * @param text - Server-created guidance referencing a verified human task edit.
+     * @param skillText - Raw current operator message for explicit skill selection; excludes recalled context.
      * @returns True only after a matching provider acknowledgement, or false if the turn already ended.
      */
-    async steer(threadId: string, turnId: string, text: string): Promise<boolean> {
+    async steer(
+        threadId: string,
+        turnId: string,
+        text: string,
+        skillText = ""
+    ): Promise<boolean> {
         const active = this.active;
         if (
             !active ||
@@ -755,7 +765,7 @@ export class CodexRuntime {
                 expectedTurnId: turnId,
                 input: [
                     { type: "text", text, text_elements: [] },
-                    ...nativeSkillInputs(text, this.nativeSkills.skills),
+                    ...nativeSkillInputs(skillText, this.nativeSkills.skills),
                 ],
             })
         );

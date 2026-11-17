@@ -1,10 +1,10 @@
 const codeTools: Readonly<Record<string, string>> = {
-    mira_daytona_jobs: "Code jobs",
-    mira_daytona_result: "Code job result",
-    mira_daytona_draft: "Prepare code job",
-    mira_daytona_check_draft: "Prepare code checks",
-    mira_daytona_edit_draft: "Prepare code edits",
-    mira_daytona_source_draft: "Prepare source inspection",
+    mira_code_executions: "Code activity",
+    mira_code_result: "Code result",
+    mira_code_run: "Run code",
+    mira_code_check: "Check code",
+    mira_code_edit: "Edit code",
+    mira_code_read_sources: "Read source",
 };
 
 /**

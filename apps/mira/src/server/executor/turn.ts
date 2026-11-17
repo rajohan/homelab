@@ -7,7 +7,6 @@ import type { SQL } from "bun";
 import * as v from "valibot";
 
 import { runtimeEnvironment } from "../config/environment";
-import { miraRunPermission } from "../data/approvalPolicy";
 import { resolveMiraChatSettings } from "../data/chatSettings";
 import { acknowledgeChatSteering, claimChatSteering } from "../data/chatSteering";
 import { readMiraComputerReadiness } from "../data/computerWait";
@@ -35,7 +34,7 @@ import type {
 } from "../integrations/github/configuration";
 import type { HereNowReadConfiguration } from "../integrations/herenow/configuration";
 import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
-import { createMiraHostReviewer } from "../operations/autoReview";
+import { createMiraActionReviewer } from "../operations/autoReview";
 import type { MiraOperationsConfiguration } from "../operations/configuration";
 import {
     miraInstructions as instructions,
@@ -165,7 +164,8 @@ export async function executeMiraTurn(
                     accepted = await runtime.steer(
                         providerThread,
                         providerTurn,
-                        `New message from the operator while you were working (message ${guidance.id}). Adapt the current work to this message and preserve completed work:\n\n${guidance.content}`
+                        `New message from the operator while you were working (message ${guidance.id}). Adapt the current work to this message and preserve completed work:\n\n${guidance.content}`,
+                        guidance.content
                     );
                 } catch (error) {
                     steeringFailed = true;
@@ -273,22 +273,8 @@ export async function executeMiraTurn(
                       .update(`${recallHash}:code:main`)
                       .digest("hex")
                 : recallHash;
-        const permissionMode = await miraRunPermission(client, {
-            client,
-            owner: run.owner,
-            actor: `mira:${run.id}`,
-            run: { id: run.id, leaseToken: run.leaseToken },
-        });
-        const turnInstructions =
-            permissionMode === "ask"
-                ? instructions
-                : `${instructions}\nCurrent Chat permission mode: ${permissionMode}. This setting authorizes only the action classes described above for the operator's requested work.`;
-        const permissionPolicyHash =
-            permissionMode === "ask"
-                ? executionPolicyHash
-                : new Bun.CryptoHasher("sha256")
-                      .update(`${executionPolicyHash}:permissions:${permissionMode}`)
-                      .digest("hex");
+        const turnInstructions = instructions;
+        const permissionPolicyHash = executionPolicyHash;
 
         const policyHash = new Bun.CryptoHasher("sha256")
             .update(permissionPolicyHash)
@@ -328,7 +314,7 @@ export async function executeMiraTurn(
                     github,
                     localCode,
                     operations,
-                    createMiraHostReviewer(client, run, config, settings)
+                    createMiraActionReviewer(client, run, config, settings)
                 ),
                 ...(assistance
                     ? [
@@ -456,6 +442,9 @@ export async function executeMiraTurn(
                     (guidance ? `\n\nNew operator message:\n${guidance.content}` : ""),
                 {
                     signal,
+                    skillText: continuation
+                        ? (guidance?.content ?? "")
+                        : record.operatorText,
                     settings,
                     attachments: continuation ? [] : attachments.inputs,
                     timeoutMs:

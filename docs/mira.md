@@ -25,7 +25,7 @@ A failed read-only PC observation is reported as a capture failure, not an
 uncertain click or keystroke. The computer grant still stops on a failed capture;
 input commands with unconfirmed outcomes remain blocked from replay.
 
-Chat settings offers Ask for approval, Approve for me and Full access. The selected mode is stored with the conversation and enforced by the same server for web and Windows. See [Chat permissions](mira-permissions.md) for exact action scopes, revocation and deployment requirements.
+Manual Chat uses one fixed Approve for me policy, with direct coding and independent review for external actions. Web and Windows share the same server enforcement. See [Chat action review](mira-permissions.md) for exact scopes, revocation and deployment requirements.
 
 ## Deployment boundaries
 

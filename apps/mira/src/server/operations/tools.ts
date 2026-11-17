@@ -8,7 +8,6 @@ import { idSchema } from "@homelab/contracts/operations";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
-import { miraRunPermission } from "../data/approvalPolicy";
 import { miraDependenciesAllowed } from "../data/automations";
 import { lockMiraProposals, MiraFailure } from "../data/context";
 import type { MiraClaim } from "../data/queue";
@@ -17,8 +16,15 @@ import { miraOperationsBinding, type MiraOperationsConfiguration } from "./confi
 import { executeMiraHostCommand } from "./ssh";
 
 /** Server-selected reviewer; model arguments cannot select or replace it. */
-export type MiraHostReviewer = (
-    command: MiraHostCommand,
+export type MiraActionReviewer = (
+    action:
+        | MiraHostCommand
+        | {
+              kind: string;
+              contentHash: string;
+              content: unknown;
+              executionTarget?: string;
+          },
     signal: AbortSignal
 ) => Promise<{ decision: "approve" | "ask" | "deny"; reason: string }>;
 
@@ -50,7 +56,7 @@ export function createMiraOperationsTools(
     run: MiraClaim,
     configuration?: MiraOperationsConfiguration,
     execute = executeMiraHostCommand,
-    reviewer?: MiraHostReviewer
+    reviewer?: MiraActionReviewer
 ): MiraToolDefinition[] {
     if (
         !configuration ||
@@ -59,12 +65,6 @@ export function createMiraOperationsTools(
         run.automationId
     )
         return [];
-    const context = {
-        client,
-        owner: run.owner,
-        actor: `mira:${run.id}`,
-        run: { id: run.id, leaseToken: run.leaseToken },
-    };
     const access = async (signal: AbortSignal, epoch?: string | null) => {
         signal.throwIfAborted();
         const [row] = await client<
@@ -178,7 +178,7 @@ export function createMiraOperationsTools(
             automatic: false,
             commitsIndependently: true,
             description:
-                "Run an exact shell command on a provisioned Homelab host for the operator's requested work, including SSH administration, service restarts, managed gh operations and release procedures. Full access permits requested commands. Approve for me independently reviews the exact action; unresolved requests appear above the Chat composer. A pending request is durable and has not executed. When the operator approves, use mira_homelab_resume with its request ID. Do not recreate rejected requests. Never use this to bypass a denied action, MFA, branch rules, deployment checks or an intentionally paused automation. Before GitHub mutations on Main verify gh api user is mira-2026 / 264348558, retain Mira commit identity, and never use --admin or bypass reviews. Follow the versioned deployment procedure, inspect actual outcomes and never replay an unknown SSH operation. Do not print credentials or whole secret-bearing environments/configurations. Output reaches the selected model provider. Keep commands focused; use the timeout needed for this command, not a whole-chat deadline.",
+                "Run an exact shell command on a provisioned Homelab host for the operator's requested work, including SSH administration, service restarts, managed gh operations and release procedures. Approve for me independently reviews the exact action; unresolved requests appear above the Chat composer. A pending request is durable and has not executed. When the operator approves, use mira_homelab_resume with its request ID. Do not recreate rejected requests. Never use this to bypass a denied action, MFA, branch rules, deployment checks or an intentionally paused automation. Before GitHub mutations on Main verify gh api user is mira-2026 / 264348558, retain Mira commit identity, and never use --admin or bypass reviews. Follow the versioned deployment procedure, inspect actual outcomes and never replay an unknown SSH operation. Do not print credentials or whole secret-bearing environments/configurations. Output reaches the selected model provider. Keep commands focused; use the timeout needed for this command, not a whole-chat deadline.",
             inputSchema: object(
                 {
                     target: { type: "string" },
@@ -196,8 +196,7 @@ export function createMiraOperationsTools(
                 const parsed = v.parse(miraHostCommandSchema, input);
                 const epoch = await access(signal);
                 const target = connection(parsed.target);
-                const mode = await miraRunPermission(client, context);
-                let review = mode !== "full_access";
+                let review = true;
                 let reviewMessage = "Review this exact host command before execution.";
                 const proposal = v.parse(miraHostProposalSchema, {
                     ...parsed,
@@ -223,7 +222,7 @@ export function createMiraOperationsTools(
                             "Use the existing request. Approved commands execute only through mira_homelab_resume.",
                     };
                 }
-                if (mode === "approve_for_me" && reviewer) {
+                if (reviewer) {
                     try {
                         const verdict = await reviewer(parsed, signal);
                         reviewMessage = `Automatic review (${verdict.decision}): ${verdict.reason}`;
@@ -233,16 +232,8 @@ export function createMiraOperationsTools(
                             "Automatic review was unavailable. Please review this exact command.";
                     }
                     await access(signal, epoch);
-                    if ((await miraRunPermission(client, context)) !== mode) {
-                        review = true;
-                        reviewMessage =
-                            "Permissions changed during automatic review. Please review this command.";
-                    }
                 }
-                const approvalMessage =
-                    mode === "full_access"
-                        ? "Executing under the operator's Full access setting."
-                        : reviewMessage;
+                const approvalMessage = reviewMessage;
                 await client.begin(async (query) => {
                     await lockMiraProposals(query, run.owner);
                     const [saved] = await query<
@@ -263,11 +254,6 @@ export function createMiraOperationsTools(
                     };
                 // Review cannot outlive a permission change or a stopped run.
                 await access(signal, epoch);
-                if ((await miraRunPermission(client, context)) !== mode)
-                    throw new MiraFailure(
-                        "FORBIDDEN",
-                        "Permissions changed before dispatch; nothing was executed."
-                    );
                 return dispatch(parsed, signal, epoch);
             },
         },

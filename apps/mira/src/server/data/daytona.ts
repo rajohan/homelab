@@ -271,12 +271,13 @@ export async function approveMiraDaytona(
             { binding: string }[]
         >`SELECT binding_hash AS binding FROM mira_daytona_jobs WHERE id=${input.id} AND owner=${context.owner} FOR UPDATE`;
         const job = await readMiraDaytona(query, context.owner, input.id);
-        const scope = miraJobApprovalScope(job.id, job.content);
+        const scope = miraJobApprovalScope(job.id, job.content, job.executionTarget);
         const approvalRunId = await requireMiraApproval(
             query,
             context,
             job.conversationId,
-            scope
+            scope,
+            { id: job.id, contentHash: job.contentHash }
         );
         const stamp = await codeJobPermission(query, account);
         if (stamp === null)

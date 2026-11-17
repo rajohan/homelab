@@ -81,7 +81,7 @@ export function CodeReview({
                         }
                     />
                     <p className="text-sm text-primary-300">
-                        Draft pull request in rajohan/homelab · Mira · Base{" "}
+                        Pull request in rajohan/homelab · Mira · Base{" "}
                         {draft.content.commit.slice(0, 12)}
                     </p>
                     <p className="text-sm wrap-anywhere whitespace-pre-wrap text-primary-300">
@@ -151,7 +151,7 @@ export function CodeReview({
                             }
                         >
                             <GitPullRequest size={16} aria-hidden="true" />
-                            Create draft PR
+                            Create pull request
                         </Button>
                     )}
                     <a

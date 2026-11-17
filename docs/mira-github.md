@@ -1,6 +1,12 @@
 # Mira reviewed GitHub publication
 
-Mira can prepare a local code proposal from one successful fixed structured-edit check on Main or Daytona. Chat and Jobs expose Code changes with the complete selected file replacements/deletions and PR text. Ask for approval requires the operator to review the exact draft; Approve for me and Full access allow requested tested draft PRs through mira_action_execute. The runtime dispatches that exact approved snapshot through a durable queue. This change does not provision a live credential or enable production publication.
+Use `mira_github_create_pr` with a successful fixed structured-edit check and the
+requested PR title/body. The direct call queues the exact tested snapshot under
+the fixed Approve for me policy. There is no separate
+local PR-drafting workflow or model-facing execute tool. Read
+`mira_github_publications` for the confirmed provider result. The durable queue
+retains source fingerprints and uncertain-write recovery. This does not merge or
+deploy, provision credentials or enable a paused integration.
 
 ## Fixed identity and destination
 
@@ -28,13 +34,13 @@ The dedicated token stays in the executor's handler closure. Only tool declarati
 
 Publication takes a service-owned UUID, exact base commit, SHA-256 of the selected edit document, approved title/body and fixed commit time. It shares the strict edit-plan parser with the Daytona harness: at most 20 non-overlapping relative paths, one MiB of JSON, and passive UTF-8 replacements/originals up to 256 KiB each. Existing files must be regular Git blobs with matching Git object identity and original SHA-256. New files must be absent. Executable bits, BOMs and line endings are preserved; symlinks, submodules, traversal and binary edits are refused for selected paths.
 
-The adapter checks current main, reads the complete bounded base tree, then creates a tree using `base_tree` so unchanged files remain present. A readback compares every resulting leaf entry, including untouched files, against the expected tree. It creates and verifies a single-parent commit, a new `mira/publication/<UUID>` branch and a draft pull request. It never updates or deletes an existing ref, merges, deploys or claims that checks passed. Main advancing or a conflicting destination requires inspection and a fresh proposal.
+The adapter checks current main, reads the complete bounded base tree, then creates a tree using `base_tree` so unchanged files remain present. A readback compares every resulting leaf entry, including untouched files, against the expected tree. It creates and verifies a single-parent commit, a new `mira/publication/<UUID>` branch and a pull request ready for review. Automatic improvement publications retain their explicit draft-PR policy. It never updates or deletes an existing ref, merges, deploys or claims that checks passed. Main advancing or a conflicting destination requires inspection and a fresh proposal.
 
 ## Approval, pause and recovery
 
 The proposal captures an owned, completed check with exit code zero and confirmed sandbox cleanup, the exact fixed check command/base commit, and the immutable selected edit-file ID and SHA-256. Source bytes and provenance are verified for review, approval and before each external write. A check can have only one queued or attempted publication. Sandbox output remains untrusted: its successful exit is evidence for this selected check, not a substitute for GitHub CI, code/security review or CODEOWNER approval.
 
-Human approval or the current Chat permission mode authorizes the full versioned content hash and tested snapshot. Approval lasts 15 minutes and is bound to the current GitHub control version, runtime binding and dashboard receiver heartbeat. `integration:github` has its own pause control. Expiry, pause or removed configuration returns unstarted work to review. Draft edits invalidate approval. Models can list status and prepare local drafts in their own conversation. Approve for me and Full access can queue the exact tested draft through mira_action_execute, with delegated authority rechecked before each GitHub write. This tool does not merge or deploy. Automatic runs do not receive the draft tool; improvement-scheduler authorization remains separate future work.
+Human approval or the fixed manual-work policy authorizes the full versioned content hash and tested snapshot. Approval lasts 15 minutes and is bound to the current GitHub control version, runtime binding and dashboard receiver heartbeat. `integration:github` has its own pause control. Expiry, pause or removed configuration returns unstarted work to review. Draft edits invalidate approval. Manual Chat uses the direct PR tool and reads its durable outcome. Delegated authority is rechecked before each GitHub write. This tool does not merge or deploy. Automatic improvements retain their separate explicit policy.
 
 Only one publication can be in progress at a time. Each attempt records its token, authored time, sending/confirmed phase and known tree/commit/branch/PR references durably. A preflight failure before any write returns the proposal to review. An interrupted or uncertain attempt becomes Needs attention and is never automatically replayed. Inspect GitHub requests only read operations; it records any recovered branch or PR without changing publication authority or retrying writes. Conversation deletion and edit-file deletion are blocked while publication is queued or running. After cancellation/completion, deleting a conversation scrubs local proposal text while retaining external references needed for recovery.
 

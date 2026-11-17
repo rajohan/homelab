@@ -31,10 +31,10 @@ export function createGitHubTools(
 })[] {
     return [
         {
-            name: "mira_code_proposals",
+            name: "mira_github_publications",
             automatic: true,
             description:
-                "List local code proposals and GitHub publication status for this conversation. Pass nextCursor as before to read older entries. Published means a draft PR was created, not merged or deployed. needs_attention is never authority to resend an uncertain write.",
+                "Read GitHub publication outcomes for this conversation. Pass nextCursor as before for older entries. A confirmed PR is not merged or deployed. An uncertain result is never permission to resubmit.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,
@@ -53,11 +53,11 @@ export function createGitHubTools(
             },
         },
         {
-            name: "mira_code_draft",
+            name: "mira_github_create_pr",
             automatic: false,
             transactional: true,
             description:
-                "Prepare a local GitHub draft proposal for rajohan/homelab using Mira. Select one completed fixed structured-edit check on Main or Daytona in this conversation, its exact base commit, a conventional PR title and description. The service captures the exact tested edit file. Publication requires dashboard approval or Approve for me/Full access through mira_action_execute. This draft tool cannot approve, publish, retry an uncertain write, merge, deploy or spend resources. Reuse the stable UUID/version for local edits only.",
+                "Create a GitHub pull request for the requested tested Homelab change. Supply a stable UUID, version 0 for a new request, one completed structured-edit check in this conversation, its exact base commit, a conventional title and body. The service captures the tested source. This does not merge or deploy. Read mira_github_publications for the confirmed outcome.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,

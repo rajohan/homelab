@@ -169,9 +169,9 @@ export function createAgentMailTools(
             },
         },
         {
-            name: "mira_mail_reply_draft_create",
+            name: "mira_mail_reply",
             description:
-                "Prepare a local reply draft to an eligible received message in the configured inbox when the operator requests it. Read the message routing headers and honor Reply-To when choosing the explicit To/Cc/Bcc recipients; reply-all is never inferred. The original thread and subject are retained. Optional attachments must already be shared in this conversation. Sending requires dashboard approval or Full access through mira_action_execute.",
+                "Send the reply requested by the operator to an eligible received message. Read routing headers and honor Reply-To when selecting explicit recipients; never infer reply-all. Preserve the original thread and subject. Optional attachments must already be shared in this conversation. For draft-only requests, return wording without calling this sending tool.",
             inputSchema: {
                 type: "object",
                 properties: {

@@ -91,7 +91,7 @@ export async function reconcileMiraMail(
                 control.version !== row.controlVersion ||
                 control.binding !== row.binding
             )
-                await query`UPDATE mira_mail_drafts SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message='Delivery approval expired or AgentMail access changed. Review this draft again before sending.',version=version+1,updated_at=now() WHERE id=${candidate.id}`;
+                await query`UPDATE mira_mail_drafts SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message='Review required: Delivery approval expired or AgentMail access changed. Review this action again before sending.',version=version+1,updated_at=now() WHERE id=${candidate.id}`;
         });
     }
 }
@@ -142,7 +142,7 @@ export async function dispatchMiraMail(
             control.version !== row.controlVersion ||
             control.binding !== row.binding
         ) {
-            await query`UPDATE mira_mail_drafts SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message='Delivery approval expired or AgentMail changed. Review this draft again before sending.',version=version+1,updated_at=now() WHERE id=${row.id}`;
+            await query`UPDATE mira_mail_drafts SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,message='Review required: Delivery approval expired or AgentMail changed. Review this action again before sending.',version=version+1,updated_at=now() WHERE id=${row.id}`;
             return null;
         }
 
@@ -189,7 +189,7 @@ export async function dispatchMiraMail(
             { id: string }[]
         >`UPDATE mira_mail_drafts SET state='sending',attempt_token=${token},retry_after=NULL,started_at=clock_timestamp(),message=NULL,version=version+1,updated_at=clock_timestamp() WHERE id=${row.id} AND approved_at>clock_timestamp()-interval '15 minutes' RETURNING id`;
         if (!admitted[0]) {
-            await query`UPDATE mira_mail_drafts SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,retry_after=NULL,message='Delivery approval expired. Review this draft again before sending.',version=version+1,updated_at=clock_timestamp() WHERE id=${row.id}`;
+            await query`UPDATE mira_mail_drafts SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,retry_after=NULL,message='Review required: Delivery approval expired. Review this action again before sending.',version=version+1,updated_at=clock_timestamp() WHERE id=${row.id}`;
             return null;
         }
         return { id: row.id, token, body, reply: content.reply };
@@ -201,7 +201,7 @@ export async function dispatchMiraMail(
         return true;
     }
     if (!(await miraActionApproval(client, configuration.owner, "mail", claimed.id))) {
-        await client`UPDATE mira_mail_drafts SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,attempt_token=NULL,started_at=NULL,message='Chat permission changed. Review this email again.',version=version+1,updated_at=now() WHERE id=${claimed.id} AND owner=${configuration.owner} AND attempt_token=${claimed.token} AND state='sending'`;
+        await client`UPDATE mira_mail_drafts SET state='draft',approval_run_id=NULL,approved_version=NULL,approved_by=NULL,approved_at=NULL,control_version=NULL,attempt_token=NULL,started_at=NULL,message='Review required: Chat permission changed. Review this email again.',version=version+1,updated_at=now() WHERE id=${claimed.id} AND owner=${configuration.owner} AND attempt_token=${claimed.token} AND state='sending'`;
         return true;
     }
     let acknowledgement: { message_id: string; thread_id: string } | null = null;

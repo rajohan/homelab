@@ -38,7 +38,11 @@ export function parsePilotConfig(input: unknown): PilotConfig {
         throw new Error(
             "Codex credentials and the pilot workspace must use separate directories."
         );
-    return config;
+    // Retired provider defaults must not strand migrated chats or automations.
+    return {
+        ...config,
+        model: config.model?.startsWith("syn:") ? undefined : config.model,
+    };
 }
 
 /**
