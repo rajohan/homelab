@@ -364,6 +364,7 @@ export class MiraVoiceConnection {
         }
     }
     private discardInput() {
+        this.update({ transcript: "" });
         for (const item of this.utterances.values())
             if (item.text === null) item.discarded = true;
         this.emit({ type: "input_audio_buffer.clear" });
@@ -393,6 +394,7 @@ export class MiraVoiceConnection {
         this.sender = undefined;
         this.audio.srcObject = null;
         this.utterances.clear();
+        this.update({ transcript: "" });
     }
     private async connect() {
         const pc = new RTCPeerConnection();
@@ -488,6 +490,17 @@ export class MiraVoiceConnection {
                 );
         }
     }
+    private capturing() {
+        const track = this.stream?.getAudioTracks()[0];
+        return Boolean(
+            this.sessionReady &&
+            this.value.microphone &&
+            !this.value.paused &&
+            track?.enabled &&
+            track.readyState === "live" &&
+            this.sender?.track === track
+        );
+    }
     private event(event: v.InferOutput<typeof eventSchema>) {
         if (
             ["session.created", "session.updated"].includes(event.type) &&
@@ -527,9 +540,9 @@ export class MiraVoiceConnection {
             this.utterances.set(event.item_id, {
                 id: crypto.randomUUID(),
                 text: null,
-                discarded: !this.value.microphone || this.value.paused,
+                discarded: !this.capturing(),
             });
-            if (this.value.microphone && !this.value.paused) {
+            if (this.capturing()) {
                 this.stopSpeaking();
                 this.update({ transcript: "Listening…" });
             }
@@ -539,7 +552,7 @@ export class MiraVoiceConnection {
             event.item_id
         ) {
             const item = this.utterances.get(event.item_id);
-            if (item && !item.discarded)
+            if (item && !item.discarded && this.capturing())
                 this.update({
                     transcript:
                         (this.value.transcript === "Listening…"
@@ -557,8 +570,9 @@ export class MiraVoiceConnection {
             const item = this.utterances.get(event.item_id);
             if (item && item.text === null) item.text = event.transcript?.trim() ?? "";
             this.emit({ type: "conversation.item.delete", item_id: event.item_id });
-            if (event.type.endsWith("failed"))
+            if (event.type.endsWith("failed") && item && !item.discarded)
                 this.update({
+                    transcript: "",
                     error: "Speech could not be transcribed. Please repeat it or type your message.",
                 });
             this.flushTranscripts();
@@ -612,7 +626,8 @@ export class MiraVoiceConnection {
             if (!item.discarded && item.text && /[\p{L}\p{N}]/u.test(item.text)) {
                 this.outbox.push({ id: item.id, text: item.text });
                 this.update({ transcript: item.text });
-            }
+            } else if (!item.discarded && this.utterances.size === 0)
+                this.update({ transcript: "" });
         }
         this.persist();
         void this.sendPending();

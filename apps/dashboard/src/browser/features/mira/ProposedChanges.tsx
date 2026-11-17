@@ -30,11 +30,21 @@ export function ProposedChanges({
     });
     const actions = useInfiniteQuery({
         queryKey: ["operations", "mira", "action-requests", conversationId],
-        queryFn: ({ pageParam }) =>
-            api.mira.proposals.actions.query({
-                ...(conversationId ? { id: conversationId } : {}),
-                ...(pageParam ? { before: pageParam } : {}),
-            }),
+        queryFn: async ({ pageParam, signal }) => {
+            let before = pageParam;
+            // Covered drafts may fill a page; keep looking for a real human request.
+            while (true) {
+                const page = await api.mira.proposals.actions.query(
+                    {
+                        ...(conversationId ? { id: conversationId } : {}),
+                        ...(before ? { before } : {}),
+                    },
+                    { signal }
+                );
+                if (page.rows.length > 0 || !page.nextCursor) return page;
+                before = page.nextCursor;
+            }
+        },
         initialPageParam: undefined as MiraActionCursor | undefined,
         getNextPageParam: (page) => page.nextCursor ?? undefined,
         refetchInterval: 5000,
@@ -157,7 +167,7 @@ export function ProposedChanges({
                                     variant="secondary"
                                     onClick={() => setReview(current)}
                                 >
-                                    Review
+                                    Review approval
                                 </Button>
                             )}
                         </div>

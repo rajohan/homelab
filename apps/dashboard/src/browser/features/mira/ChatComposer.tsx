@@ -51,7 +51,8 @@ export function ChatComposer({
     readonly onSettings?: (() => void) | undefined;
 }) {
     const placeholder = active ? "Add guidance while Mira works…" : "Message Mira…";
-    const blocked = stopping || stopPending || (active && !steerable);
+    // Cancellation remains part of a terminal run's history, not a composer lock.
+    const blocked = active && (stopping || stopPending || !steerable);
     const canSend = Boolean(text.trim()) && !blocked && !uploading && !sending;
     return (
         <form

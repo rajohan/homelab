@@ -75,7 +75,11 @@ export function DaytonaDetails({
         return <DaytonaRecovery id={job.id} onClose={() => setRecovering(false)} />;
     return (
         <Modal
-            title={job.state === "draft" ? "Review code job" : "Code job details"}
+            title={
+                job.state === "draft"
+                    ? "Approve code execution"
+                    : "Code execution details"
+            }
             onClose={onClose}
             size="wide"
             dismissible={!busy}
@@ -224,7 +228,7 @@ export function DaytonaDetails({
                                         .catch(() => {})
                                 }
                             >
-                                Start on{" "}
+                                Approve and run on{" "}
                                 {job.executionTarget === "main" ? "Main" : "Daytona"}
                             </Button>
                         )}

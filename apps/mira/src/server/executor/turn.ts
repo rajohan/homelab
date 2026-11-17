@@ -641,12 +641,15 @@ export async function executeMiraTurn(
         else if (error instanceof MiraFailure) message = error.message;
         else if (error instanceof ProviderRequestError) message = error.message;
         let state: "completed" | "interrupted" | "needs_attention" = "needs_attention";
-        if (assistanceIdle) {
+        if (signal.aborted || assistanceIdle) {
             const [current] = await client<
                 { cancelled: boolean }[]
             >`SELECT cancel_requested AS cancelled FROM mira_runs WHERE id=${run.id} AND owner=${run.owner} AND lease_token=${run.leaseToken}`;
+            // A requested stop can close the transport before the provider acknowledges it.
+            // finishMiraRun still promotes any uncertain tool receipt to needs_attention.
             if (current?.cancelled) state = "interrupted";
-            else if (deadline.signal.aborted || stopping.aborted) state = "completed";
+            else if (assistanceIdle && (deadline.signal.aborted || stopping.aborted))
+                state = "completed";
         }
         await finishMiraRun(client, run, {
             state,

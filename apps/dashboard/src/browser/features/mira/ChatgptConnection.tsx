@@ -43,6 +43,8 @@ export function ChatgptConnection() {
         ["requested", "starting", "waiting"].includes(login.state) &&
         connection?.online === true;
     const busy = start.isPending || cancel.isPending;
+    const needsSignIn =
+        connection?.state === "disconnected" || connection?.state === "expired";
     return (
         <div className="shrink-0 space-y-2 border-b border-primary-700 px-4 py-2 text-xs text-primary-300">
             <output className="block">
@@ -85,8 +87,12 @@ export function ChatgptConnection() {
                 </div>
             ) : (
                 <>
-                    {login?.message && <output className="block">{login.message}</output>}
-                    {connection?.state !== "connected" && connection?.canManage && (
+                    {login?.message &&
+                        (login.state === "completed" ||
+                            connection?.state !== "connected") && (
+                            <output className="block">{login.message}</output>
+                        )}
+                    {needsSignIn && connection?.canManage && (
                         <Button
                             size="sm"
                             variant="secondary"
@@ -99,14 +105,12 @@ export function ChatgptConnection() {
                                 : "Sign in again"}
                         </Button>
                     )}
-                    {connection?.state !== "connected" &&
-                        connection &&
-                        !connection.canManage && (
-                            <p>
-                                An operator with worker-control permission can reconnect
-                                the shared ChatGPT account.
-                            </p>
-                        )}
+                    {needsSignIn && connection && !connection.canManage && (
+                        <p>
+                            An operator with worker-control permission can reconnect the
+                            shared ChatGPT account.
+                        </p>
+                    )}
                 </>
             )}
             {(start.error || cancel.error) && (

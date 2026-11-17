@@ -1,7 +1,8 @@
 # Mira skills
 
-The Automations page contains seven release-owned guidance packages: task tracking,
-AgentMail, Daytona, GitHub, here.now, Moltbook and frontend improvement. These adapt
+The Automations page contains nine release-owned guidance packages: task tracking,
+AgentMail, Daytona, GitHub, here.now, Moltbook, frontend improvement, Impeccable and
+Intent. These adapt
 selected legacy workflows to the existing native product tools. They do not copy
 the entire legacy skill directory or its scripts and credential paths.
 
@@ -53,8 +54,29 @@ content and catalog hashes change with the installed bytes. Upstream announcemen
 are candidates for review, not proof of installed or qualified behavior. Never run a
 downloaded skill installer as part of updating the catalog.
 
-Tests cover bundle bounds and hashes, owner isolation, exact-version reads, pause and
-timed resume, executor mismatch/rollback, original automation scope, expired leases,
-preview without activation and the shared control dialogs. Development uses disposable
-state. Production activation and live provider qualification remain separate pending
-work in the [Mira delivery plan](mira.md).
+Qualification checks bundle bounds and hashes, owner isolation, exact-version reads,
+pause and timed resume, executor mismatch/rollback, original automation scope and
+expired leases. Use the existing repository checks and disposable development state;
+the project does not maintain an automated test suite.
+
+## Design workflow
+
+The Impeccable and Intent packages are reviewed, passive adaptations pinned to exact
+upstream commits, with their source links, attribution and licenses inside the bundle.
+They are available to both supported chat providers through the existing skill tools.
+Deploy the matching dashboard and Mira release, then enable each package in Skills.
+New packages retain the same initially paused behavior as the existing catalog.
+
+Intent supports product structure, navigation, user journeys, UX writing and recovery.
+Impeccable supports visual critique, hierarchy, typography, layout, simplification and
+responsive refinement. A whole-dashboard brief covers the shell and all relevant
+routes together; implementation can proceed in coherent parts using shared components.
+Read existing PRODUCT.md and DESIGN.md when present and record accepted decisions,
+without turning the current design's accidental inconsistencies into requirements.
+
+These adaptations do not install upstream CLIs, detector binaries, live overlays,
+hooks or specialist agents. They do not add tools or authorize automatic design work.
+Use ordinary language in Chat to request the workflow, for example: “Use Intent and
+Impeccable to review the whole dashboard and improve its shared design.” Reuse the
+established development application for visual feedback and retain normal review and
+deployment requirements.
