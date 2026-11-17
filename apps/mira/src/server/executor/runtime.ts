@@ -311,10 +311,17 @@ export async function runMiraExecutor(options: {
                 }
                 quotas = observed;
                 models = [...nativeModels, ...aliases];
+                const defaults = model?.startsWith("syn:") ? aliases : nativeModels;
+                // Follow catalog changes within the current provider. Keep its previous
+                // default during an outage instead of silently changing provider/billing.
                 model =
                     config.model ??
+                    defaults.find((entry) => entry.model === model)?.model ??
+                    defaults.find((entry) => entry.isDefault)?.model ??
+                    defaults[0]?.model ??
                     model ??
                     models.find((entry) => entry.isDefault)?.model ??
+                    models[0]?.model ??
                     null;
                 defaultReady = models.some((entry) => entry.model === model);
                 // Explicit available chats remain usable while default work waits.
