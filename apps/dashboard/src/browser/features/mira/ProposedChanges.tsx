@@ -114,9 +114,19 @@ export function ProposedChanges({
                                                 void actions
                                                     .fetchNextPage()
                                                     .then((result) => {
-                                                        const first =
-                                                            result.data?.pages.at(-1)
-                                                                ?.rows[0];
+                                                        const known = new Set(
+                                                            requests.map(
+                                                                (request) => request.id
+                                                            )
+                                                        );
+                                                        const first = result.data?.pages
+                                                            .at(-1)
+                                                            ?.rows.find(
+                                                                (row) =>
+                                                                    !known.has(
+                                                                        `${row.kind}:${row.id}`
+                                                                    )
+                                                            );
                                                         if (first)
                                                             return setSelected(
                                                                 `${first.kind}:${first.id}`

@@ -76,6 +76,11 @@ import {
     setMiraEnabled,
 } from "@homelab/mira/data/automations";
 import { readChatActivity } from "@homelab/mira/data/chatActivity";
+import {
+    cancelChatgptLogin,
+    readChatgptConnection,
+    requestChatgptLogin,
+} from "@homelab/mira/data/chatgpt";
 import { listMiraModels, saveMiraChatSettings } from "@homelab/mira/data/chatSettings";
 import { sendMiraMessage } from "@homelab/mira/data/chatSteering";
 import {
@@ -205,6 +210,29 @@ function execute<T>(
 
 const record = v.strictObject({ id: idSchema });
 export const miraRouter = trpc.router({
+    chatgpt: trpc.router({
+        status: trpc.procedure.query(({ ctx }) =>
+            execute(ctx, async (mira) => ({
+                ...(await readChatgptConnection(mira)),
+                canManage:
+                    ctx.principal?.capabilities.includes("worker:control") === true &&
+                    ctx.principal.capabilities.includes("jobs:run"),
+            }))
+        ),
+        login: trpc.procedure.mutation(({ ctx }) =>
+            execute(ctx, (mira) => {
+                const { principal } = authorizedOperations(ctx, "worker:control");
+                requireCapability(principal, "jobs:run");
+                return requestChatgptLogin(mira);
+            })
+        ),
+        cancel: trpc.procedure.input(record).mutation(({ ctx, input }) =>
+            execute(ctx, (mira) => {
+                authorizedOperations(ctx, "worker:control");
+                return cancelChatgptLogin(mira, input.id);
+            })
+        ),
+    }),
     computers: miraComputerRouter,
     browser: miraBrowserRouter,
     daytona: trpc.router({

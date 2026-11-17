@@ -1,6 +1,10 @@
 import { setTimeout as delay } from "node:timers/promises";
 
 import type { MiraModel, MiraQuota } from "@homelab/contracts/mira";
+import {
+    chatgptStatusMessage,
+    type MiraChatgptStatus,
+} from "@homelab/contracts/miraChatgpt";
 import type { SQL } from "bun";
 
 import { runtimeEnvironment } from "../config/environment";
@@ -44,6 +48,7 @@ import {
 } from "../integrations/moltbook/configuration";
 import { dispatchMiraSocial, reconcileMiraSocial } from "../integrations/moltbook/outbox";
 import type { MiraOperationsConfiguration } from "../operations/configuration";
+import { inspectChatgpt } from "../runtime/chatgptConnection";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
 import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
@@ -55,6 +60,7 @@ import {
 } from "../runtime/syntheticRuntime";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { miraSkillCatalogHash } from "../skills/catalog";
+import { runChatgptLogins } from "./chatgptLogin";
 import { cleanupMiraResources } from "./cleanup";
 import { dispatchMiraRuns } from "./dispatch";
 import { MaintenanceGate } from "./maintenanceGate";
@@ -189,7 +195,15 @@ export async function runMiraExecutor(options: {
             await wait(5000);
         }
     };
-    let model: string | null = null;
+    const [previousRuntime] = await client<
+        { model: string | null }[]
+    >`SELECT model FROM mira_runtime_status WHERE id=1`;
+    let model: string | null = config.model ?? previousRuntime?.model ?? null;
+    let chatgpt: MiraChatgptStatus = {
+        state: "error",
+        checkedAt: new Date().toISOString(),
+    };
+    let inspectNow = Promise.withResolvers<void>();
     let models: MiraModel[] = [];
     let quotas: MiraQuota[] = [];
     let defaultReady = false;
@@ -217,7 +231,12 @@ export async function runMiraExecutor(options: {
             if (deployment)
                 currentMessage =
                     "Mira is waiting for the Homelab deployment. Queued work is preserved.";
-            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models, integrations, skill_catalog_hash, skill_catalog_worker_id, deployment_drained_for, synthetic_owner, quotas) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready && !deployment}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb, ${JSON.stringify(integrationsCatalog)}::text::jsonb, ${miraSkillCatalogHash}, ${workerId}, ${maintenance.drained}, ${options.synthetic?.owner ?? null}, ${JSON.stringify(quotas)}::text::jsonb) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models, integrations = EXCLUDED.integrations, skill_catalog_hash = EXCLUDED.skill_catalog_hash, skill_catalog_worker_id = EXCLUDED.skill_catalog_worker_id, deployment_drained_for = EXCLUDED.deployment_drained_for, synthetic_owner = EXCLUDED.synthetic_owner, quotas = EXCLUDED.quotas`;
+            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models, integrations, skill_catalog_hash, skill_catalog_worker_id, deployment_drained_for, synthetic_owner, quotas, chatgpt) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready && !deployment}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb, ${JSON.stringify(integrationsCatalog)}::text::jsonb, ${miraSkillCatalogHash}, ${workerId}, ${maintenance.drained}, ${options.synthetic?.owner ?? null}, ${JSON.stringify(quotas)}::text::jsonb, ${JSON.stringify(chatgpt)}::text::jsonb) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models, integrations = EXCLUDED.integrations, skill_catalog_hash = EXCLUDED.skill_catalog_hash, skill_catalog_worker_id = EXCLUDED.skill_catalog_worker_id, deployment_drained_for = EXCLUDED.deployment_drained_for, synthetic_owner = EXCLUDED.synthetic_owner, quotas = EXCLUDED.quotas, chatgpt = EXCLUDED.chatgpt`;
+            const waiting =
+                chatgpt.state === "connected"
+                    ? null
+                    : chatgptStatusMessage(chatgpt.state);
+            await client`UPDATE mira_runs SET message=${waiting} WHERE state='queued' AND NOT cancel_requested AND coalesce(settings->>'model',CASE WHEN ${model}::text LIKE 'syn:%' AND owner IS DISTINCT FROM ${options.synthetic?.owner ?? null} THEN ${miraNativeDefaultModel(models, model)} ELSE ${model} END,'') NOT LIKE 'syn:%' AND message IS DISTINCT FROM ${waiting} AND (message IS NULL OR message LIKE 'ChatGPT %')`;
             health.heartbeatAt = Date.now();
             await Promise.race([wait(5000), changed]);
         }
@@ -252,26 +271,20 @@ export async function runMiraExecutor(options: {
                     args: pilotArguments(),
                     cwd: config.workspace,
                     env: runtimeEnvironment(config),
-                    requestTimeoutMs: 5000,
+                    requestTimeoutMs: 20_000,
                     signal,
                 });
-                const account = await runtime.account();
-                const availableModels = account.authenticated
-                    ? await runtime.models()
-                    : [];
-                nativeModels = availableModels;
-                if (account.authenticated) {
-                    try {
-                        observed.push({
-                            provider: "chatgpt",
-                            observedAt: new Date().toISOString(),
-                            windows: await runtime.quota(),
-                        });
-                    } catch {
-                        /* Quota telemetry must not block inference. */
-                    }
-                }
+                const verified = await inspectChatgpt(runtime);
+                chatgpt = verified.status;
+                nativeModels = verified.models;
+                if (chatgpt.state === "connected")
+                    observed.push({
+                        provider: "chatgpt",
+                        observedAt: chatgpt.checkedAt,
+                        windows: verified.windows,
+                    });
             } catch {
+                chatgpt = { state: "error", checkedAt: new Date().toISOString() };
                 nativeModels = [];
             } finally {
                 await runtime?.close();
@@ -300,6 +313,7 @@ export async function runMiraExecutor(options: {
                 models = [...nativeModels, ...aliases];
                 model =
                     config.model ??
+                    model ??
                     models.find((entry) => entry.isDefault)?.model ??
                     null;
                 defaultReady = models.some((entry) => entry.model === model);
@@ -319,7 +333,8 @@ export async function runMiraExecutor(options: {
                 inspectionChanged.resolve();
                 inspectionChanged = Promise.withResolvers<void>();
             }
-            await wait(30_000);
+            await Promise.race([wait(30_000), inspectNow.promise]);
+            inspectNow = Promise.withResolvers<void>();
         }
     };
     const integrations = async () => {
@@ -431,7 +446,16 @@ export async function runMiraExecutor(options: {
                         options.github,
                         options.synthetic,
                         options.localCode,
-                        options.operations
+                        options.operations,
+                        (status) => {
+                            chatgpt = status;
+                            models = models.filter((entry) =>
+                                entry.model.startsWith("syn:")
+                            );
+                            health.ready = models.length > 0;
+                            inspectionChanged.resolve();
+                            inspectNow.resolve();
+                        }
                     );
                 } finally {
                     health.active--;
@@ -457,6 +481,15 @@ export async function runMiraExecutor(options: {
         stopOnFailure(codeDelivery()),
         stopOnFailure(scheduler()),
         stopOnFailure(inspector()),
+        stopOnFailure(
+            runChatgptLogins({
+                client,
+                config,
+                workerId,
+                signal,
+                changed: () => inspectNow.resolve(),
+            })
+        ),
         stopOnFailure(cleaner()),
         stopOnFailure(lane("foreground")),
         stopOnFailure(lane("general")),

@@ -98,8 +98,24 @@ Example nonsecret external configuration (replace paths for the selected host):
 }
 ```
 
-Use the native executable and same explicit `CODEX_HOME` for `login --device-auth`; the owner completes
-the login in their browser. Then run:
+The dashboard's Chat connection status verifies the stored ChatGPT login with an
+authenticated provider request. If authorization is rejected, Codex attempts a token
+refresh; expired/revoked credentials are shown separately from connection failures.
+
+An operator with Run jobs and Worker control permission can select **Sign in again**.
+The existing native device-code flow supplies an OpenAI link and one-time code directly
+in Chat. Only the initiating operator sees that code. Complete the login on OpenAI's
+page; the dashboard confirms verified success and refreshes the model catalog.
+The code is cleared after completion, cancellation, expiry or executor restart.
+Provider credentials stay in the existing private Codex home.
+
+Messages waiting for authentication display the reason and retain their existing
+queue identity. The normal Stop control cancels them. Reconnecting resumes unstarted
+messages automatically; failed or uncertain turns that already reached the provider
+are not replayed. Connection failures retry automatically without requiring a new login.
+
+For initial host setup, the native executable with the same explicit `CODEX_HOME`
+also supports `login --device-auth`. For the optional runtime qualification, run:
 
 ```sh
 bun --no-env-file apps/mira/src/server/cli/qualify.ts /absolute/path/to/pilot.json

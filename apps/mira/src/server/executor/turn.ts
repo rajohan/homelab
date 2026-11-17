@@ -1,4 +1,8 @@
 import type { MiraActivity, MiraMessagePart } from "@homelab/contracts/mira";
+import {
+    chatgptStatusMessage,
+    type MiraChatgptStatus,
+} from "@homelab/contracts/miraChatgpt";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
@@ -13,6 +17,7 @@ import {
     readLiveAssistanceGuidance,
 } from "../data/liveAssistance";
 import {
+    deferMiraRun,
     finishMiraRun,
     type MiraClaim,
     renewMiraRun,
@@ -35,6 +40,7 @@ import {
     miraInstructions as instructions,
     miraInstructionsHash,
 } from "../persona/instructions";
+import { inspectChatgpt } from "../runtime/chatgptConnection";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
 import { providerFailureMessage, ProviderRequestError } from "../runtime/providerFailure";
@@ -66,6 +72,7 @@ export { miraInstructionsHash } from "../persona/instructions";
  * @param synthetic - Optional owner-bound Synthetic subscription credential, retained only by the server.
  * @param localCode - Optional Main mapping; the run freezes its target before inference.
  * @param operations - Explicit owner-bound host administration settings.
+ * @param onConnectionFailure - Refresh provider health when preflight cannot verify ChatGPT.
  * @param daytona - Nonsecret cloud mapping for local drafts and result reads.
  * @returns Completion after recording the observed terminal outcome and reaping the child.
  */
@@ -82,7 +89,8 @@ export async function executeMiraTurn(
     github?: GitHubBinding | GitHubConfiguration,
     synthetic?: SyntheticConfiguration,
     localCode?: LocalCodeBinding,
-    operations?: MiraOperationsConfiguration
+    operations?: MiraOperationsConfiguration,
+    onConnectionFailure?: (status: MiraChatgptStatus) => void
 ): Promise<void> {
     const controller = new AbortController();
     const deadline = new AbortController();
@@ -227,15 +235,26 @@ export async function executeMiraTurn(
                   },
                   chatSearch
               );
-        if (runtime instanceof CodexRuntime) {
-            const account = await runtime.account();
-            if (!account.authenticated)
-                throw new Error("Runtime authentication unavailable.");
+        const verified =
+            runtime instanceof CodexRuntime ? await inspectChatgpt(runtime) : null;
+        if (verified && verified.status.state !== "connected") {
+            clearInterval(flush);
+            clearInterval(interval);
+            await Promise.all([update, renewal]);
+            onConnectionFailure?.(verified.status);
+            if (
+                await deferMiraRun(
+                    client,
+                    run,
+                    chatgptStatusMessage(verified.status.state)
+                )
+            )
+                return;
+            throw new ProviderRequestError("OpenAI", "authentication");
         }
-        const models =
-            runtime instanceof CodexRuntime
-                ? await runtime.models()
-                : await loadSyntheticModels(synthetic!, signal);
+        const models = verified
+            ? verified.models
+            : await loadSyntheticModels(synthetic!, signal);
         const settings = resolveMiraChatSettings(models, record.settings, automaticModel);
         const selectedModel = models.find((entry) => entry.model === settings.model)!;
         assistance = liveAssistanceMinutes(record.settings, run) !== 0;

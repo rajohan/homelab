@@ -26,7 +26,15 @@ export function classifyProviderFailure(
     if (code === "contextWindowExceeded" || code === "context_length_exceeded")
         return "context_limit";
     if (status === 413 || code === "request_too_large") return "request_too_large";
-    if (status === 401 || status === 403 || code === "unauthorized")
+    if (
+        status === 401 ||
+        status === 403 ||
+        code === "unauthorized" ||
+        (typeof record.message === "string" &&
+            /refresh_token_(expired|reused|invalidated)|refresh token (?:has expired|has already been used|was already used|has been revoked|was revoked)|authentication required|not (?:logged|signed) in|requires? (?:ChatGPT )?authentication|(?:HTTP|status(?: code)?)[ :]*(?:401|403)\b/i.test(
+                record.message
+            ))
+    )
         return "authentication";
     if (status === 429 || code === "usageLimitExceeded" || code === "rate_limit_exceeded")
         return "rate_limit";

@@ -4,6 +4,7 @@ import { Brain, Files } from "lucide-react";
 import { useState } from "react";
 import * as v from "valibot";
 
+import { ChatgptConnection } from "../features/mira/ChatgptConnection";
 import { ChatPanel } from "../features/mira/ChatPanel";
 import { ChatWelcome } from "../features/mira/ChatWelcome";
 import { ConversationList } from "../features/mira/ConversationList";
@@ -70,6 +71,7 @@ export function Mira() {
                     <ChatWelcome />
                 )}
             </div>
+            {!conversationId && <ChatgptConnection />}
             {!conversationId && <ProposedChanges />}
             {choosingConversation && (
                 <Modal

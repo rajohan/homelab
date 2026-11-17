@@ -35,7 +35,7 @@ export function ProviderQuota({
                             fresh &&
                             quota &&
                             currentTime - Date.parse(quota.observedAt) < 90_000;
-                        return `${provider === "chatgpt" ? "ChatGPT" : "Synthetic"}: ${valid && quota.windows.length > 0 ? `${Math.round(Math.min(...quota.windows.map((entry) => entry.remainingPercent)))}% left` : "unavailable"}`;
+                        return `${provider === "chatgpt" ? "ChatGPT" : "Synthetic"}: ${valid && quota.windows.length > 0 ? `${Math.round(Math.min(...quota.windows.map((entry) => entry.remainingPercent)))}% left` : "quota unavailable"}`;
                     })
                     .join(" · ")}
             </summary>

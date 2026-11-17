@@ -31,6 +31,7 @@ import { BrowserAccessDialog } from "./BrowserAccessDialog";
 import { BrowserAccessPanel } from "./BrowserAccessPanel";
 import { ChatComposer } from "./ChatComposer";
 import { readChatDisplay, saveChatDisplay } from "./chatDisplay";
+import { ChatgptConnection } from "./ChatgptConnection";
 import { ChatSettings } from "./ChatSettings";
 import { ChatTranscript } from "./ChatTranscript";
 import { ComputerAccessDialog } from "./ComputerAccessDialog";
@@ -252,6 +253,7 @@ export function ChatPanel({
                     }
                 />
             </header>
+            <ChatgptConnection />
             <ProviderQuota
                 quotas={catalog.data?.quotas ?? []}
                 fresh={!catalog.isError && (catalog.data?.fresh ?? false)}

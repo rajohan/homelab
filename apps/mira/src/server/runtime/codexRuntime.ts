@@ -125,18 +125,91 @@ export class CodexRuntime {
     }
 
     /**
-     * Inspect authentication without exposing account identity or credentials.
+     * Read authentication without exposing account identity or credentials.
+     * @param refreshToken - Ask Codex to renew its managed credentials before reading.
      * @returns Whether ChatGPT authentication exists and its reported plan.
      */
-    async account(): Promise<{ authenticated: boolean; plan: string | null }> {
+    async account(
+        refreshToken = false
+    ): Promise<{ authenticated: boolean; plan: string | null }> {
         const { account } = v.parse(
             accountSchema,
-            await this.connection.request("account/read", { refreshToken: false })
+            await this.connection.request("account/read", { refreshToken })
         );
         return {
             authenticated: account?.type === "chatgpt",
             plan: account?.planType ?? null,
         };
+    }
+
+    /** Complete the provider's device-code flow without moving credentials into the dashboard.
+     * @param present - Persist only the verification URL and one-time user code.
+     * @param signal - Cancel when the operator stops the request or its deadline expires.
+     * @returns Whether the provider confirmed login; callers must still verify connectivity.
+     */
+    async login(
+        present: (code: { verificationUrl: string; userCode: string }) => Promise<void>,
+        signal: AbortSignal
+    ): Promise<boolean> {
+        const completed = Promise.withResolvers<boolean>();
+        void completed.promise.catch(() => {});
+        let loginId: string | null = null;
+        const early = new Map<string, boolean>();
+        const unsubscribe = this.connection.subscribe((event) => {
+            if (event.method !== "account/login/completed") return;
+            const result = v.safeParse(
+                v.object({ loginId: v.nullable(v.string()), success: v.boolean() }),
+                event.params
+            );
+            if (!result.success || !result.output.loginId) return;
+            if (result.output.loginId === loginId)
+                completed.resolve(result.output.success);
+            else if (early.size < 4)
+                early.set(result.output.loginId, result.output.success);
+        });
+        const abort = () => completed.reject(new Error("ChatGPT sign-in interrupted."));
+        signal.addEventListener("abort", abort, { once: true });
+        this.connection.signal.addEventListener("abort", abort, { once: true });
+        try {
+            signal.throwIfAborted();
+            const code = v.parse(
+                v.object({
+                    type: v.literal("chatgptDeviceCode"),
+                    loginId: v.string(),
+                    verificationUrl: v.pipe(v.string(), v.url(), v.maxLength(2048)),
+                    userCode: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
+                }),
+                await this.connection.request("account/login/start", {
+                    type: "chatgptDeviceCode",
+                })
+            );
+            const url = new URL(code.verificationUrl);
+            if (
+                url.protocol !== "https:" ||
+                url.hostname !== "auth.openai.com" ||
+                url.username ||
+                url.password ||
+                url.port
+            )
+                throw new Error("Unexpected ChatGPT sign-in URL.");
+            loginId = code.loginId;
+            if (early.has(loginId)) completed.resolve(early.get(loginId));
+            signal.throwIfAborted();
+            await present({
+                verificationUrl: code.verificationUrl,
+                userCode: code.userCode,
+            });
+            return await completed.promise;
+        } finally {
+            unsubscribe();
+            signal.removeEventListener("abort", abort);
+            this.connection.signal.removeEventListener("abort", abort);
+            if (signal.aborted && loginId) {
+                await this.connection
+                    .request("account/login/cancel", { loginId })
+                    .catch(() => {});
+            }
+        }
     }
 
     /** Read the provider's quota windows without returning account or billing identity.

@@ -8,6 +8,7 @@ import {
     type MiraRunResolution,
     type MiraSchedule,
 } from "@homelab/contracts/mira";
+import type { MiraChatgptStatus } from "@homelab/contracts/miraChatgpt";
 import type { MiraCodeContent, MiraCodePublication } from "@homelab/contracts/miraCode";
 import type { MiraDaytonaContent } from "@homelab/contracts/miraDaytona";
 import type { MiraMailContent } from "@homelab/contracts/miraMail";
@@ -473,6 +474,7 @@ export const miraRuntimeStatus = pgTable(
         message: text(),
         heartbeatAt: time("heartbeat_at").notNull(),
         models: jsonb().$type<MiraModel[]>().notNull().default([]),
+        chatgpt: jsonb().$type<MiraChatgptStatus>(),
         quotas: jsonb().$type<MiraQuota[]>().notNull().default([]),
         integrations: jsonb()
             .$type<{ owner: string; key: string }[]>()
@@ -1299,4 +1301,26 @@ export const miraWorkNotes = pgTable(
         createdAt: time("created_at").notNull().defaultNow(),
     },
     (t) => [index("mira_work_notes_run").on(t.runId, t.createdAt, t.id)]
+);
+
+export const miraChatgptLogin = pgTable(
+    "mira_chatgpt_login",
+    {
+        id: integer().primaryKey().default(1),
+        requestId: uuid("request_id").notNull(),
+        owner: text().notNull(),
+        state: text().notNull(),
+        workerId: uuid("worker_id"),
+        verificationUrl: text("verification_url"),
+        userCode: text("user_code"),
+        message: text(),
+        expiresAt: time("expires_at").notNull(),
+    },
+    (t) => [
+        check("mira_chatgpt_login_singleton", sql`${t.id}=1`),
+        check(
+            "mira_chatgpt_login_state",
+            sql`${t.state} in ('requested','starting','waiting','completed','failed','cancelled')`
+        ),
+    ]
 );
