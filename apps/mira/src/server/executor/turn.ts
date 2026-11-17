@@ -236,7 +236,7 @@ export async function executeMiraTurn(
                   chatSearch
               );
         const verified =
-            runtime instanceof CodexRuntime ? await inspectChatgpt(runtime) : null;
+            runtime instanceof CodexRuntime ? await inspectChatgpt(runtime, false) : null;
         if (verified && verified.status.state !== "connected") {
             clearInterval(flush);
             clearInterval(interval);

@@ -99,8 +99,11 @@ Example nonsecret external configuration (replace paths for the selected host):
 ```
 
 The dashboard's Chat connection status verifies the stored ChatGPT login with an
-authenticated provider request. If authorization is rejected, Codex attempts a token
-refresh; expired/revoked credentials are shown separately from connection failures.
+managed-authentication refresh during periodic inspection and after login. Expired or
+revoked credentials are shown separately from connection failures. Quota telemetry is
+optional: a quota-service error alone does not block model discovery or inference.
+Turn preparation reuses the periodic authentication check and refreshes again only
+if the provider rejects authorization.
 
 An operator with Run jobs and Worker control permission can select **Sign in again**.
 The existing native device-code flow supplies an OpenAI link and one-time code directly
