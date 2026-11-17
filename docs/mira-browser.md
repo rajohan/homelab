@@ -112,7 +112,7 @@ Build with `bun run build mira`; the host entry point is `bun --no-env-file apps
 
 Use the real development applications for manual browser checks. The repository has no automated test suite; inspect the affected browser operations when changing their implementation.
 
-The release workflow builds Main once and publishes the same image under the existing service, browser and code-runtime aliases. It attaches `browser-image.json` with immutable references for the existing updater. Host provisioning and updater consumption remain required before production activation.
+The release workflow builds Main once and publishes it as `dashboard`. The logical service, browser and code-runtime roles in the release manifests all point to that immutable dashboard reference. `browser-image.json` also identifies the separately published proxy. Host provisioning and updater consumption remain required before production activation.
 
 ## Preview and human takeover
 

@@ -12,13 +12,11 @@ export function releaseImageVersion(
     const packageName = ["mira", "mira-browser", "daytona-check"].includes(app)
         ? "dashboard"
         : app;
-    for (const name of new Set([packageName, app])) {
-        const prefix = `ghcr.io/${repository.toLowerCase()}/${name}:`;
-        if (!reference.startsWith(prefix)) continue;
-        const match = /^(\d+\.\d+\.\d+)@sha256:[a-f0-9]{64}$/.exec(
+    const prefix = `ghcr.io/${repository.toLowerCase()}/${packageName}:`;
+    if (!reference.startsWith(prefix)) return null;
+    return (
+        /^(\d+\.\d+\.\d+)@sha256:[a-f0-9]{64}$/.exec(
             reference.slice(prefix.length)
-        );
-        if (match) return match[1]!;
-    }
-    return null;
+        )?.[1] ?? null
+    );
 }

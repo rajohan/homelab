@@ -344,14 +344,11 @@ def verify_browser_recovery(target, directory, before, observed):
 
 
 def image_version(repository, app, reference):
-    """Accept shared Main publication and installed legacy package references."""
+    """Read the immutable version from the package assigned to a logical role."""
     package = "dashboard" if app in {"mira", "mira-browser", "daytona-check"} else app
-    for name in {package, app}:
-        prefix = "ghcr.io/" + repository.lower() + "/" + name + ":"
-        match = re.fullmatch(re.escape(prefix) + r"(\d+)\.(\d+)\.(\d+)@sha256:[a-f0-9]{64}", reference)
-        if match:
-            return tuple(map(int, match.groups()))
-    return None
+    prefix = "ghcr.io/" + repository.lower() + "/" + package + ":"
+    match = re.fullmatch(re.escape(prefix) + r"(\d+)\.(\d+)\.(\d+)@sha256:[a-f0-9]{64}", reference)
+    return tuple(map(int, match.groups())) if match else None
 
 
 def release_images(release):

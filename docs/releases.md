@@ -28,13 +28,14 @@ not independently trigger a release. Never move or reuse a published version tag
 
 Main is published once as `dashboard`. The release manifests retain logical roles
 for Mira, browser and code jobs, all pointing to that same immutable dashboard
-reference. The updater accepts these shared references and installed legacy names
-when observing an upgrade. Service processes still run in their existing containers
-with their own permissions and scoped environment.
+reference. The updater accepts only the package assigned to each logical role; it
+does not retain the retired registry aliases. Service processes still run in their
+existing containers with their own permissions and scoped environment.
 
 The first upgrade from a version that requires one registry package per role needs
-a manual coordinated installation using the reviewed release verifier and host
-runner. Keep backup, queue drain, migration and health checks. After that upgrade,
+a manual coordinated installation of the verified release. Update the installed
+image references and Mira runtime command to `/app/mira/runtime/codex`, and keep
+backup, queue drain, migration and health checks. After that upgrade,
 ordinary dashboard deployments consume the three published packages directly.
 
 The Main entry point recognizes the existing Mira `HOMELAB_MIRA_CONFIG` and browser

@@ -457,6 +457,9 @@ export async function executeMiraTurn(
                     tools,
                     instructions: turnInstructions,
                     signal,
+                    // Retire the preceding reply's images before the next model turn,
+                    // never keep a completed reply running for provider maintenance.
+                    expireImages: !continuation,
                 });
                 providerThread = threadId;
             }
@@ -599,26 +602,6 @@ export async function executeMiraTurn(
                 ? `${initialPrompt}\n\nAccepted operator guidance for this session:\n${JSON.stringify(updates.guidance)}\n\nRecent replies (historical context):\n${text.slice(-16_000)}\n\n${reminder}`
                 : reminder;
             continuation = true;
-        }
-        if (
-            result.status === "completed" &&
-            runtime instanceof CodexRuntime &&
-            !signal.aborted
-        ) {
-            activity = { ...activity, phase: "working", tool: null };
-            threadId = await maintainMiraContext({
-                client,
-                run,
-                runtime,
-                threadId,
-                model: settings.model,
-                workspace: config.workspace,
-                tools,
-                instructions: turnInstructions,
-                signal,
-                expireImages: true,
-            });
-            providerThread = threadId;
         }
         clearInterval(interval);
         await renewal;

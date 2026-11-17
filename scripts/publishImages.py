@@ -1,4 +1,4 @@
-"""Publish three built images under the roles understood by installed updaters."""
+"""Publish three built images and their logical release-manifest roles."""
 
 import hashlib
 import json
