@@ -30,7 +30,7 @@ export async function listMiraActionRequests(
             UNION ALL SELECT id,'social',created_at,state,owner,conversation_id FROM mira_social_drafts
         ), owned AS (
             SELECT id,kind,state,created_at,
-                state IN ('draft','queued','running','sending','publishing','verification_required','queued_verification','needs_attention') AS pending
+                state IN ('draft','queued','running','sending','publishing','verification_required','queued_verification','verifying','needs_attention') AS pending
             FROM actions WHERE owner=${context.owner} AND conversation_id=${conversationId}::uuid
         )
         SELECT id,kind,state,pending FROM owned
