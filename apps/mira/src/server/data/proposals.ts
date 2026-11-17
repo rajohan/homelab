@@ -368,6 +368,11 @@ export async function answerMiraQuestion(
             WHERE id IN (SELECT user_message_id FROM mira_runs WHERE request_key=${key}
                 UNION SELECT id FROM mira_chat_inputs WHERE request_key=${key})
             AND conversation_id=${link.conversationId}`;
+        // Older pending requests already stored a combined question-only bubble.
+        // The paired parts above now preserve its text in the same transaction.
+        await query`DELETE FROM mira_messages WHERE id=${input.id}
+            AND conversation_id=${link.conversationId} AND role='assistant'
+            AND attachment_ids='[]'::jsonb`;
         await query`UPDATE mira_tool_receipts SET state='succeeded',message=${answer},proposal=NULL,finished_at=clock_timestamp() WHERE id=${input.id}`;
         await auditMira(query, context, "question.answered", input.id);
         return { state: "answered" };

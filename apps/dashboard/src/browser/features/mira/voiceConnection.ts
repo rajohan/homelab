@@ -458,7 +458,10 @@ export class MiraVoiceConnection {
         }
     }
     private event(event: v.InferOutput<typeof eventSchema>) {
-        if (event.type === "session.updated" && event.session) {
+        if (
+            ["session.created", "session.updated"].includes(event.type) &&
+            event.session
+        ) {
             const input = event.session.audio.input;
             if (
                 input.turn_detection.create_response ||
@@ -466,6 +469,8 @@ export class MiraVoiceConnection {
                 input.transcription?.model !== "gpt-transcribe" ||
                 event.session.tools.length > 0
             ) {
+                // Unified SDP setup can announce defaults before applying the server configuration.
+                if (event.type === "session.created") return;
                 this.closeConnection();
                 this.update({
                     connection: "error",
