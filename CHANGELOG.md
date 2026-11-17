@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.3](https://github.com/rajohan/homelab/compare/v0.19.2...v0.19.3) (2026-11-17)
+
+
+### Bug Fixes
+
+* **mira:** correct chat status and add design guidance ([#224](https://github.com/rajohan/homelab/issues/224)) ([1092cd5](https://github.com/rajohan/homelab/commit/1092cd5657157287554f512f75e394f4d34b0a1a))
+
 ## [0.19.2](https://github.com/rajohan/homelab/compare/v0.19.1...v0.19.2) (2026-11-17)
 
 
