@@ -2,7 +2,7 @@ import path from "node:path";
 
 import * as v from "valibot";
 
-import miraPackage from "../../../package.json";
+import miraPackage from "../../../../../package.json";
 
 export const computerDriverVersion = miraPackage.dependencies["@trycua/cua-driver"];
 const grantSchema = v.strictObject({

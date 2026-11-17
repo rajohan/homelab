@@ -1,15 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, realpath } from "node:fs/promises";
+import { mkdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Compile the fixed Windows worker supervisor and optional harmless ownership fixtures.
+ * Compile the Windows worker supervisor.
  * @param outputRoot - Caller-owned output directory; existing content is never removed.
- * @param tests - Compile non-distributed child/grandchild fixtures in a separate directory.
- * @returns The supervisor path and optional native test/fixture paths.
+ * @returns Path to the supervisor executable.
  */
-export async function buildWindowsWorkerHost(outputRoot?: string, tests = false) {
+export async function buildWindowsWorkerHost(outputRoot?: string) {
     if (process.platform !== "win32" || process.arch !== "x64")
         throw new Error("The Windows worker requires Windows x64.");
     const root = await realpath(fileURLToPath(new URL("..", import.meta.url)));
@@ -42,15 +41,7 @@ export async function buildWindowsWorkerHost(outputRoot?: string, tests = false)
             { windowsHide: true, timeout: 30_000, maxBuffer: 64 * 1024 }
         );
     compile(host, ["WorkerJob.cs", "WorkerProgram.cs"]);
-    if (!tests) return { host };
-    const fixtures = path.join(outputRoot, "qualification");
-    await mkdir(fixtures, { recursive: true });
-    const fixtureHost = path.join(fixtures, path.basename(host));
-    await cp(host, fixtureHost);
-    compile(path.join(fixtures, "mira-computer-worker.exe"), ["tests/WorkerFixture.cs"]);
-    const checks = path.join(fixtures, "mira-computer-worker-tests.exe");
-    compile(checks, ["tests/WorkerTests.cs"]);
-    return { host, fixtureHost, checks };
+    return { host };
 }
 
 if (import.meta.main) {

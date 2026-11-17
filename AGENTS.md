@@ -8,8 +8,11 @@
 - Put each React component in its own named file. Group generic UI under `packages/ui/src/components` and account-specific behavior under `features/identity`; generic primitives must not depend on identity features. Keep app browser and server modules in separate subtrees.
 - Shared `packages/ui` and `packages/contracts` are browser-safe. They must not import application internals or server-only dependencies.
 - Web and Windows use the same dashboard React UI, shared components, contracts and server workflows. Keep Windows-specific code limited to OS integration (tray, startup, updates and local computer access); do not implement a second chat, task board or automation engine in the desktop client.
-- Unit tests use `*.test.ts`; Happy DOM component tests use `*.test.tsx`; real HTTP integration tests use `*.integration.test.ts`. Run them with `bun run test` and `bun run test:integration` so DOM emulation cannot replace backend network primitives.
-- Run `bun run check`, `bun run test`, `bun run test:integration`, `bun run build` and `bun run test:smoke` before delivery.
-- Do not read or modify production identity data in ordinary development. Live identity, routing and application-control changes require separate deployment qualification and approval. Use the disposable preview for development.
+- Run `bun run check`, both migration metadata checks, and `bun run build` before delivery. The project intentionally has no automated test suite. Preserve the existing lint and formatting policy and CodeQL security analysis on pull requests and `main`.
+- Do not read or modify production identity data in ordinary development. Live identity, routing and application-control changes require separate deployment qualification and approval. Use `bun run dev` for the existing applications with a temporary development database. Keep development setup small; do not add mock services or a second implementation.
 - Never commit secrets, tokens, real session data, private keys or local `.env` files. Configuration examples contain nonsecret values only.
 - Do not add custom provisioning frameworks or machine-specific helper dependencies. Setup must remain unprivileged and scoped to this repository.
+
+- Keep all JavaScript dependencies in the root `package.json` and `bun.lock`; shared source folders use TypeScript aliases, not workspace manifests.
+- Build Auth separately from the Main image. Main services and their browser/code tools share one image; the network proxy has its own small image.
+- Chat actions use the existing request/approval controls above the composer. Do not add separate code-job, code-proposal or publication draft workspaces.

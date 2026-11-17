@@ -150,7 +150,7 @@ export async function searchMiraHistory(
             createdAt: string;
             excerpt: string;
         }[]
-    >`SELECT c.id AS "conversationId",c.title,p.id AS "messageId",m.role,p."createdAt",
+    >`SELECT c.id AS "conversationId",c.title,p.id AS "messageId",p.role,p."createdAt",
         left(ts_headline('simple',p.content,websearch_to_tsquery('simple',${input.query}),'StartSel="",StopSel="",MaxWords=90,MinWords=30,MaxFragments=2'),2400) AS excerpt
         FROM mira_messages m JOIN mira_conversations c ON c.id=m.conversation_id
         CROSS JOIN LATERAL (${messagePartRows(client)}) p
@@ -196,7 +196,7 @@ export async function readMiraHistory(
             content: string;
             length: number;
         }[]
-    >`SELECT c.id AS "conversationId",c.title,p.id AS "messageId",m.role,p.state,p."createdAt",
+    >`SELECT c.id AS "conversationId",c.title,p.id AS "messageId",p.role,p.state,p."createdAt",
         substring(p.content FROM ${input.offset + 1} FOR 6000) AS content,length(p.content) AS length
         FROM mira_messages m JOIN mira_conversations c ON c.id=m.conversation_id
         CROSS JOIN LATERAL (${messagePartRows(client)}) p

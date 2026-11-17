@@ -1,5 +1,6 @@
 import {
     miraMemoryInputSchema,
+    type MiraMessagePart,
     miraProgressInputSchema,
     type MiraProposal,
     type miraProposalDecisionSchema,
@@ -265,8 +266,6 @@ export function createMiraQuestionTools(run: MiraClaim): MiraToolDefinition[] {
                 >`UPDATE mira_tool_receipts SET state='awaiting_approval',proposal=${JSON.stringify(request)}::text::jsonb,input_hash=${hash},message='Waiting for your answer.',finished_at=clock_timestamp() WHERE id=${context.receiptId} AND run_id=${run.id} AND state='running' AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
                 if (!saved)
                     throw new MiraFailure("CONFLICT", "The question lost its run lease.");
-                await query`INSERT INTO mira_messages(id,conversation_id,role,content,state,attachment_ids)
-                    VALUES(${saved.id},${run.conversationId},'assistant',${request.questions.map((question) => question.title).join("\n\n")},'completed','[]'::jsonb)`;
                 return {
                     requestId: saved.id,
                     state: "awaiting_answer",
@@ -340,18 +339,40 @@ export async function answerMiraQuestion(
                 "BAD_REQUEST",
                 "Answer every question before submitting."
             );
-        // Older pending receipts have no assistant question message yet.
-        await query`INSERT INTO mira_messages(id,conversation_id,role,content,state,attachment_ids)
-            VALUES(${input.id},${link.conversationId},'assistant',${request.questions.map((question) => question.title).join("\n\n")},'completed','[]'::jsonb)
-            ON CONFLICT(id) DO NOTHING`;
+        // Deliver one input to the selected model while preserving each question and
+        // answer as a separate, ordered transcript bubble using existing reply parts.
+        const parts: MiraMessagePart[] = [];
+        let text = "Answers to Mira's questions:\n\n";
+        for (const question of request.questions) {
+            for (const [role, content] of [
+                ["assistant", question.title],
+                ["user", input.answers[question.id]!],
+            ] as const) {
+                parts.push({
+                    id: Bun.randomUUIDv7(),
+                    offset: text.match(/[\s\S]/gu)?.length ?? 0,
+                    createdAt: new Date().toISOString(),
+                    role,
+                });
+                text += `${content}\n\n`;
+            }
+        }
         await sendMiraMessageInTransaction(query, context, {
             conversationId: link.conversationId,
             requestId: input.id,
-            text: request.questions
-                .map((question) => input.answers[question.id])
-                .join("\n\n"),
+            text,
             attachmentIds: [],
         });
+        const key = `${context.owner}:${input.id}`;
+        await query`UPDATE mira_messages SET parts=${JSON.stringify(parts)}::text::jsonb
+            WHERE id IN (SELECT user_message_id FROM mira_runs WHERE request_key=${key}
+                UNION SELECT id FROM mira_chat_inputs WHERE request_key=${key})
+            AND conversation_id=${link.conversationId}`;
+        // Older pending requests already stored a combined question-only bubble.
+        // The paired parts above now preserve its text in the same transaction.
+        await query`DELETE FROM mira_messages WHERE id=${input.id}
+            AND conversation_id=${link.conversationId} AND role='assistant'
+            AND attachment_ids='[]'::jsonb`;
         await query`UPDATE mira_tool_receipts SET state='succeeded',message=${answer},proposal=NULL,finished_at=clock_timestamp() WHERE id=${input.id}`;
         await auditMira(query, context, "question.answered", input.id);
         return { state: "answered" };

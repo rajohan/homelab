@@ -179,20 +179,18 @@ isolated synthetic preview before production deployment.
   delivery use the separately reviewed [AgentMail](mira-agentmail.md) and
   [here.now](mira-herenow.md) outboxes; model tools only prepare their drafts. The dashboard-improvement preset remains paused until its bounded
   execution adapter is delivered and qualified.
-- An optional `deploy/compose.mira.yaml` overlay runs the separately built Mira image.
-  The pinned native runtime is bundled in that image; its updates follow reviewed
+- An optional `deploy/compose.mira.yaml` overlay runs the Mira process from the shared Main image.
+  The pinned native runtime is bundled in Main; its updates follow reviewed
   Homelab releases. Auth continues to build and run independently. Release metadata
   accepts existing two-image releases and new releases that include Mira.
   The separate `deploy/compose.computer.yaml` overlay enables the machine receiver
   behind a same-host private TLS proxy; it is not part of the public dashboard route.
   See the [deployment configuration](../deploy/README.md#optional-mira-and-private-computer-receiver).
 
-Verification includes static checks, unit/component tests, real HTTP/database
-integration tests, all three application builds, built-process smoke checks and
-complete source coverage inventory. The disposable UI preview uses synthetic data
-and synthetic replies, with no production or provider connection. Live product
-qualification is a separate operator-invoked check using only synthetic documents
-and the dedicated Mira login. CI never uses those credentials.
+Verification includes lint, formatting, type checks, migration metadata and
+application builds. `bun run dev` uses the real applications with a temporary
+database and synthetic account for manual checks. CI has no automated test suite
+and does not use production credentials.
 
 ## Product data and behavior
 
@@ -329,13 +327,11 @@ The same check image includes a local Docker transport for fixed Homelab source 
 
 Every job records its execution target. Existing rows remain Daytona jobs, and its worker/recovery controls cannot claim Main work. Main approval explicitly confirms the target, exact fixed-profile content, input digests and current `code:main` consent. Consent is tied to the owner, original host UUID, immutable image and dedicated network. The host must maintain its nonsecret heartbeat while dispatching; a missing heartbeat or changed consent stops execution. No Daytona credential is needed, no automatic fallback occurs, and dashboard-improvement jobs remain excluded until their policy supports target selection.
 
-Both targets share the existing single-active-job admission limit; only cloud admissions consume Daytona's daily attempt allowance. The local dispatcher renews a fenced lease while running, rechecks pause/cancellation and records each lifecycle transition conditionally. Interrupted attempts reconcile against the original host and image without rerunning the check. Uncertain cleanup keeps capacity reserved. Results are stored only after confirmed container removal, and a lost final commit response cannot downgrade committed results. Integration tests exercise this queue with a disposable PostgreSQL database and synthetic container boundaries; the image qualification below tests the actual transport.
+Both targets share the existing single-active-job admission limit; only cloud admissions consume Daytona's daily attempt allowance. The local dispatcher renews a fenced lease while running, rechecks pause/cancellation and records each lifecycle transition conditionally. Interrupted attempts reconcile against the original host and image without rerunning the check. Uncertain cleanup keeps capacity reserved. Results are stored only after confirmed container removal, and a lost final commit response cannot downgrade committed results.
 
-The trusted host selects an immutable image and a dedicated isolated network using the existing public-egress proxy. The model and dashboard never receive the Docker socket. A check has no host mounts, published ports or provider credentials, runs as the image's non-root PostgreSQL user, and uses bounded CPU, memory, temporary storage and processes. The existing fixed check profile has a ten-minute deadline; the container's eleven-minute outer limit includes setup and transfer. The host execution deadline starts immediately before container startup, after separately bounded creation and authorization. This does not change Daytona's renewable idle lifetime for ordinary cloud jobs.
+The trusted host selects an immutable image and a dedicated isolated network using the existing public-egress proxy. The model and dashboard never receive the Docker socket. A check has no host mounts, published ports or provider credentials, runs as the image's non-root Bun user, and uses bounded CPU, memory, temporary storage and processes. The existing fixed check profile has a ten-minute deadline; the container's eleven-minute outer limit includes setup and transfer. The host execution deadline starts immediately before container startup, after separately bounded creation and authorization. This does not change Daytona's renewable idle lifetime for ordinary cloud jobs.
 
 Input and output pass over bounded private stdio. The host journals creation before contacting Docker, records its immutable receipt before startup, rechecks authority through the caller's startup fence, and removes the container before returning output. Each lifecycle write has its own ten-second journal deadline. Execution writes also race caller cancellation; cleanup writes remain independent of it and continue to removal when storage stalls. Docker operations do not consume the final cleanup acknowledgement's deadline. Journal implementations must use the supplied deadline and conditional phase/lease writes so late acknowledgements cannot revive a retired attempt. Lost acknowledgements are never replayed. Recovery checks the original image and owner before removal; uncertain absence retains capacity. A failed database journal still permits removal of a verified owned container but cannot report cleanup as recorded.
-
-`scripts/smokeLocalCode.py` qualifies the actual image, proxy, source retrieval, input/output transfer, interruption and recovery without Daytona access. The image CI reuses its existing full harness test and adds this short transport qualification. Optional `--full` also runs the full verification profile locally when qualifying the adapter or its network path.
 
 ### Browser host supervision
 
@@ -381,11 +377,13 @@ Closing follow-up leaves the execution state, tool receipts and uncertain effect
 Mira's run-history tool excludes closed follow-up by default and includes recent closure decisions. `includeResolved` permits inspection of closed history. Briefs and summaries check current run status before treating historical failures as outstanding work; the recorded operator decision takes precedence over older reports or memories. This also changes the heartbeat observation fingerprint when the closed run is older than the recent history window.
 
 Conversation history, conversation lists, reports, automations, task columns/progress
-and the file, memory, mail, publication, social and code libraries load additional
+and the file and memory libraries load additional
 pages automatically when their scroll boundary becomes visible. Failed page requests
 retain the loaded content and offer retry. Chat prepends history without moving the
 reader, keeps live replies below it, and catches up missed live pages after reconnecting.
-Only the live conversation page polls; loaded historical pages are not repolled.
+Only the live transcript page polls; loaded historical transcript pages are not repolled.
+Chat action summaries use the shared request controls with paginated history,
+including retained actions without a live conversation.
 
 ### Chat activity and provider allowance
 

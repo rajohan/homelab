@@ -36,20 +36,13 @@ user-initiated HTTPS links open in the normal browser. Downloads use WebView2's
 normal user-facing download UI. Certificate validation is never bypassed.
 
 The Bun build downloads the official WebView2 SDK pinned by version and SHA-256 in
-`deploy/computer/webview2.json`, verifies Microsoft's signatures and packages only
+`package.json` → `config.windows.webview2`, verifies Microsoft's signatures and packages only
 the two .NET assemblies, x64 loader and license. It introduces no additional package
 manager or application framework. Update the SDK pin and hash together in reviewed
 repository changes. The separate Evergreen runtime is maintained by Microsoft;
 reopening Mira adopts its updates. If it is missing, the app links to Microsoft's
 installer instead of silently installing software. The repository release/update
 pipeline ships the Windows shell and verified SDK files together.
-
-`bun --no-env-file scripts/testWindowsDesktop.ts` covers native connection and update
-lifecycle, pairing-to-connection handoff and an actual WebView2 instance. Synthetic
-HTTPS responses exercise dashboard/Auth navigation, message round-trips, rejected
-origins and process exit before deleting the test profile. The external-browser
-launcher is replaced in this fixture, so tests never open the operator's browser.
-Live sign-in, security-key handling and installation remain deployment qualification.
 
 References: [Microsoft WebView2 distribution](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution),
 [Microsoft WebView2 security guidance](https://learn.microsoft.com/microsoft-edge/webview2/concepts/security).
@@ -86,22 +79,17 @@ A connection has a server-issued generation, fifteen-second heartbeat cadence an
 
 **Pairing and a fresh heartbeat do not authorize input or prove the desktop is ready.** Every machine receipt explicitly reports `controlAllowed: false`. The separate per-run grant, local consent and command queue described below are required for screen/input access. Release distribution, interactive qualification and update qualification remain required before production activation. Installation/platform/version fields are self-reported metadata, not a trust attestation.
 
-## Repeatable qualification
+## Runtime and build verification
 
-The 0.48.0 SDK removes `get_session_state`. The packaged Windows worker's
-`--check-runtime` manifest permits only the supported `get_session` tool while
-reading driver metadata; it grants no application or desktop access. SDK updates
-must pass the Docker/native-computer, Windows consent-host and interruption jobs,
-including extracted-package startup and native input qualification, before merge.
-The server browser retains its separately pinned CUA CLI 0.38.0.
+The browser and Windows companion share the native SDK pinned in the root
+`package.json` and `bun.lock`. The packaged Windows worker's `--check-runtime`
+manifest permits only `get_session` while reading driver metadata; it grants no
+application or desktop access. Relevant pull requests compile the Windows package
+and installer. CI does not launch them or run desktop acceptance tests.
 
-Run `bash scripts/testComputer.sh` on a Docker-capable development host. The command builds the repository's fixture image and runs it with no network, no host desktop/device mounts, no capabilities, no elevated privileges and a read-only filesystem with bounded temporary storage. The SDK remains an ordinary repository dependency, covered by lockfile and dependency updates; the disposable image is not a new deployed service.
-
-The image starts Xvfb, Openbox and a synthetic Tk window, waiting for the display, window manager and visible application before publishing readiness. The qualification performs native operations through the supervised child. It reads an inline image, focuses the entry, types a literal string and clicks a counter. It verifies the text and exactly one increment through the fixture's separate state file. It also checks denied desktop discovery, denied out-of-manifest executable access, one-use observations and closed-session refusal. It prints only a content-free receipt. CI runs the same command in the existing secret-free source-verification job.
-
-Unit tests also run real synthetic child processes to verify hung initialization, hung input, cancellation, parent EOF, forced termination, process reaping, temporary cleanup, environment filtering and disabled dotenv loading. Protocol tests reject privilege-widening requests and suppress late results after pipe loss. Other tests cover scope validation, stale/superseded/cross-session observations, out-of-bounds input, overlapping calls, host revocation, cancellation, unknown results, malformed frames, native cleanup and exact fixed-tool request mapping.
-
-Passing this fixture qualifies Linux X11 with explicit foreground input. It does not qualify Windows, Wayland, browser origin handling, background keyboard input, OS lock detection or production computer access. Remaining delivery work includes interactive Windows/browser acceptance, installation, release distribution and updater integration for the deployed companion artifact.
+Check SDK changes manually on the affected platforms before enabling them. A
+successful build alone does not verify screen capture, input, interactive consent
+or installation on the operator's PC.
 
 Upstream references: [SDK](https://cua.ai/docs/cua-driver/guides/use-the-sdk), [permission manifests](https://cua.ai/docs/cua-driver/guides/permissions), [platform limits](https://cua.ai/docs/cua-driver/concepts/platform-support).
 
@@ -119,13 +107,11 @@ For this homelab, computer traffic must use the existing NordVPN Meshnet route. 
 
 Settings > Computers creates a ten-minute, single-use pairing code, lists presence and revokes pairings after recent human verification. Connected means that the server received a fresh heartbeat; it does not claim screen readiness. Revoked/expired pairings remain identifiable. Closing the code dialog clears its transient UI state.
 
-Build the entrypoint with the pinned Bun Canary revision on its native runner: `bun --no-env-file scripts/buildComputer.ts linux-x64` on Linux or `bun --no-env-file scripts/buildComputer.ts windows-x64` on Windows. Cross-compilation is refused because this Canary's default cross-target downloader selects a stable version; release CI already uses native runners for both platforms. Artifacts are under `apps/mira/dist/computer/<platform>/`. The executable contains its verified Bun runtime and disables automatic dotenv, bunfig, package.json and tsconfig loading. Windows `run` requires the complete package built with `scripts/buildWindowsComputer.ts`, described below. Release publication and updater qualification remain separate work.
+Build the entrypoint with the pinned Bun Canary revision on its native runner: `bun --no-env-file scripts/buildComputer.ts linux-x64` on Linux or `bun --no-env-file scripts/buildComputer.ts windows-x64` on Windows. Cross-compilation is refused because this Canary's default cross-target downloader selects a stable version; release CI builds the Windows distribution on a Windows runner. Artifacts are under `apps/mira/dist/computer/<platform>/`. The executable contains its verified Bun runtime and disables automatic dotenv, bunfig, package.json and tsconfig loading. Windows `run` requires the complete package built with `scripts/buildWindowsComputer.ts`, described below. Release publication and updater qualification remain separate work.
 
 On the PC, run `mira-computer pair https://computer.home.example.test`. Paste the ticket into the hidden prompt, never into command arguments, environment variables or a file. Enrollment is sent once; an uncertain response requires revoking the ticket and creating another. The credential is stored in the current user's OS vault using [Bun's credential API](https://bun.sh/docs/runtime/secrets), with Windows `persist: local`, no unrestricted keychain access and no plaintext fallback. A failed save requires revocation in Settings. The vault key is bound to the canonical origin, so another server cannot receive that credential.
 
 `mira-computer run <origin>` connects and reports presence until Ctrl+C. Temporary outages reconnect after thirty seconds; credential/generation rejection stops instead of fighting another companion. `mira-computer forget <origin>` deletes the local key only; revoke in Settings to end already running connections. Windows additionally waits for per-run requests and local approval before the bounded screen/input protocol can execute. No background installation or provider credentials are enabled by the CLI. Optional startup is configured by the installer below.
-
-The compiled presence executable was run on Windows x64 with `--version` and `--help`. `apps/mira/src/server/testing/computerVault.ts` separately qualified the real Windows vault using one random synthetic origin and confirmed removal afterward. This does not qualify native Windows input, lock detection or the live Meshnet route. The builder uses the pinned Bun CLI: its Windows output was exercised directly, rather than inferring executable readiness from a successful cross-compilation.
 
 ## Computer access protocol
 
@@ -239,34 +225,6 @@ The installed Windows CLI instantiates this lifecycle. Installer, verified relea
 downloads, updates and optional startup are described below. Interactive Windows
 and private routing qualification remain required before production activation.
 
-## Hosted Windows native qualification
-
-The previously qualified 0.37 Windows backend omits the optional `screenshotFrameValid` field,
-including with full output. The adapter accepts that omission only on Windows;
-an explicit `false` is always rejected. It still requires the selected PID/window,
-a snapshot, exactly one bounded PNG/JPEG image, and decoded image dimensions that
-match the reported size. Other platforms continue to require a positive validity
-flag. See the [pinned Windows capture response](https://github.com/trycua/cua/blob/cua-driver-rs-v0.37.0/libs/cua-driver/rust/crates/platform-windows/src/tools/impl_.rs#L1748-L1779).
-
-The Windows release job now drives a separate synthetic WinForms window through
-its extracted, pinned worker package. It checks a real window image, literal text
-and a counter increment against state read independently from the fixture. It also
-checks view-only input refusal, the executable permission boundary, one-use
-observations and confirmed worker/fixture shutdown. Fixture commands can only read
-state or close the window; they cannot set the text or counter being verified.
-
-The fixture is compiled into the owned test directory, never into release assets.
-It runs only on disposable GitHub-hosted Windows runners and has a one-minute
-lifetime with parent-pipe cleanup. Screenshots stay in process memory and only a
-content-free result is logged. Local package checks do not start this input test.
-A failure prevents the archive from being handed to installer qualification or
-publication.
-
-This qualifies the native worker and input adapter on the hosted Windows image.
-It does not approve a window, activate Raymond's PC, qualify the local consent UI,
-prove lock/sleep transitions or test the private Meshnet route. Those still require
-explicit interactive acceptance on the intended PC before production activation.
-
 ## Windows local consent host
 
 `bun --no-env-file scripts/buildWindowsConsent.ts` builds the repository-owned Windows GUI
@@ -303,14 +261,6 @@ Its abort immediately retires the controller, and cleanup waits for both
 processes before admitting a replacement. No device token, server credential,
 screenshot or input command is sent to this host.
 
-`bun --no-env-file scripts/testWindowsConsent.ts` compiles the actual GUI binary and checks its
-redirected-pipe bootstrap, strict protocol parsing, deadline rules, session-state
-matrix and process/window identity checks. The native test entrypoint is compiled
-separately and is not distributed. CI runs these checks and the actual Bun child
-transport tests on Windows; CodeQL also analyzes the compiled C# host. Linux unit
-coverage is reported separately and does not claim C# line coverage or interactive
-Windows input qualification.
-
 The GUI host, controller and driver factory now share a tested lifecycle.
 `ComputerLocalConsentHost` retains the immutable selected target and exact
 view/control scope, checks readiness around startup, and owns late-starting
@@ -318,9 +268,7 @@ resources. Local stop also retires idle controllers without waiting for another
 command. Closing the controller reaps both native resources before attempting
 server stop. Failed cleanup remains a failure on repeated close calls and must
 block replacement. A late capture is discarded; an interrupted input remains
-unknown and is never retried. Synthetic tests exercise the real child pipe with
-the actual consent transport/controller and a fake native input port; they do not
-control the test runner desktop.
+unknown and is never retried.
 
 The installed Windows CLI composes this host with the packaged supervisor below.
 Windows input/lock transition acceptance and private routing qualification remain
@@ -366,19 +314,6 @@ private temporary directory and blocks a replacement controller. Startup failure
 retain the same cleanup failure even when no driver port was returned. Interrupted
 input is never replayed.
 
-`bun --no-env-file scripts/testWindowsWorker.ts` compiles the actual supervisor and separate
-harmless fixtures. It verifies child and grandchild exit after parent EOF,
-supervisor termination and worker exit, with retained process handles to avoid PID
-reuse. It also checks environment filtering, builds the complete package, loads
-native SDK metadata from an unrelated working directory, initializes/closes the
-actual private port, explicitly loads both N-API addons, and rejects each missing
-DLL/N-API binary in a separate fresh process. The `@ubjs/node` wrapper must resolve
-the exact packaged addon. These checks do not capture
-the desktop or send input. Windows CI runs them alongside consent/controller and
-cleanup-failure tests. CodeQL compiles and analyzes both C# executables without a
-third-party restore. Native assertions are reported separately from TypeScript
-coverage.
-
 This qualifies packaged startup and process ownership, not interactive Windows
 capture/input, lock/sleep transitions, installer signing, release distribution,
 private routing or the live PC connection.
@@ -406,11 +341,6 @@ failed/declined attempts whose stop acknowledgement was lost, so polling cannot
 reopen the same prompt. The bounded ID set never evicts old requests; exhausting
 it requires operator action. A new connection invalidates old server grants and
 does not resume a previous controller or input operation.
-
-Tests combine the actual companion transport/controller with synthetic local
-hosts to cover heartbeat during prompts, late selection, network loss, declined
-request replay, active local stop, blocked cleanup and startup failures. Windows
-CI runs the same lifecycle tests. No native input occurs in these tests.
 
 The installed Windows CLI supplies the connection task described below. Other
 platforms remain presence-only. Interactive Windows qualification and private
@@ -446,8 +376,6 @@ Observation returns validated inline image content plus generated observation ID
 
 The executor polls for at most fifteen seconds without holding a transaction open. Cancellation, uncertain delivery, lost consumption, invalid results or receipt-finalization failure stop the exact grant and erase outstanding command content. Final disclosure locks the same account controls and live run, checks the consumed command deadline and current access, and commits receipt success before releasing the result. A human stop that wins that fence discards the image. Repeated call IDs remain blocked across recreated tool routers.
 
-Integration tests use a disposable database and synthetic frames to qualify this complete producer/consumer/result path, including cancellation before/after dispatch, stopped access after consumption and failed final receipt commits. They do not capture or control a real desktop. The installed Windows CLI composes these tools with local approval. Private-session and interactive Windows qualification remain required before live activation.
-
 ## Chat access controls
 
 Chat exposes Computer access from the composer and conversation menu. During a running manual request, the operator selects a connected PC and View only (the default) or Control. The existing human verification flow protects the request. The paired companion must separately ask the operator to select and allow one local window. Chat cannot perform that local approval.
@@ -456,7 +384,7 @@ The model can use `mira_computer_wait` to read its own run's readiness or wait a
 
 The status strip and dialog offer Stop access without requiring another verification. Failed or old status reads show unavailable status while retaining an existing stop action. Device selections pin the displayed version, and switching runs clears the selection. Dialogs use the shared bounded, scrollable modal; narrow layouts stack full-width actions.
 
-The disposable Mira preview includes a synthetic waiting conversation for layout review. Its computer metadata never connects to a real companion. The installed Windows composition is described below. Release distribution and live interactive qualification remain separate delivery work.
+The development applications do not connect to an operator PC automatically. Computer access still requires pairing and local consent.
 
 ## Installed Windows composition
 
@@ -488,28 +416,12 @@ cleanup is terminal. A temporary command-polling outage may reconnect only after
 confirmed cleanup; failed input/result delivery remains terminal. No PC listener
 or public endpoint is added.
 
-The Windows qualification builds the complete package and verifies its compiled
-help/version and missing-sibling refusal from an unrelated working directory.
-Cross-platform synthetic tests exercise the actual connection-work composition,
-including heartbeat during consent, refusal, serial image/input transport, network
-loss and cleanup failure. These tests do not grant access to the operator's desktop.
-
 ## Qualified Windows release archive
 
-`bun --no-env-file scripts/testWindowsWorker.ts [absolute-export-directory]` builds the
-complete Windows x64 package with the pinned Bun and SDK, inventories its files,
-creates a ZIP with the operating system's .NET compression library, and extracts
-that freshly built archive into an isolated directory. Native qualification runs
-against the extracted executables and libraries, including startup/cleanup and
-missing-library refusal. The original and extracted trees must have exactly the
-same paths, lengths and SHA-256 hashes. Export occurs only after qualification
-succeeds. No real window is captured or controlled by this test.
-
 Stable Homelab releases attach `mira-computer-<version>-windows-x64.zip` and the
-matching `.json` manifest. The existing release workflow reuses the Windows
-artifact from its successful CI invocation; it does not rebuild the published
-package. Publication additionally waits for source-version/ancestry validation
-and the release image tests. PRs have no release-write permission. Retries accept
+matching `.json` manifest. The release workflow builds the Windows package after
+formatting, lint, type and migration checks on the release commit. Publication
+also verifies source version and ancestry. PRs have no release-write permission. Retries accept
 identical existing assets and refuse to replace different bytes. A failed partial
 upload is not a complete distribution: both assets and the exact archive hash
 must match before use.
@@ -564,14 +476,6 @@ service's retired port-3443 entry, without reading or transmitting either creden
 other origins remain isolated. Use Settings to revoke
 server access too. A failed or cancelled pairing must be revoked before retrying.
 
-`bun --no-env-file scripts/testWindowsDesktop.ts` builds native isolated fixtures and checks
-argument quoting, private pairing input, fixed-origin startup with absent or stale
-preferences, graceful stop,
-unresponsive children, nested process ownership, manager death and malformed
-output. CI also checks the actual extracted desktop executable and its
-missing-sibling refusal. These checks do not capture or control a real desktop;
-interactive Windows acceptance and private Meshnet routing remain required.
-
 ## Per-user Windows installer
 
 Stable releases also attach `mira-computer-<version>-windows-x64-setup.exe`, built
@@ -596,21 +500,17 @@ preferences and the OS-vault pairing. Use Forget pairing and Settings > Computer
 > Revoke when retiring a computer.
 
 The compiler version, official release URL, SHA-256 and Authenticode publisher are
-pinned in `deploy/computer/inno.json`. `scripts/setupInno.ps1` verifies the download
+pinned in `package.json` → `config.windows.inno`. `scripts/setupInno.ps1` verifies the download
 and extracts it in portable mode into a new caller-owned directory. Compiler
-updates require a reviewed pin change and the same Windows qualification; Inno is
+updates require a reviewed pin change and Windows package build; Inno is
 a build dependency, not an installed Mira runtime dependency.
 
-CI builds the setup executable from the already qualified extracted archive, then
-uses a disposable GitHub-hosted Windows runner to test fresh installation, repair,
-busy upgrade/uninstall refusal, changed/extra file rejection, versioned upgrade,
-shortcut targeting and uninstall without deleting user state. Only the tested
-setup executable and matching manifest digest join the release assets. These
-installation tests refuse to run on developer PCs. The setup asset is currently
-unsigned; a matching manifest hash verifies bytes, not publisher authenticity.
-Download it only from the authenticated Homelab GitHub release. Automated update
-selection/authentication and live private-network acceptance
-remain separate delivery work.
+CI compiles the Windows package and installer for changes to their inputs. The
+release workflow builds and publishes them without running installation, desktop
+input or acceptance tests. Check affected Windows behavior manually with the
+operator's local consent. The setup asset is unsigned; a manifest hash verifies
+bytes, not publisher authenticity. Download it from the authenticated Homelab
+GitHub release.
 
 ### Windows downloads in Settings
 
@@ -683,10 +583,6 @@ Mira asks you to reopen it from the updated Start-menu shortcut. It does not
 silently reconnect or grant input access. An unconfirmed installer outcome blocks
 new work in the old launcher; let setup finish before reopening Mira.
 
-The hosted Windows qualification performs an actual upgrade through this native
-copy/verification/installer path. Local tests use harmless fixture executables,
-including broken pipes, incorrect bytes, cancellation and installer descendants.
-
 ### Optional startup at sign-in
 
 The per-user installer offers **Start Mira in the tray and connect when I sign in**,
@@ -736,15 +632,6 @@ For applications that launch a separate game window, select the new window or
 explicitly share the primary desktop. Continuous coaching also requires **Live
 computer assistance** in Chat settings; retaining a grant alone does not enable it.
 
-The hosted qualification covers the independent cyan target behind a magenta cover,
-including the extracted package's complete view-only worker path. Fixed and
-resizable windows use independently measured frame bounds and colored markers
-to check the exact crop origin. It independently
-checks that a dense 1600-by-900 synthetic target fits the image transport budget, then
-decodes the PNG and verifies that a closed target is refused while its owner stays
-alive. Existing Windows input, installer, package inventory and process-ownership
-tests remain required. No screenshots are logged, uploaded or retained.
-
 Control mode uses the same WGC-only image path and the unmodified SDK's public
 `ClickPosition.Element` interface. The private worker accepts only tokens from its
 last observed, non-degraded tree; the outer session also checks exact membership,
@@ -754,64 +641,9 @@ no fallback to the SDK's screen-region screenshot path. Custom canvas controls
 without accessibility elements are therefore not clickable yet. Literal typing
 retains the host-selected delivery mode and exact window target.
 
-The hosted Windows package qualification clicks the entry and counter using their
-actual observed tokens, independently verifies text and one increment, and refuses
-coordinate input and a token from an older observation. The durable transport
-accepts bounded role/label/token metadata while rejecting arbitrary tree text;
-labels remain untrusted content. Lock/browser acceptance and private-network
-activation remain required before deployment. No local SDK patch is used.
-
 The new helper requires Windows 10 version 2004 or later for cursor-free capture.
 Microsoft API references: [CreateForWindow](https://learn.microsoft.com/en-us/windows/win32/api/windows.graphics.capture.interop/nf-windows-graphics-capture-interop-igraphicscaptureiteminterop-createforwindow)
 and [CreateFreeThreaded](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.direct3d11captureframepool.createfreethreaded).
-
-## Hosted Windows consent interruption acceptance
-
-`bun --no-env-file scripts/testWindowsConsentAcceptance.ts` refuses developer PCs and runs only on
-a disposable GitHub-hosted Windows runner. It builds the actual consent binary
-and a separate, non-distributed acceptance harness. GitHub's hosted Windows account
-is elevated with UAC disabled, so the harness creates one random local standard test
-account and verifies its non-elevated token before starting any acceptance. Its
-random password stays only in memory and is never passed to children or logs. The
-account receives read/execute access only to the owned test package, a writable
-scratch directory and temporary GUI access on the disposable runner. Both original
-desktop DACLs are restored and the account is removed after the child exits. The
-harness does not load a user profile or change UAC policy. The production
-administrator-window refusal remains intact.
-Windows UI Automation selects
-only the harness-owned fixture in the consent window, verifies that foreground
-control needs the unchecked checkbox, and checks the selected process/window
-identity against the fixture's independent pipe. It does not capture pixels.
-
-The test proves local Stop, parent pipe loss and target exit each produce one
-terminal stop receipt followed by native process exit. Its final case invokes
-[LockWorkStation](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-lockworkstation),
-waits for independent desktop refusal and the consent host's stop receipt, and
-requires a new consent host to refuse initialization while locked. Merely accepting
-the asynchronous lock request is not considered proof. The runner remains locked;
-this test owns a separate CI job and runs lock last. No unlock or user credential
-is attempted. Sleep/resume, reconnect and operator-PC acceptance remain separate
-from this lock qualification. Existing transport cancellation tests still cover
-late results and unknown input after connection loss.
-
-## Private transport reconnect acceptance
-
-The PostgreSQL integration suite runs the actual companion presence, consent and
-command loops against the production machine receiver over certificate-verified
-loopback HTTPS. Only the local window host is synthetic: these checks never touch
-an operator desktop. Each case owns a disposable database and ephemeral TLS key.
-
-The receiver commits a command claim or input completion, then the test closes
-the real listening socket before returning its response. A lost claim must wait
-for local driver cleanup before reconnecting. The new generation rejects old
-heartbeats and late results, erases transient command content and requires a new
-access request plus explicit local consent before fresh input can run. An input
-whose completion acknowledgement was lost remains terminal, even when the native
-fixture and server already completed it; it must not retry the input or reconnect
-automatically. Restarting presence cannot revive that command.
-
-This qualifies the private transport and durable queue together, not Windows
-session disconnect/reconnect, suspend/resume or the deployed Meshnet route.
 
 ## Explicit desktop sharing
 
@@ -830,10 +662,3 @@ clipboard or arbitrary native tools. Each input still requires a fresh one-use
 observation. Local Stop, connection loss, lock, suspend and display changes revoke
 access; starting again requires new local consent. Closing an unrelated window
 does not stop desktop access. The window-only capture adapter remains unchanged.
-
-The native desktop input qualification runs only on a disposable hosted Windows
-runner against the fixture's independently reported screen coordinates and state.
-It verifies primary-display dimensions, changing pixels, view-only refusal,
-click/type, replay refusal and closure. The local consent acceptance harness also
-checks explicit desktop approval, Stop and parent-pipe loss. Developer-PC checks
-compile and validate the protocol without capturing the user's desktop.

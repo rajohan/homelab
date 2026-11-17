@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { config } from "../package.json";
 import {
     computerReleaseNames,
     hashComputerFile,
@@ -30,9 +31,7 @@ export async function buildComputerInstaller(options: {
         throw new Error("Installer builds require absolute Windows paths.");
     const release = readComputerRelease(options.manifest);
     await verifyComputerPackage(options.directory, release);
-    const pinned = JSON.parse(
-        await readFile(new URL("../deploy/computer/inno.json", import.meta.url), "utf8")
-    ) as { version: string };
+    const pinned = config.windows.inno;
     const compilerVersion = execFileSync(options.compiler, ["--version"], {
         windowsHide: true,
         encoding: "utf8",

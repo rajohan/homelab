@@ -1,7 +1,7 @@
 # Mira AgentMail integration
 
 The repository owns the webhook receiver, bounded read adapter, catch-up cursor,
-product tools and integration controls. Svix is pinned in `apps/mira/package.json`
+product tools and integration controls. Svix is pinned in the root `package.json`
 and follows the existing Bun/Dependabot release workflow; hosted AgentMail service
 updates are provider-owned. No third-party patch or OpenClaw hook is required.
 
@@ -92,15 +92,9 @@ history and tool access remain intact, but newly added tools require a new chat.
 Underlying tools still enforce their own input schemas, owner, grants and durable
 call receipts.
 
-## Verification
+## References
 
-Synthetic tests cover raw-body signatures, time tolerance, wrong-inbox rejection,
-bounded HTTP responses, owner isolation, durable deduplication, interrupted paging,
-retrying an existing window, repeated-pause recovery, empty extracted-body fallback,
-cross-service binding mismatches and pause/resume races before returning mail content. A real
-provider activation still needs scoped credentials and a verified inbox binding.
-
-References: [webhook contract](https://docs.agentmail.to/webhooks-overview),
+[webhook contract](https://docs.agentmail.to/webhooks-overview),
 [signature verification](https://docs.agentmail.to/webhook-verification),
 [message listing](https://docs.agentmail.to/api-reference/inboxes/messages/list),
 [inbox events](https://docs.agentmail.to/api-reference/inboxes/events/list),
@@ -123,13 +117,20 @@ ordinary received mail retains its original receipt age.
 
 ### Outgoing draft review and delivery
 
-The chat's **Email drafts** library stores editable, owner-scoped plain-text drafts locally. Mira can propose a draft during a manual conversation but cannot approve or send it. Automatic mail-triggered work does not have draft-write permission. The review dialog displays the configured inbox, every To/Cc/Bcc recipient, subject and body before **Confirm and send**. The approval binds the current version, normalized submitted-content hash, inbox binding and integration-control version. Changes require a fresh review. The review also discloses AgentMail’s provider-added “Sent via AgentMail” footer on the free plan; paid plans omit it, as documented in [AgentMail Messages](https://docs.agentmail.to/messages). The hash covers the submitted content, not provider-added formatting. Existing owner-scoped drafts remain editable after deletion of their source chat; their retained link records provenance and cannot be reassigned to another deleted or unowned chat.
+Mira prepares owner-scoped plain-text email drafts. Pending requests and completed
+outcomes appear in the shared Chat controls; there is no separate draft library.
+The existing permission mode determines whether the operator or automatic review
+approves the exact version. Review shows the configured inbox, every recipient,
+subject, body and attachments. Changes invalidate the reviewed hash. Retained
+legacy actions without an accessible conversation also appear on the Chat page.
+AgentMail may append its provider footer; the hash covers the submitted content,
+not provider-added formatting.
 
 The executor claims a queued draft once before invoking the official [AgentMail send-message API](https://docs.agentmail.to/api-reference/inboxes/messages/send). Each attempt disables redirects and uses a fixed provider origin and bounded timeout/response. It includes a stable `Idempotency-Key` per draft, following the provider's [24-hour send deduplication contract](https://www.agentmail.to/docs/idempotency); durable local claims still prevent automatic retries after uncertain results or after that retention expires. The contract validates the provider's combined 50-recipient limit before saving or approving. A verified provider acknowledgement means accepted by AgentMail, not delivered to the recipient. A network loss, rejection or malformed response leaves **Needs attention** without automatic retry; inspect the provider inbox before deliberately preparing a new send. A late verified acknowledgement can refine an abandoned attempt to accepted.
 
 Approval expires after fifteen minutes before dispatch. Disabling/re-enabling the integration returns same-inbox queued work to draft for another review. Removing or changing the inbox cancels obsolete approvals before sending. Already-started provider calls cannot be recalled by pausing. The receiver and executor must agree on the inbox before approval/dispatch. Cancellation is available only before dispatch; it does not claim to unsend mail. Repeated approval requests return the same queued/sent/unknown record and cannot send a second copy.
 
-Outgoing messages support up to five explicitly selected uploaded files totaling 4 MiB. The server snapshots each owned file's name, MIME type, size and digest into the reviewed content hash. Files must still exist unchanged at approval and dispatch. The request embeds verified bytes as base64 and enforces the provider's 6 MB serialized request limit; arbitrary download URLs are never accepted. Local verification failure returns the email to draft without a provider request. A model can propose only files already shared in its current conversation. The operator can choose from their own file library and remove files before saving. No actual inbox or outgoing provider transport is activated by a development preview.
+Outgoing messages support up to five explicitly selected uploaded files totaling 4 MiB. The server snapshots each owned file's name, MIME type, size and digest into the reviewed content hash. Files must still exist unchanged at approval and dispatch. The request embeds verified bytes as base64 and enforces the provider's 6 MB serialized request limit; arbitrary download URLs are never accepted. Local verification failure returns the email to draft without a provider request. A model can propose only files already shared in its current conversation. Ask Mira to revise attachment selection before approving a draft. No actual inbox or outgoing provider transport is activated by a development preview.
 
 ### Mail-triggered workload limits
 

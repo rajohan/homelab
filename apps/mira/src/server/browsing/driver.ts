@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
+import path from "node:path";
 
 import * as v from "valibot";
 
-import { type BrowserDriverHost, launchBrowserDriver } from "./driverProcess";
-import pin from "./driverRelease.json";
+import { dependencies } from "../../../../../package.json";
 import type { BrowserNativeResult } from "./protocol";
 
-export const browserDriverVersion = pin.version;
+export const browserDriverVersion = dependencies["@trycua/cua-driver"];
 export interface BrowserDriver {
     callTool: (
         name: string,
@@ -21,170 +21,100 @@ export type BrowserDriverFactory = (
     directory: string,
     signal: AbortSignal
 ) => Promise<BrowserDriver>;
-
-const initializeSchema = v.object({
-    protocolVersion: v.literal("2025-06-18"),
-    serverInfo: v.object({ version: v.literal(browserDriverVersion) }),
-    capabilities: v.object({ tools: v.object({}) }),
-});
 const resultSchema = v.object({
-    isError: v.optional(v.boolean(), false),
-    structuredContent: v.optional(v.unknown()),
-    content: v.pipe(
-        v.array(
-            v.union([
-                v.object({ type: v.literal("text"), text: v.string() }),
-                v.object({
-                    type: v.literal("image"),
-                    mimeType: v.literal("image/png"),
-                    data: v.string(),
-                }),
-            ])
-        ),
+    isError: v.boolean(),
+    structuredJson: v.exactOptional(v.pipe(v.string(), v.maxLength(256 * 1024))),
+    images: v.pipe(
+        v.array(v.object({ mimeType: v.literal("image/png"), dataBase64: v.string() })),
         v.maxLength(16)
     ),
 });
 
 /**
- * Start the pinned official CLI with one approved bounded manifest and a private MCP socket.
- * @param manifest - Host-written capability file inside the session directory.
- * @param directory - Private canonical session directory, removed only after shutdown.
- * @param signal - Startup cancellation; after startup the native owner closes after saving its profile.
- * @param launch - Official process host; synthetic replacement is for unit tests only.
- * @returns A browser-only transport with no unrestricted, standalone or SDK fallback.
+ * Open the package-managed native SDK with the host's browser capability manifest.
+ * @param manifest - Host-written capability file inside the private session directory.
+ * @param directory - Canonical session directory, removed after shutdown.
+ * @param signal - Startup cancellation; the browser owner closes the SDK before saving resources.
+ * @returns One browser-only session using the same supported SDK as Windows.
  */
 export async function openBrowserDriver(
     manifest: string,
     directory: string,
-    signal: AbortSignal,
-    launch = launchBrowserDriver
+    signal: AbortSignal
 ): Promise<BrowserDriver> {
     signal.throwIfAborted();
+    if (
+        (await realpath(directory)) !== directory ||
+        manifest !== path.join(directory, "capabilities.json")
+    )
+        throw new Error("The browser driver requires its private session directory.");
     const policy = v.parse(
         v.object({ allow: v.object({ tools: v.array(v.string()) }) }),
         JSON.parse(await readFile(manifest, "utf8"))
     );
     const allowed = new Set(policy.allow.tools);
+    const sdk = await import("@trycua/cua-driver");
+    const native = sdk.CuaDriver.createConfigured({
+        claudeCodeCompatibility: false,
+        authorization: {
+            allowedModes: [sdk.SessionPermissionMode.Bounded],
+            compatibilityMode: sdk.SessionPermissionMode.Bounded,
+            compatibilityCapabilityManifestPath: manifest,
+            unrestrictedAcknowledged: false,
+            maxSessionTtlSeconds: 300n,
+            maxIdleTtlSeconds: 60n,
+        },
+    });
     const session = randomUUID();
-    const host = await launch(manifest, directory);
-    let connection: ReturnType<BrowserDriverHost["connect"]> | undefined;
     let closing: Promise<void> | undefined;
-    let stopped = false;
-    let started = false;
-    const onAbort = () => {
-        void connection?.close().catch(() => {});
+    const shutdown = () => {
+        closing ??= native.shutdown().finally(() => {
+            if (sdk.CuaDriver.instanceOf(native)) native.uniffiDestroy();
+        });
+        return closing;
+    };
+    const abort = () => {
         void shutdown().catch(() => {});
     };
-    async function shutdown() {
-        stopped = true;
-        closing ??= (async () => {
-            await Promise.resolve();
-            signal.removeEventListener("abort", onAbort);
-            host.signal.removeEventListener("abort", onAbort);
-            connection?.signal.removeEventListener("abort", onAbort);
-            try {
-                if (connection && started && !connection.signal.aborted) {
-                    const result = normalizeBrowserResult(
-                        await connection.request("tools/call", {
-                            name: "end_session",
-                            arguments: { session },
-                        })
-                    );
-                    if (result.isError)
-                        throw new Error("Browser session cleanup was refused.");
-                }
-            } finally {
-                try {
-                    await connection?.close();
-                } finally {
-                    await host.stop();
-                }
-            }
-            return;
-        })();
-        return closing;
-    }
-    signal.addEventListener("abort", onAbort, { once: true });
-    host.signal.addEventListener("abort", onAbort, { once: true });
-    const check = () => {
-        signal.throwIfAborted();
-        if (stopped || host.signal.aborted) throw new Error("Browser driver stopped.");
-    };
-    const callTool: BrowserDriver["callTool"] = async (name, args, operation) => {
-        operation.throwIfAborted();
-        check();
-        if (
-            !allowed.has(name) ||
-            name === "start_session" ||
-            name === "end_session" ||
-            Object.keys(args).some((key) => key.startsWith("_") || key === "session")
-        )
-            throw new Error("Browser tool is outside the approved manifest.");
-        const cancelled = onAbort;
-        operation.addEventListener("abort", cancelled, { once: true });
-        try {
-            const result = normalizeBrowserResult(
-                await connection!.request("tools/call", {
-                    name,
-                    arguments: { ...args, session },
-                })
-            );
-            operation.throwIfAborted();
-            check();
-            return result;
-        } finally {
-            operation.removeEventListener("abort", cancelled);
-        }
-    };
+    signal.addEventListener("abort", abort, { once: true });
     try {
-        await host.ready(signal);
-        check();
-        connection = host.connect();
-        connection.signal.addEventListener("abort", onAbort, { once: true });
-        v.parse(
-            initializeSchema,
-            await connection.request("initialize", {
-                protocolVersion: "2025-06-18",
-                capabilities: {},
-                clientInfo: { name: "homelab-browser", version: "1" },
-            })
-        );
-        connection.notify("notifications/initialized", {});
-        const start = normalizeBrowserResult(
-            await connection.request("tools/call", {
-                name: "start_session",
-                arguments: { session },
-            })
-        );
-        if (start.isError) throw new Error("The bounded browser session was refused.");
-        started = true;
-        check();
-        signal.removeEventListener("abort", onAbort);
-        return { callTool, shutdown };
+        const metadata = await native.metadata();
+        if (metadata.driverVersion !== browserDriverVersion || !metadata.embedded)
+            throw new Error("Unexpected browser driver runtime.");
+        await native.startSession(sdk.StartSessionInput.new({ session }), { signal });
+        signal.throwIfAborted();
+        return {
+            callTool: async (name, args, operation) => {
+                operation.throwIfAborted();
+                if (
+                    closing ||
+                    !allowed.has(name) ||
+                    ["start_session", "end_session"].includes(name) ||
+                    Object.keys(args).some(
+                        (key) => key.startsWith("_") || key === "session"
+                    )
+                )
+                    throw new Error("Browser tool is outside this session's manifest.");
+                operation.addEventListener("abort", abort, { once: true });
+                try {
+                    const result = await native.callTool(
+                        name,
+                        JSON.stringify({ ...args, session }),
+                        { signal: operation }
+                    );
+                    operation.throwIfAborted();
+                    if (closing) throw new Error("Browser driver stopped.");
+                    return v.parse(resultSchema, result);
+                } finally {
+                    operation.removeEventListener("abort", abort);
+                }
+            },
+            shutdown,
+        };
     } catch (error) {
         await shutdown();
         throw error;
+    } finally {
+        signal.removeEventListener("abort", abort);
     }
-}
-
-/**
- * Keep only the official structured result and PNG content from an MCP tool response.
- * @param input - Untrusted bounded MCP result; textual diagnostics are never forwarded.
- * @returns The browser protocol's validated result envelope.
- */
-export function normalizeBrowserResult(input: unknown): BrowserNativeResult {
-    const result = v.parse(resultSchema, input);
-    const structuredJson =
-        result.structuredContent === undefined
-            ? undefined
-            : JSON.stringify(result.structuredContent);
-    if (structuredJson && Buffer.byteLength(structuredJson) > 256 * 1024)
-        throw new Error("Browser metadata exceeds its size limit.");
-    return {
-        isError: result.isError,
-        ...(structuredJson === undefined ? {} : { structuredJson }),
-        images: result.content
-            .filter((item) => item.type === "image")
-            .map((item) => ({ mimeType: item.mimeType, dataBase64: item.data })),
-    };
 }

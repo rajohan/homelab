@@ -97,20 +97,6 @@ Meshnet route from the actual Windows PC. A passing loopback fixture does not pr
 that a production firewall or DNS zone is private. Provisioning and reload are
 separate operator actions; the example and tests do not modify live nginx or DNS.
 
-`HOMELAB_SMOKE_IMAGE_PREFIX=<local-image-prefix> PYTHONDONTWRITEBYTECODE=1 python3 scripts/smokeMiraDeployment.py`
-qualifies the rendered overlays and actual dashboard image with disposable data.
-It verifies GitHub credential placement, default-off configuration, loopback ports,
-public endpoint refusal, private protocol boundaries, recreation and disabling.
-It also builds the pinned test-only nginx image and exercises the actual example
-against that receiver with a temporary TLS certificate: trusted/untrusted TLS,
-allowed/denied peers, forged forwarding headers, SNI/Host mismatches, browser
-headers and payload limits. Only loopback test listeners are used, and no real
-certificate or device credential is required. This test image is never published;
-Dependabot tracks its Docker pin as `ci(deps)` without triggering an app release.
-The container-image workflow runs it before saving images for publication. This
-does not qualify production TLS, firewall rules or the Windows PC; those need the
-separate [computer acceptance checks](../docs/mira-computer.md).
-
 ## Built artifact
 
 Each application's complete `dist` directory is its runtime artifact. Start from that directory
@@ -184,15 +170,6 @@ migration, policy installation, ingress routing, runtime credentials, backup and
 Authelia cutover still follow the operations guide. Publication itself never accesses the
 homelab or restarts a service.
 
-For local container validation, build both images with tags `homelab-release/auth:tested`
-and `homelab-release/dashboard:tested`, set `HOMELAB_SMOKE_IMAGE_PREFIX=homelab-release`, and
-run `bun run test:smoke` with a disposable `HOMELAB_TEST_DATABASE_URL`.
-The same tests normally run local artifacts when the image prefix is absent.
-Container smoke tests require Linux Docker host networking for their loopback-only database
-and OIDC endpoints. They run as the image's unprivileged user with a read-only root filesystem,
-no capabilities, a bounded temporary directory and only the synthetic policy mounted read-only.
-Their exact temporary containers are removed on success or failure.
-
 ## Package metadata before inventory
 
 The inventory collector reads installed versions and existing package lists; publishing
@@ -263,5 +240,3 @@ The same trusted host can also dispatch reviewed Homelab source/check/edit jobs 
 The host runs code independently of browser sessions, publishing availability every five seconds; a stale heartbeat prevents execution. One active code slot is shared with Daytona. Main containers have 4 CPUs, 8 GiB memory and bounded temporary storage; checks have a ten-minute deadline. Shutdown interrupts active execution, and the durable queue retains uncertain cleanup for the original host to reconcile. Cleanup continues while paused. Coordinated releases stop new local admissions and wait for active work, result collection and cleanup, preserving queued jobs. Add `localCodeConfigFile` and the code proxy to the [release recipe](../docs/release-deployment.md) so future releases update and back up this file with the browser configuration. Changed immutable bindings still require renewed Main consent, and queued jobs with an old binding return to review. An unconfigured deployment continues operating without local code execution.
 
 For upgrades, stop accepting new browser sessions, allow active jobs to finish or explicitly stop them, and verify cleanup before recreating proxies. Recreating a proxy or network changes its immutable ID: update the nonsecret host configuration before restarting the host. A release notification or image publication alone does not perform this deployment. No production routing or activation is changed by this overlay.
-
-Run `bash scripts/testBrowserEgress.sh` to qualify the actual images. The fixture uses synthetic HTTP, TLS and DNS servers in fully isolated Docker networks (including 1.1.1.0/29 with no host bridge address); it never contacts public DNS or the Internet. It tests mixed DNS answers, rebinding, redirects, independent packet filtering, direct-route refusal, dropped runtime capabilities, actual Chromium screenshots/input and automatic retirement after proxy loss. The existing offline image and host-service tests remain required too.

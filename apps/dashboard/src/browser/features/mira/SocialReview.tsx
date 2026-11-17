@@ -31,6 +31,9 @@ export function SocialReview({
     readonly onClose: () => void;
 }) {
     const [answer, setAnswer] = useState("");
+    const cancel = useOperation(() =>
+        api.mira.social.cancel.mutate({ id: draft.id, version: draft.version })
+    );
     const approve = useOperation(() =>
         api.mira.social.approve.mutate({
             id: draft.id,
@@ -42,7 +45,7 @@ export function SocialReview({
     const verify = useOperation(() =>
         api.mira.social.verify.mutate({ id: draft.id, version: draft.version, answer })
     );
-    const busy = approve.isPending || verify.isPending;
+    const busy = approve.isPending || verify.isPending || cancel.isPending;
     const title =
         draft.content.kind === "post" ? draft.content.title : "Comment or reply";
     const postId =
@@ -123,10 +126,32 @@ export function SocialReview({
                 {(approve.error || verify.error) && (
                     <ErrorNotice error={approve.error ?? verify.error} />
                 )}
+                {cancel.error && <ErrorNotice error={cancel.error} />}
                 <ActionGroup>
+                    {[
+                        "draft",
+                        "queued",
+                        "verification_required",
+                        "queued_verification",
+                    ].includes(draft.state) && (
+                        <Button
+                            variant="secondary"
+                            busy={cancel.isPending}
+                            disabled={approve.isPending || verify.isPending}
+                            onClick={() =>
+                                void cancel
+                                    .mutateAsync(undefined)
+                                    .then(onClose)
+                                    .catch(() => {})
+                            }
+                        >
+                            Cancel action
+                        </Button>
+                    )}
                     {draft.state === "draft" && (
                         <Button
                             busy={approve.isPending}
+                            disabled={cancel.isPending}
                             onClick={() =>
                                 void approve
                                     .mutateAsync(undefined)
@@ -141,7 +166,9 @@ export function SocialReview({
                     {draft.state === "verification_required" && (
                         <Button
                             busy={verify.isPending}
-                            disabled={!/^-?\d{1,12}\.\d{2}$/.test(answer)}
+                            disabled={
+                                cancel.isPending || !/^-?\d{1,12}\.\d{2}$/.test(answer)
+                            }
                             onClick={() =>
                                 void verify
                                     .mutateAsync(undefined)

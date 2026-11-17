@@ -1,120 +1,64 @@
 # Releases
 
-Homelab uses Release Please, following the former dashboard's GitHub App approach without carrying over its custom artifact/provisioning framework.
+The root `package.json` owns one product version. Release Please maintains the
+changelog, release PR, tag and GitHub release using the existing repository-scoped
+GitHub App. Review and required branch protection still apply.
 
-## One product version, independent deployments
+## Delivery flow
 
-The root `package.json` owns the product version. Private application and shared-package manifests do not maintain duplicate version numbers. Both applications are built from the same tagged source, but can be deployed independently; creating or merging a release PR does not restart either application.
+1. A PR runs `CI / verify`: formatting, lint, TypeScript, migration metadata and builds.
+2. After review, squash merge with a Conventional Commit title.
+3. Release Please proposes the next version. Merge its reviewed release PR when ready.
+4. **Container images** runs the shared formatting, lint, type and migration checks
+   on the exact release commit before publishing. It then builds the release
+   artifacts directly, without test suites or a duplicate application-build job.
+5. Deploy through the existing backup, migration and health verification process.
 
-The `node` Release Please strategy updates JavaScript package metadata. Its name does not change the runtime: installation, tests and builds still use Bun.
+`fix` proposes a patch release and `feat` a minor release. `chore(deps)` publishes
+application dependency changes. Ordinary chores and GitHub Actions-only changes do
+not independently trigger a release. Never move or reuse a published version tag.
 
-The initial source version is `0.1.0`. The release manifest starts at `0.0.0` because no Homelab release has been published yet. The first feature commit proposes `v0.1.0`. Subsequently, Release Please maintains the manifest; do not reset it or manually reuse old tags.
+## Three image builds
 
-Only root package metadata needs a version change. Bun's root lockfile workspace does not duplicate that root version. Private workspace versions are deliberately omitted so releases do not need a custom lockfile-rewriting workflow. Dependency changes still require updating and committing `bun.lock`; CI always installs with `--frozen-lockfile`.
+| Build | Contents                                                  | Registry roles                                       |
+| ----- | --------------------------------------------------------- | ---------------------------------------------------- |
+| Auth  | Auth runtime, CLI and migrations                          | `auth`                                               |
+| Main  | Dashboard, worker, Mira, browser SDK/Chromium, code tools | `dashboard`, `mira`, `mira-browser`, `daytona-check` |
+| Proxy | Existing shared network proxy                             | `mira-browser-proxy`                                 |
 
-## Normal flow
+Main's four registry role names point to the **same built image**, not four builds.
+They keep already-installed updaters and Compose files compatible. Docker shares
+identical layers and the image ID locally. Service processes still run in their
+existing containers with their own permissions and scoped environment.
 
-1. Open a feature/fix PR and let CI check formatting, lint, types, unit/component tests, HTTP integration tests and both builds.
-2. Squash merge with a Conventional Commit title, for example `feat(dashboard): add service inventory` or `fix(auth): reject an invalid return URL`.
-3. Release Please creates or updates its release PR with the next version and changelog. Review its changes and wait for CI.
-4. Merge the release PR when the version is ready. The next Release Please run creates the Git tag and GitHub release.
-5. Wait for **Container images** on the published release to pass. It runs the source checks again, builds and tests both images, then publishes the exact tested images and attaches `container-images.json` to the release.
-6. Deploy the desired application separately through the reviewed deployment process. There is no automatic production deployment in this workflow.
+The Main entry point recognizes the existing Mira `HOMELAB_MIRA_CONFIG` and browser
+host command; Dashboard, worker, migration and Auth commands keep their current
+working directories. Browser/code containers select their existing fixed entry points.
 
-`fix:` increments the patch version and `feat:` increments the minor version. Application/build dependency PRs use `chore(deps):`. The scoped `chore` entry in `changelog-sections` includes these updates under Dependencies and triggers a patch release. Keep this specific entry before the hidden, unscoped `chore` fallback: the changelog engine uses the first matching entry. Ordinary `chore:` and other chore scopes remain hidden. Pure GitHub Actions updates keep `ci(deps):`; neither ordinary chores nor CI commits start a release by themselves. Before `1.0.0`, a breaking change increments the minor version under the configured pre-major policy. Document breaking changes with `!` or a `BREAKING CHANGE:` footer. Do not automatically merge release PRs or bypass their required checks.
+Images use BuildKit caches, a frozen root dependency install and the pinned Bun
+runtime. Distribution packages refresh at least weekly when building a release.
+The release workflow also builds the Windows installer in parallel, using the same
+application source and managed native SDK.
 
-## Required GitHub setup
+## Publication and recovery
 
-Install a release automation GitHub App on this repository. The existing release App can be used if its owner deliberately adds this repository to the installation; otherwise create a dedicated App. Its repository permissions need only:
+`container-images.json`, `browser-image.json` and `daytona-image.json` retain the
+existing role format and immutable digest references. The workflow attaches their
+exact evidence files and the Windows manifest to its successful attempt. The updater
+still requires a complete successful release and matching source/version evidence.
+No floating `latest` tags are used, and no service is automatically deployed.
 
-- **Contents: read and write** for the release branch, tags and releases.
-- **Pull requests: read and write** for release PRs and their labels.
-- The automatically granted **Metadata: read** permission.
+The publisher reuses an existing version tag only when its image config is identical.
+If a rebuild differs, publish a new patch release. Do not replace an immutable tag.
+Windows assets use the same immutable-byte rule.
 
-The workflow further restricts each short-lived installation token to this repository and those write permissions. The token action revokes its token when the job finishes. It does not receive repository administration, Actions, deployment or homelab access.
+The existing Release Please App needs Contents/Pull requests write access only.
+Secrets remain `RELEASE_PLEASE_APP_CLIENT_ID` and `RELEASE_PLEASE_APP_PRIVATE_KEY`.
+Actions uses its scoped token for package publication. No host credential is supplied
+to CI. Keep `main` protected with `verify` and the required review policy.
 
-Add these repository Actions secrets through GitHub's private UI or an approved secret-staging mechanism; never paste their values into chat or commit them:
+See [Release Please](https://github.com/googleapis/release-please-action),
+[dependency updates](dependencies.md) and [deployment](release-deployment.md).
 
-| Secret                           | Value                             |
-| -------------------------------- | --------------------------------- |
-| `RELEASE_PLEASE_APP_CLIENT_ID`   | The release App's client ID       |
-| `RELEASE_PLEASE_APP_PRIVATE_KEY` | The release App's PEM private key |
-
-Keep the default `GITHUB_TOKEN` read-only. Ensure repository Actions policy permits the two pinned official actions. Enable squash merging and use PR titles as squash commit titles. Protect `main` with pull requests and the `verify` CI status check, after that check has run at least once. Do not grant the release App a bypass for required checks on `main`.
-
-No personal or broad existing PAT is copied into Actions. No server-side Doppler credential is supplied to GitHub. If the App installation or secrets are missing, Release Please fails with an explicit setup message; it does not silently fall back to another identity.
-
-## Why use an App rather than the default token?
-
-GitHub restricts workflow chaining from `GITHUB_TOKEN`. Current GitHub documentation permits `opened`, `synchronize` and `reopened` PR events from that token, but starts the corresponding workflows in an approval-required state. Other events, including tag/release automation, remain restricted. Using the App installation token lets the normal release PR checks run automatically, as in the old repository.
-
-The Release Please job never checks out or executes application code while holding the App credentials. Its only tasks are creating the scoped token and running the pinned Release Please action.
-
-## Validation and recovery
-
-- Confirm the first release PR receives the ordinary `CI / verify` check automatically.
-- Confirm `bun install --frozen-lockfile` still passes on that PR.
-- Merge only after review; confirm the tag and GitHub release point at the intended commit.
-- A release is not a deployment. If a deployed application must be rolled back, select its previously verified artifact/image rather than moving or deleting published Git tags.
-- Failed release automation can be retried with **Actions → Release Please → Run workflow** on `main` after fixing the cause. Do not hand-edit the release bot's bookkeeping labels or manifest to hide a failure.
-
-## References
-
-- [Release Please Action](https://github.com/googleapis/release-please-action)
-- [Manifest configuration](https://github.com/googleapis/release-please/blob/main/docs/manifest-releaser.md)
-- [GitHub workflow-trigger rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
-- [Create GitHub App Token](https://github.com/actions/create-github-app-token)
-
-## Container publication
-
-The **Container images** workflow runs on pull requests and pushes to `main` without registry
-write access. It builds both images and runs the existing built-runtime smoke suite inside them:
-missing-configuration rejection, HTML/assets and deep links, migration/admin CLI, OIDC consent,
-token exchange, account access and logout. The tests use synthetic keys and a disposable
-PostgreSQL service, never production credentials or a production identity database.
-
-Publishing a stable `vX.Y.Z` GitHub release also runs the complete reusable CI workflow before
-building containers. The release version must equal the root package version, and the source
-commit must belong to `main`. Drafts and prereleases do not publish container images.
-
-Each stable release publishes these private GHCR packages, initially for `linux/amd64`
-(the architecture used by Main and Edge):
-
-- `ghcr.io/rajohan/homelab/auth:X.Y.Z`
-- `ghcr.io/rajohan/homelab/dashboard:X.Y.Z`
-
-Images contain only the corresponding built runtime and Bun; auth additionally includes its
-administrative CLI and migrations. Neither image contains source mounts, Doppler tokens or
-runtime secrets. OCI labels identify the repository, exact commit and product version.
-No floating `latest` tag is published.
-
-The read-only build job transfers the tested images to a separate publishing job using a
-short-lived workflow artifact. The publisher does not check out source or rebuild anything.
-It authenticates to GHCR using the repository's short-lived `GITHUB_TOKEN` with
-`packages: write`; `contents: write` is used only to attach the reference manifest.
-No personal publishing token or additional repository secret is required. Never make these
-packages public merely to simplify server authentication.
-
-`container-images.json` records the release version, commit, platform and both registry
-references including `@sha256:...`. Deploy from those digests, not a moving version tag.
-The publication is not atomic across two packages: **a release is deployable only when the
-workflow is green and the manifest includes both images**. A partial push is not a release
-ready for deployment.
-
-If publishing fails, rerun the failed publishing job while its two-day image artifact remains
-available. Already-published tags are reused only if their image configuration digest matches
-the tested artifact; mismatches fail instead of overwriting a version. If an expired artifact
-requires a complete rebuild and the images differ, publish a new patch release rather than
-deleting/replacing a published tag. A missing manifest can be uploaded again by the successful
-publisher.
-
-For private pulls outside Actions, configure a read-only `read:packages` credential through
-the existing scoped secret-delivery system at deployment. Check package access inheritance
-from this private repository after the first publication. The PR does not provision a host
-login, modify package visibility or publish a test release. Registry permission acceptance
-is therefore verified on the first real release, not claimed from a local Docker build.
-
-See [deployment](../deploy/README.md) for digest-pinned, independent Compose invocations.
-
-References: [Docker's test-before-push pattern](https://docs.docker.com/build/ci/github-actions/test-before-push/)
-and [GitHub Container registry authentication and digests](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+Windows package changes also compile the installer on a Windows runner. UI-only
+changes skip that workflow; it runs no acceptance or test suite.

@@ -1,6 +1,6 @@
 param([Parameter(Mandatory=$true)][string]$Destination)
 $ErrorActionPreference = 'Stop'
-$config = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../deploy/computer/inno.json') -Raw | ConvertFrom-Json
+$config = (Get-Content -LiteralPath (Join-Path $PSScriptRoot '../package.json') -Raw | ConvertFrom-Json).config.windows.inno
 $target = [IO.Path]::GetFullPath($Destination)
 if (Test-Path -LiteralPath $target) { throw 'Compiler destination must be new.' }
 New-Item -ItemType Directory -Path $target | Out-Null

@@ -74,7 +74,7 @@ export async function buildComputerDistribution(root: string, revision: string) 
         }
     );
     const application = JSON.parse(
-        await readFile(new URL("../apps/mira/package.json", import.meta.url), "utf8")
+        await readFile(new URL("../package.json", import.meta.url), "utf8")
     ) as { dependencies: Record<string, string> };
     const manifest = readComputerRelease({
         schemaVersion: 1,

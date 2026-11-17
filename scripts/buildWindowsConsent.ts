@@ -6,10 +6,9 @@ import { fileURLToPath } from "node:url";
 /**
  * Build the Windows consent surface using the OS .NET Framework compiler without package downloads.
  * @param outputRoot - Optional isolated output directory; the builder never removes existing files.
- * @param tests - Also compile the separate, non-distributed protocol/readiness test entrypoint.
- * @returns Paths to the GUI host and, when requested, its standalone qualification executable.
+ * @returns Path to the GUI host.
  */
-export async function buildWindowsConsent(outputRoot?: string, tests = false) {
+export async function buildWindowsConsent(outputRoot?: string) {
     if (process.platform !== "win32")
         throw new Error("The Windows consent host must be built on Windows.");
     const root = await realpath(fileURLToPath(new URL("..", import.meta.url)));
@@ -22,9 +21,6 @@ export async function buildWindowsConsent(outputRoot?: string, tests = false) {
         throw new Error("Windows SystemRoot is required.");
     const compiler = path.join(system, "Microsoft.NET/Framework64/v4.0.30319/csc.exe");
     const host = path.join(directory, "mira-computer-consent.exe");
-    const checks = tests
-        ? path.join(directory, "mira-computer-windows-tests.exe")
-        : undefined;
     const common = [
         "/nologo",
         "/platform:x64",
@@ -49,20 +45,7 @@ export async function buildWindowsConsent(outputRoot?: string, tests = false) {
         timeout: 120_000,
         maxBuffer: 64 * 1024,
     });
-    if (checks)
-        execFileSync(
-            compiler,
-            [
-                "/target:exe",
-                "/main:WindowsTests",
-                `/out:${checks}`,
-                ...common,
-                path.join(source, "tests/WindowsTests.cs"),
-                path.join(source, "tests/MiraWindowTests.cs"),
-            ],
-            { windowsHide: true, timeout: 120_000, maxBuffer: 64 * 1024 }
-        );
-    return { host, checks };
+    return { host };
 }
 
 if (import.meta.main) {

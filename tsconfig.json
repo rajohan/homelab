@@ -20,7 +20,20 @@
         "exactOptionalPropertyTypes": true,
         "noFallthroughCasesInSwitch": true,
         "noImplicitOverride": true,
-        "erasableSyntaxOnly": true
+        "erasableSyntaxOnly": true,
+        "paths": {
+            "@homelab/mira/*": ["./apps/mira/src/server/*.ts"],
+            "@homelab/contracts": ["./packages/contracts/src/index.ts"],
+            "@homelab/contracts/*": ["./packages/contracts/src/*.ts"],
+            "@homelab/notifications": ["./packages/notifications/src/index.ts"],
+            "@homelab/scheduling": ["./packages/scheduling/src/index.ts"],
+            "@homelab/ui": ["./packages/ui/src/index.ts"],
+            "@homelab/ui/classNames": ["./packages/ui/src/lib/classNames.ts"],
+            "@homelab/ui/identity": ["./packages/ui/src/features/identity/index.ts"],
+            "@homelab/ui/identity/client": [
+                "./packages/ui/src/features/identity/client.ts"
+            ]
+        }
     },
     "files": [],
     "references": [
@@ -29,9 +42,6 @@
         },
         {
             "path": "./tsconfig.bun.json"
-        },
-        {
-            "path": "./tsconfig.test.json"
         }
     ]
 }

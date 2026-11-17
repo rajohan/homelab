@@ -31,20 +31,16 @@ export async function main(): Promise<void> {
         }
         await rm(outputDirectory, { recursive: true, force: true });
 
-        const additionalEntries =
-            app === "dashboard"
-                ? [
-                      path.resolve(applicationRoot, "src/worker/worker.ts"),
-                      path.resolve(applicationRoot, "src/worker/migrate.ts"),
-                  ]
-                : [
-                      path.resolve(
-                          applicationRoot,
-                          app === "auth"
-                              ? "src/server/cli/admin.ts"
-                              : "src/server/testing/smoke.ts"
-                      ),
-                  ];
+        const additionalEntries: string[] = [];
+        if (app === "dashboard")
+            additionalEntries.push(
+                path.resolve(applicationRoot, "src/worker/worker.ts"),
+                path.resolve(applicationRoot, "src/worker/migrate.ts")
+            );
+        if (app === "auth")
+            additionalEntries.push(
+                path.resolve(applicationRoot, "src/server/cli/admin.ts")
+            );
         const result = await Bun.build({
             entrypoints: [
                 path.resolve(applicationRoot, "src/server/index.ts"),

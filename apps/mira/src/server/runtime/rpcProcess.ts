@@ -3,6 +3,7 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import * as v from "valibot";
 
 import { envelopeSchema, type RpcId, type RuntimeEvent } from "./protocol";
+import { classifyProviderFailure } from "./providerFailure";
 import { RuntimeResponseError } from "./responseError";
 
 interface PendingRequest {
@@ -213,7 +214,10 @@ export class RpcProcess {
                                 message.error.code,
                                 message.error.code === -32_600 &&
                                     pending.missingThreadMessage !== null &&
-                                    message.error.message === pending.missingThreadMessage
+                                    message.error.message ===
+                                        pending.missingThreadMessage,
+                                classifyProviderFailure(message.error) ===
+                                    "authentication"
                             )
                         );
                     else pending.resolve(message.result);

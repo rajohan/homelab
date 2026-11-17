@@ -1,32 +1,17 @@
-## Summary
+## Change
 
-Describe the change and why it is needed. Link the related issue when applicable.
+Describe the problem, resulting behavior and relevant tradeoffs.
 
-## Behavior and regression coverage
-
-Describe the behavior before and after, including failure paths. For a bug fix, identify the test that reproduces the issue. For UI changes, include a screenshot when helpful.
-
-## Verification
-
-Record results, or explain why a check does not apply. Never include credentials or private production data.
+## Validation
 
 - [ ] `bun run check`
-- [ ] `bun run test --coverage` (includes unit and component tests)
-- [ ] `bun run test:integration`
+- [ ] `bun run db:check:auth` and `bun run db:check:dashboard`
 - [ ] `bun run build`
-- [ ] `bun run test:smoke`
 
-## Risk and deployment
+Record relevant manual checks and any limitations. Do not include credentials or
+private production data. The project intentionally has no automated test suite.
 
-- [ ] No secrets, generated runtime data, or machine-specific paths were committed.
-- [ ] Auth and dashboard remain independently deployable; browser packages contain no server-only code.
-- [ ] Any security, configuration, data migration, or compatibility changes are documented.
-- [ ] The PR title uses `type(scope): description`, with breaking changes identified when applicable.
+## Deployment
 
-Describe any rollout, rollback, or manual acceptance steps. A merged PR is not approval to change production identity data or deploy to the homelab.
-
-## Reviewer notes
-
-Highlight uncertain assumptions, relevant tradeoffs, and any AI-assisted changes that need particular review.
-
-For sensitive vulnerabilities, use the private reporting process in the [security policy](https://github.com/rajohan/homelab/security/policy), not this template.
+Describe configuration, migration or rollback implications when applicable.
+Publication and deployment remain separate actions.

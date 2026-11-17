@@ -45,7 +45,7 @@ export function ChatActivity({
             ? "Needs attention"
             : run.state.charAt(0).toUpperCase() + run.state.slice(1);
     if (active) label = phases[phase ?? "working"];
-    if (run.state === "queued") label = "Waiting for Mira…";
+    if (run.state === "queued") label = run.message ?? "Waiting for Mira…";
     if (run.cancelRequested && active) label = "Stopping…";
     const icons = {
         thinking: Brain,

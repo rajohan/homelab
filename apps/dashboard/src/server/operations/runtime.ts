@@ -171,6 +171,7 @@ export function createOperationsRuntime(
     return {
         deploymentTargets: configuration.deploymentTargets ?? [],
         miraFilesDirectory: configuration.miraFilesDirectory,
+        miraOpenaiApiKey: configuration.miraOpenaiApiKey,
         agentMailHook: configuration.agentMailHook,
         moltbookBinding: configuration.moltbookBinding,
         hereNowBinding: configuration.hereNowBinding,
@@ -195,6 +196,7 @@ export function createOperationsRuntime(
 export type OperationsRuntime = ReturnType<typeof connectDashboardDatabase> & {
     readonly deploymentTargets?: readonly ReleaseDeploymentTarget[];
     readonly miraFilesDirectory?: string | undefined;
+    readonly miraOpenaiApiKey?: string | undefined;
     readonly agentMailHook?: AgentMailHookConfiguration | undefined;
     readonly moltbookBinding?: MoltbookBinding | undefined;
     readonly hereNowBinding?: HereNowBinding | undefined;

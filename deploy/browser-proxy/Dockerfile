@@ -1,5 +1,6 @@
 FROM debian:trixie-slim
-RUN apt-get update && apt-get install -y --no-install-recommends squid ca-certificates nftables util-linux python3-dnspython && rm -rf /var/lib/apt/lists/*
+ARG PACKAGES_WEEK
+RUN echo "$PACKAGES_WEEK" >/dev/null && apt-get update && apt-get install -y --no-install-recommends squid ca-certificates nftables util-linux python3-dnspython && rm -rf /var/lib/apt/lists/*
 COPY deploy/browser-proxy/squid.conf /etc/squid/squid.conf
 COPY deploy/browser-proxy/egress.nft /etc/mira-egress.nft
 COPY deploy/browser-proxy/common.conf deploy/browser-proxy/restricted.conf deploy/browser-proxy/restricted-v4.nft deploy/browser-proxy/*.in /etc/mira-net/

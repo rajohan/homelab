@@ -1,0 +1,47 @@
+name: Windows package
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/windows-build.yml
+      - .github/workflows/container-images.yml
+      - .github/actions/setup-bun/**
+      - apps/mira/native/**
+      - apps/mira/src/server/**
+      - packages/contracts/**
+      - packages/ui/src/assets/rajohan.ico
+      - scripts/buildComputer*.ts
+      - scripts/buildWindows*.ts
+      - scripts/copyDriverRuntime.ts
+      - scripts/computerRelease.ts
+      - scripts/installBun.ts
+      - scripts/verifyBun.ts
+      - scripts/setup*.ps1
+      - deploy/computer/**
+      - package.json
+      - bun.lock
+      - bunfig.toml
+      - .bun-version
+      - .bun-revision
+      - tsconfig*.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-bun
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: ./scripts/setupInno.ps1 -Destination "${{ runner.temp }}/mira-inno"
+      - name: Compile the Windows package without launching or installing it
+        run: bun --no-env-file scripts/buildComputerRelease.ts "${{ runner.temp }}/computer-release" "${{ runner.temp }}/mira-inno/portable/ISCC.exe"

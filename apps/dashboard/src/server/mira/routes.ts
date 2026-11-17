@@ -1,4 +1,6 @@
 import {
+    miraActionKindSchema,
+    miraActionPageSchema,
     miraAutomationInputSchema,
     miraAutomationUpdateSchema,
     miraChatSettingsUpdateSchema,
@@ -57,7 +59,12 @@ import {
     miraSocialSaveSchema,
     miraSocialVerifySchema,
 } from "@homelab/contracts/miraSocial";
+import { miraVoiceNames } from "@homelab/contracts/miraVoice";
 import { idSchema, versionedIdSchema } from "@homelab/contracts/operations";
+import {
+    listMiraActionRequests,
+    readMiraActionRequest,
+} from "@homelab/mira/data/actionRequests";
 import {
     deleteMiraAutomation,
     installMiraPresets,
@@ -70,6 +77,11 @@ import {
     setMiraEnabled,
 } from "@homelab/mira/data/automations";
 import { readChatActivity } from "@homelab/mira/data/chatActivity";
+import {
+    cancelChatgptLogin,
+    readChatgptConnection,
+    requestChatgptLogin,
+} from "@homelab/mira/data/chatgpt";
 import { listMiraModels, saveMiraChatSettings } from "@homelab/mira/data/chatSettings";
 import { sendMiraMessage } from "@homelab/mira/data/chatSteering";
 import {
@@ -171,6 +183,7 @@ import { OperationFailure } from "../operations/errors";
 import { miraBrowserRouter } from "./browserRoutes";
 import { miraComputerRouter } from "./computerRoutes";
 import { listMiraRunHistory } from "./runHistory";
+import { connectVoice, readVoiceModels } from "./voice";
 
 function execute<T>(
     context: OperationsContext,
@@ -199,6 +212,65 @@ function execute<T>(
 
 const record = v.strictObject({ id: idSchema });
 export const miraRouter = trpc.router({
+    voice: trpc.router({
+        models: trpc.procedure.query(({ ctx }) =>
+            execute(ctx, () => {
+                authorizedOperations(ctx, "jobs:run");
+                return readVoiceModels(ctx.operations?.miraOpenaiApiKey);
+            })
+        ),
+        connect: trpc.procedure
+            .input(
+                v.strictObject({
+                    conversationId: idSchema,
+                    model: v.pipe(v.string(), v.maxLength(120)),
+                    voice: v.picklist(miraVoiceNames),
+                    sdp: v.pipe(v.string(), v.minLength(1), v.maxLength(65_536)),
+                })
+            )
+            .mutation(({ ctx, input }) =>
+                execute(ctx, async (mira) => {
+                    authorizedOperations(ctx, "jobs:run");
+                    const [chat] = await mira.client<
+                        { id: string }[]
+                    >`SELECT id FROM mira_conversations WHERE id=${input.conversationId} AND owner=${mira.owner} AND deleted_at IS NULL AND archived_at IS NULL`;
+                    if (!chat)
+                        throw new MiraFailure(
+                            "NOT_FOUND",
+                            "Open an active conversation before starting voice."
+                        );
+                    return connectVoice(
+                        ctx.operations?.miraOpenaiApiKey,
+                        input.model,
+                        input.voice,
+                        input.sdp
+                    );
+                })
+            ),
+    }),
+    chatgpt: trpc.router({
+        status: trpc.procedure.query(({ ctx }) =>
+            execute(ctx, async (mira) => ({
+                ...(await readChatgptConnection(mira)),
+                canManage:
+                    ctx.principal?.capabilities.includes("worker:control") === true &&
+                    ctx.principal.capabilities.includes("jobs:run"),
+            }))
+        ),
+        login: trpc.procedure.mutation(({ ctx }) =>
+            execute(ctx, (mira) => {
+                const { principal } = authorizedOperations(ctx, "worker:control");
+                requireCapability(principal, "jobs:run");
+                return requestChatgptLogin(mira);
+            })
+        ),
+        cancel: trpc.procedure.input(record).mutation(({ ctx, input }) =>
+            execute(ctx, (mira) => {
+                authorizedOperations(ctx, "worker:control");
+                return cancelChatgptLogin(mira, input.id);
+            })
+        ),
+    }),
     computers: miraComputerRouter,
     browser: miraBrowserRouter,
     daytona: trpc.router({
@@ -404,6 +476,23 @@ export const miraRouter = trpc.router({
             ),
     }),
     proposals: trpc.router({
+        actions: trpc.procedure
+            .input(miraActionPageSchema)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) =>
+                    listMiraActionRequests(mira, input.id, input.before)
+                )
+            ),
+        action: trpc.procedure
+            .input(
+                v.object({
+                    id: idSchema,
+                    kind: miraActionKindSchema,
+                })
+            )
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => readMiraActionRequest(mira, input.kind, input.id))
+            ),
         answer: trpc.procedure
             .input(miraQuestionAnswerSchema)
             .mutation(({ ctx, input }) =>

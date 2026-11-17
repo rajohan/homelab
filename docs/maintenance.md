@@ -9,14 +9,6 @@ so a slow inventory lookup cannot occupy the reserved lane for several minutes.
 Installation and restart jobs keep their physical-host leases. The reservation does
 not bypass a pause, a shared resource lock, or deliberately exclusive work.
 
-The reserved-capacity integration test runs the actual three-lane worker against
-an isolated PostgreSQL database. Three long jobs are submitted over HTTP through
-the dashboard job API, two are held running, and the third remains queued. Both
-human-started light and bounded network checks must reach `succeeded` while those
-two jobs remain active. The same test covers long network jobs, which do not qualify
-for the reserved lane. Pause, shared-host leases and exclusive-work guards remain
-covered separately.
-
 Run details distinguish elapsed time, last progress and worker responsiveness.
 Quiet package managers are not classified as stuck. Update jobs retain bounded,
 verified per-item receipts even if a later item fails. Missing health probes remain
@@ -146,18 +138,18 @@ temporarily removed target can recover its existing schedule when reintroduced.
 
 ## Release qualification and rollout
 
-1. Run the repository's Bun checks, unit/component tests, isolated PostgreSQL
-   integration tests, both builds, built smoke tests and Docker lifecycle smoke.
+1. Run the repository's Bun checks, migration metadata checks and application
+   builds. Manually verify the affected behavior in the development applications.
 2. Review the additive dashboard migration: `job_runs.results` retains bounded safe
    receipts, and `workers.reserved_capacity` reports actual registered reservations.
    Existing rows receive empty results/zero reservation; no identity schema changes.
 3. Build and publish through the normal reviewed release workflow. Record the
    previous image digests and a verified dashboard database backup.
 4. Pause admission, let active work finish, stop dashboard and worker, explicitly
-   apply the released dashboard migration, and start both from the same tested
+   apply the released dashboard migration, and start both from the same released
    digest. Auth needs no migration or restart for these dashboard features.
 5. Verify readiness, one reserved slot at concurrency 3, and a human-started check
-   alongside two busy general slots using the disposable test deployment. Resume
+   alongside two busy general slots in the development environment. Resume
    the previous worker pause state after production readiness checks.
 6. Review and enable specific restart recipes separately. Qualify a noncritical
    service restart and a worker-independent host restart in an agreed maintenance

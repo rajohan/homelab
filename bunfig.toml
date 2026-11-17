@@ -10,15 +10,6 @@ shell = "bun"
 plugins = ["./scripts/development/routerHmr.ts", "bun-plugin-tailwind"]
 env = "disable"
 
-[test]
-coverageSkipTestFiles = true
-coveragePathIgnorePatterns = [
-    "**/dist/**",
-    "**/node_modules/**",
-    "tests/**",
-    "apps/**/testing/**",
-]
-
 [fmt]
 # Keep the existing printing style; sortImports opts into Bun's named-import sorting.
 flavor = "oxfmt"

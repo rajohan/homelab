@@ -62,8 +62,7 @@ Uncertain provider/tool outcomes are never automatically replayed. Images select
 for the turn support PNG, JPEG and WebP up to 8 MiB each, with a 24 MiB encoded turn
 context limit; tool screenshots use the existing validated image boundary.
 
-Qualification tests use an isolated database and local HTTP fixtures, never a real
-provider account. Live subscription qualification is a separate deployment step.
+Live subscription verification is a separate, explicitly authorized deployment step.
 Relevant upstream contracts: [models](https://dev.synthetic.new/docs/api/models),
 [Chat Completions](https://dev.synthetic.new/docs/openai/chat-completions) and
 [subscription quotas](https://dev.synthetic.new/docs/synthetic/quotas).
@@ -79,7 +78,7 @@ credentials or rely on undocumented endpoints.
 ## Run the pilot
 
 Use Bun from `.bun-version` and `bun install --frozen-lockfile`. Mira pins the official
-`@openai/codex` package, including its native platform package, in its own workspace.
+`@openai/codex` package, including its native platform package, in the root manifest.
 Use that package's native executable directly; system wrappers may change the user
 or discard `CODEX_HOME`. Scripted launchers are rejected. The protocol was qualified with Codex CLI 0.164.0;
 regenerate schemas and rerun this pilot when a runtime update changes that contract.
@@ -99,8 +98,27 @@ Example nonsecret external configuration (replace paths for the selected host):
 }
 ```
 
-Use the native executable and same explicit `CODEX_HOME` for `login --device-auth`; the owner completes
-the login in their browser. Then run:
+The dashboard's Chat connection status verifies the stored ChatGPT login with an
+managed-authentication refresh during periodic inspection and after login. Expired or
+revoked credentials are shown separately from connection failures. Quota telemetry is
+optional: a quota-service error alone does not block model discovery or inference.
+Turn preparation reuses the periodic authentication check and refreshes again only
+if the provider rejects authorization.
+
+An operator with Run jobs and Worker control permission can select **Sign in again**.
+The existing native device-code flow supplies an OpenAI link and one-time code directly
+in Chat. Only the initiating operator sees that code. Complete the login on OpenAI's
+page; the dashboard confirms verified success and refreshes the model catalog.
+The code is cleared after completion, cancellation, expiry or executor restart.
+Provider credentials stay in the existing private Codex home.
+
+Messages waiting for authentication display the reason and retain their existing
+queue identity. The normal Stop control cancels them. Reconnecting resumes unstarted
+messages automatically; failed or uncertain turns that already reached the provider
+are not replayed. Connection failures retry automatically without requiring a new login.
+
+For initial host setup, the native executable with the same explicit `CODEX_HOME`
+also supports `login --device-auth`. For the optional runtime qualification, run:
 
 ```sh
 bun --no-env-file apps/mira/src/server/cli/qualify.ts /absolute/path/to/pilot.json
@@ -156,11 +174,6 @@ keys and GitHub tokens are not forwarded. This environment filtering is not an O
 security sandbox: production execution still needs its planned service identity,
 filesystem/network restrictions and scoped service adapters.
 
-Tests use a synthetic child process for handshake ordering, terminal events arriving
-before start acknowledgement, tool authority, concurrent turns, cancellation,
-timeouts, malformed frames, disconnects and diagnostic redaction. They use no real
-sessions or network calls.
-
 ## Before production integration
 
 - The product core now persists conversations, turns, outcomes and tool receipts
@@ -181,7 +194,7 @@ sessions or network calls.
 
 Initialization must return the canonical dedicated `codexHome` before account inspection. Effective configuration must retain every disabled capability, web search disabled by default, file-only credentials, the OpenAI provider and no custom provider definitions or MCP servers. Direct manual Chat enables live provider web search at thread start and resume. Synthetic Chat uses the subscription search endpoint and returns source URLs. Tasks and automations keep their existing tool sets. Thread start and resume must also report `modelProvider: openai`.
 
-The cached system skills are verified against the complete SHA-256 manifest from the pinned upstream `rust-v0.167.0` bundle. Extra, missing, altered or linked entries fail closed, regardless of the Codex marker. A Codex dependency update must update the manifest from the corresponding official source and rerun live qualification; a test checks the versions stay aligned.
+The cached system skills are verified against the complete SHA-256 manifest from the pinned upstream `rust-v0.167.0` bundle. Extra, missing, altered or linked entries fail closed, regardless of the Codex marker. A Codex dependency update must update the manifest from the corresponding official source and rerun live qualification.
 
 The follow-up qualification passed with the stricter checks on 2026-10-24: streamed response, registered tool call, resume after process replacement, interruption and recovery using the isolated Mira login.
 
@@ -260,57 +273,26 @@ The pinned Codex 0.164.0 generated `DynamicToolCallResponse` schema includes
 `inputImage` with `imageUrl`; generated schema support alone is not a successful
 live visual qualification.
 
-## Packaged executor qualification
+## Packaged executor verification
 
-Mira's image includes both `codex` and its sibling `codex-code-mode-host` from
-the same pinned native package. Code mode is required for the registered product
-tools. A successful sign-in, model catalog or text response does not prove that
-those tools work. The credential-free artifact smoke test executes both binaries;
-the container-image workflow runs it before publication.
-
-To qualify the actual service, use a Linux Docker host as UID 1000 with local
-`postgres:18` and the exact Mira image built from the current checkout:
+Main bundles `codex` and its sibling `codex-code-mode-host` from the same root-pinned
+native package. Build it with:
 
 ```sh
-bun --no-env-file apps/dashboard/src/server/testing/miraContainerQualification.ts homelab-release/mira:tested /absolute/dedicated-mira-codex-home
-# Optionally select an explicitly available model for this synthetic qualification:
-bun --no-env-file apps/dashboard/src/server/testing/miraContainerQualification.ts homelab-release/mira:tested /absolute/dedicated-mira-codex-home gpt-6-luna
+docker build -f deploy/Dockerfile --build-arg APP=homelab -t homelab-main:local .
 ```
 
-This is an operator-invoked live test that consumes ChatGPT plan usage, not an
-ordinary CI check. Use only Mira's separately approved profile, with other users of
-that profile stopped. Never use an OpenClaw or desktop login directory. The test
-mounts that profile read/write so the native runtime owns refresh and history; it
-does not read or print credentials. Its optional model choice affects only the
-synthetic configuration and never changes production preferences or silently falls
-back to another model.
+The former packaged-executor test harness has been removed. A successful build
+alone does not establish provider login or tool readiness. After an authorized
+release deployment, use the normal Chat interface to complete a response with a
+read-only product tool, continue the same conversation, and confirm the recorded
+outcome and service readiness. Use the established deployment procedure for
+backup, migration and recovery; do not mount a live profile into a second executor.
 
-The harness resolves both local images to immutable IDs without pulling. It starts
-an isolated Docker network, a dedicated PostgreSQL database with persistent test
-storage, and the real executor entry point with the production resource/security
-restrictions. Only the synthetic database has a loopback host port. No integration
-tokens or production database are supplied. The fixture sends text, PDF and PNG
-attachments through the durable queue and requires a successful `mira_tasks_list`
-receipt. It then stops and removes the executor, queues a continuation while no
-executor exists, and verifies a new worker resumes the same provider thread with
-the earlier marker. Finally it requires recorded provider-history deletion and a
-clean zero-exit service shutdown before removing its fixtures.
-
-On failure or interruption, shutdown is attempted and synthetic fixtures are
-retained. The printed directory contains `retained.json` with exact resource IDs
-and whether shutdown was confirmed. Inspect those resources only. Before deleting
-them, cancel any active synthetic run, delete its conversation through the product
-conversation service, and run the original executor against the retained synthetic
-database until all `provider_thread` references are cleared. The profile itself is
-never removed. A failed assertion is not a successful qualification, and retained
-history must not be hidden by dropping its database.
-
-On 2026-10-28 the actual hardened image passed this live service qualification
-with the separately approved Mira profile and the advertised `gpt-6-luna` model:
-text/PDF/image input, recorded product tool, queued-while-stopped continuation,
-same provider thread under a new worker, provider-history deletion and graceful
-shutdown. The credential-free smoke also rejected an image missing the code-mode
-host. This does not qualify production cutover or Windows computer control.
+For a separately authorized protocol check with a dedicated profile, the supported
+manual commands remain `apps/mira/src/server/cli/qualify.ts` and `qualifyVisual.ts`,
+described above. They consume provider allowance and are never run by CI. They
+check the adapter protocol, not the full packaged service or Windows access.
 
 ### Chat run duration
 
@@ -362,3 +344,34 @@ with the pinned Codex runtime on 2026-11-11 preserved a visually read random val
 the original task reference and completed-action context after image-free transfer;
 both generated test threads were deleted afterward. Production activation uses the
 normal reviewed release and additive `provider_retired_threads` migration.
+
+## Voice
+
+Set `HOMELAB_MIRA_OPENAI_API_KEY` in the existing scoped Doppler dashboard configuration.
+The dashboard exchanges WebRTC offers with OpenAI; the API key never reaches the browser.
+No additional browser package, runtime service or production image is needed.
+
+Microphone capture, microphone pause and spoken replies are independent. Turning the
+microphone off releases its tracks; pausing removes its track from the sender while replies
+can still play. With both directions off, the audio connection closes. A message's speaker
+button reads that earlier reply without enabling automatic spoken replies. Stop reading
+only stops audio; the ordinary Stop action still stops Mira's task.
+
+The voice model selector uses the account's current Realtime catalog (initially
+`gpt-realtime-2.1-mini`). Built-in speaking voices are selected separately and can be previewed.
+These preferences belong to the selected conversation in this browser. The selected ChatGPT
+or Synthetic conversation model, credentials, permissions and billing still handle all
+reasoning, tools and tasks. OpenAI API usage pays only for voice and transcription; campaign
+credit balance is deliberately not displayed.
+
+Final speech transcripts enter the same durable, idempotent message route as typed text,
+including guidance while Mira works. Replies remain visible as text. A lost acknowledgement
+reuses the same request ID; a broken audio connection never replays old microphone audio or
+spoken replies. Unsent transcripts remain visible and can be retried or discarded. Leaving
+the conversation releases capture. Browser microphone permission requires HTTPS or localhost.
+
+The voice session has no tools and cannot automatically answer microphone input. Input uses
+server VAD with noise reduction and `gpt-transcribe`; the browser requests echo cancellation.
+Completed input audio is removed immediately. Spoken output uses explicit text with an
+out-of-band response, so the voice model receives no full task history or tool output. Long
+replies are read in bounded chunks, and an enabled session is renewed before its time limit.

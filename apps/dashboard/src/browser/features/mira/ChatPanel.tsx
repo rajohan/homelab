@@ -16,17 +16,14 @@ import { useNavigate } from "@tanstack/react-router";
 import {
     Archive,
     Brain,
-    Cloud,
     Files,
-    GitPullRequest,
     Globe,
-    Mail,
     MessageSquare,
     Monitor,
     Pencil,
     Trash2,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
@@ -34,15 +31,18 @@ import { BrowserAccessDialog } from "./BrowserAccessDialog";
 import { BrowserAccessPanel } from "./BrowserAccessPanel";
 import { ChatComposer } from "./ChatComposer";
 import { readChatDisplay, saveChatDisplay } from "./chatDisplay";
+import { ChatgptConnection } from "./ChatgptConnection";
 import { ChatSettings } from "./ChatSettings";
 import { ChatTranscript } from "./ChatTranscript";
 import { ComputerAccessDialog } from "./ComputerAccessDialog";
 import { ComputerAccessPanel } from "./ComputerAccessPanel";
 import { FileLibrary } from "./FileLibrary";
 import { LiveChatActivity } from "./LiveChatActivity";
+import { MiraVoice } from "./MiraVoice";
 import { ProposedChanges } from "./ProposedChanges";
 import { ProviderQuota } from "./ProviderQuota";
 import { readChatUpdate } from "./readChatUpdate";
+import { MiraVoiceConnection } from "./voiceConnection";
 
 /**
  * Send durable messages, observe streamed text and stop or manage an owned conversation.
@@ -54,16 +54,7 @@ export function ChatPanel({
     onLibrary,
 }: {
     readonly id: string;
-    readonly onLibrary: (
-        library:
-            | "files"
-            | "memory"
-            | "mail"
-            | "publications"
-            | "social"
-            | "daytona"
-            | "code"
-    ) => void;
+    readonly onLibrary: (library: "files" | "memory") => void;
     readonly onChooseConversation: () => void;
 }) {
     const [text, setText] = useState("");
@@ -77,6 +68,15 @@ export function ChatPanel({
     const request = useRef<{ text: string; id: string } | null>(null);
     const navigate = useNavigate();
     const client = useQueryClient();
+    const [voice] = useState(
+        () =>
+            new MiraVoiceConnection(id, () => {
+                void client.invalidateQueries({
+                    queryKey: ["operations", "mira", "conversation", id],
+                });
+            })
+    );
+    const voiceState = useSyncExternalStore(voice.subscribe, voice.snapshot);
     const [expanded, setExpanded] = useState(false);
     const queryKey = ["operations", "mira", "conversation", id];
     const query = useQuery({
@@ -90,6 +90,12 @@ export function ChatPanel({
                 : 5000,
     });
     const latest = query.data;
+    const archived = Boolean(latest?.conversation.archivedAt);
+    useEffect(() => {
+        if (archived) return;
+        voice.mount();
+        return () => voice.destroy();
+    }, [voice, archived]);
     const history = useInfiniteQuery({
         queryKey: ["operations", "mira", "conversation-history", id, latest?.nextCursor],
         initialPageParam: latest?.nextCursor as string | undefined,
@@ -214,36 +220,6 @@ export function ChatPanel({
                                     onSelect: () => setDialog("computer"),
                                 },
                                 {
-                                    id: "code",
-                                    label: "Code changes",
-                                    icon: GitPullRequest,
-                                    onSelect: () => onLibrary("code"),
-                                },
-                                {
-                                    id: "daytona",
-                                    label: "Code jobs",
-                                    icon: Cloud,
-                                    onSelect: () => onLibrary("daytona"),
-                                },
-                                {
-                                    id: "social",
-                                    label: "Moltbook drafts",
-                                    icon: MessageSquare,
-                                    onSelect: () => onLibrary("social"),
-                                },
-                                {
-                                    id: "publications",
-                                    label: "Publications",
-                                    icon: Globe,
-                                    onSelect: () => onLibrary("publications"),
-                                },
-                                {
-                                    id: "mail",
-                                    label: "Email drafts",
-                                    icon: Mail,
-                                    onSelect: () => onLibrary("mail"),
-                                },
-                                {
                                     id: "files",
                                     label: "Files",
                                     icon: Files,
@@ -294,6 +270,7 @@ export function ChatPanel({
                     }
                 />
             </header>
+            <ChatgptConnection />
             <ProviderQuota
                 quotas={catalog.data?.quotas ?? []}
                 fresh={!catalog.isError && (catalog.data?.fresh ?? false)}
@@ -311,6 +288,10 @@ export function ChatPanel({
             <ChatTranscript
                 key={id}
                 messages={messages}
+                onReadAloud={
+                    conversation.archivedAt ? undefined : (message) => voice.read(message)
+                }
+                readingId={voiceState.readingId}
                 continuation={{
                     hasMore: history.data ? history.hasNextPage : !!latest.nextCursor,
                     loading: history.isFetching,
@@ -362,8 +343,9 @@ export function ChatPanel({
                 }
                 onManage={() => setDialog("computer")}
             />
+            <ProposedChanges key={`proposals:${id}`} conversationId={id} />
             {!conversation.archivedAt && (
-                <ProposedChanges key={`proposals:${id}`} conversationId={id} />
+                <MiraVoice key={id} voice={voice} messages={latest.messages} />
             )}
             {!conversation.archivedAt && (
                 <ChatComposer

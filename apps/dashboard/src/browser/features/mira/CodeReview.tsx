@@ -25,7 +25,7 @@ import { CodeFiles } from "./CodeFiles";
 import { miraStatusTone } from "./statusTone";
 
 /**
- * Review exact tested edits and PR text, then follow durable publication and read-only recovery.
+ * Review exact checked edits and PR text, then follow durable publication and read-only recovery.
  * @returns A bounded shared dialog; only a fresh verified source can be approved.
  */
 export function CodeReview({
@@ -47,6 +47,9 @@ export function CodeReview({
         queryFn: () => api.mira.code.source.query({ id: draft.id }),
         enabled: draft.state === "draft",
     });
+    const cancel = useOperation(() =>
+        api.mira.code.cancel.mutate({ id: draft.id, version: draft.version })
+    );
     const approve = useOperation(() =>
         api.mira.code.approve.mutate({
             id: draft.id,
@@ -64,7 +67,7 @@ export function CodeReview({
             title={draft.state === "draft" ? "Review code proposal" : "Code publication"}
             size="wide"
             onClose={onClose}
-            dismissible={!approve.isPending}
+            dismissible={!approve.isPending && !cancel.isPending}
         >
             <div className="space-y-4">
                 <Card className="space-y-4 bg-primary-900/40">
@@ -88,13 +91,11 @@ export function CodeReview({
                 {draft.state === "draft" && (
                     <Card className="space-y-3 bg-primary-900/40">
                         <SectionHeader
-                            title="Tested files"
+                            title="Checked files"
                             icon={CheckCheckIcon}
                             description="Review the complete file replacements and deletions below."
                         />
-                        {source.isPending && (
-                            <LoadingState label="Verifying tested edits…" />
-                        )}
+                        {source.isPending && <LoadingState label="Verifying edits…" />}
                         {source.error && <ErrorNotice error={source.error} />}{" "}
                         {source.data && <CodeFiles files={source.data.plan.files} />}
                     </Card>
@@ -114,11 +115,28 @@ export function CodeReview({
                 )}
                 {approve.error && <ErrorNotice error={approve.error} />}
                 {inspect.error && <ErrorNotice error={inspect.error} />}
+                {cancel.error && <ErrorNotice error={cancel.error} />}
                 <ActionGroup>
+                    {["draft", "queued"].includes(draft.state) && (
+                        <Button
+                            variant="secondary"
+                            busy={cancel.isPending}
+                            disabled={approve.isPending}
+                            onClick={() =>
+                                void cancel
+                                    .mutateAsync(undefined)
+                                    .then(onClose)
+                                    .catch(() => {})
+                            }
+                        >
+                            Cancel action
+                        </Button>
+                    )}
                     {draft.state === "draft" && (
                         <Button
                             busy={approve.isPending}
                             disabled={
+                                cancel.isPending ||
                                 current.isError ||
                                 current.isFetching ||
                                 source.isError ||

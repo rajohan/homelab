@@ -42,16 +42,15 @@ It binds replay to the current user/session, keeps original form input, and canc
 logout, user change or cancellation. It never retries an ambiguous network outcome.
 
 Generic UI never imports identity features or app internals. Apps import presentation from
-`@homelab/ui` and account behavior from `@homelab/ui/identity`; this is one package with explicit
-entry points, not two overlapping UI packages. The shared `PasswordForm` owns confirmation
+`@homelab/ui` and account behavior from `@homelab/ui/identity`; these are aliases to the same shared source tree. The shared `PasswordForm` owns confirmation
 validation; the generic `FieldsForm` accepts validation without knowing about passwords.
 
 Each React component lives in its own named file; `react/no-multi-comp` enforces this. Related
 components sit together in `layout/`, `pages/`, `components/panels/` or `components/dialogs/`.
 Hooks and API clients are separate from presentation. Server modules are grouped into
-`config/`, `http/`, `security/`, `database/` and `oidc/`, with tests beside the appropriate layer.
+`config/`, `http/`, `security/`, `database/` and `oidc/`.
 
-Both apps import `@homelab/ui/styles`. The shared UI stylesheet owns the Mira dark base,
+Both apps import the same stylesheet from `packages/ui/src/styles/index.css`. The shared UI stylesheet owns the Mira dark base,
 focus indicators, scrollbar styling and Tailwind setup. The root `tailwind.config.ts` owns
 the primary/accent palettes; app CSS entrypoints only register each app's browser source.
 Do not introduce app-specific copies of global styling or hardcoded replacements for these
@@ -74,19 +73,19 @@ immutable events with an idempotency key. Personal acknowledgements are separate
 acknowledging an event cannot hide it for another operator. Job outcomes publish in the settlement
 transaction, and application availability publishes only on transitions. See [notifications](notifications.md).
 
-## Runtime qualification
+## Runtime and delivery
 
-the pinned Bun Canary revision runs both apps and the OIDC library's private Node-HTTP-compatible listener. That
-listener binds an ephemeral loopback port and is never directly exposed. The public Bun
-listener bounds request size and normalizes proxy metadata before reaching the protocol engine.
+One root manifest and lockfile supply dependencies. Auth has its own deployable
+image. Main services share one image with Chromium and the package-managed CUA SDK;
+browser sessions and code execution still use their existing resource boundaries.
+The small network proxy retains its separate image and existing network scopes.
 
-The OIDC library officially supports Node LTS, not Bun. Real HTTP/database tests and built
-smoke tests qualify the pinned combination locally; they do not extend upstream support.
-Bun syntax/identifier minification is disabled for the runtime bundle: the OIDC library uses
-class names for TTL/model lookup, and syntax folding broke the built token endpoint. Whitespace
-minification remains enabled. A configured built-runtime OIDC smoke test prevents regression.
+Bun builds the real app for production and serves the same source during development.
+The development command adds temporary configuration, identity and database state;
+it does not implement a second backend or fake infrastructure APIs.
 
-Drizzle ORM/Kit 1.0.0-rc.5-5935859 and Effect 4.0.0-rc.115 are intentional prerelease dependencies.
-Review upgrades together with their integration tests, not only the package manager's output.
+The OIDC library officially supports Node LTS. Its private adapter listener stays
+on loopback behind Bun. Runtime minification keeps class names and disables syntax
+folding because the protocol library uses them. Review runtime upgrades carefully.
 
-See [security](identity-security.md) and [operations](identity-operations.md).
+See [releases](releases.md), [dependencies](dependencies.md) and [operations](identity-operations.md).

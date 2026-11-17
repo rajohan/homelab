@@ -92,8 +92,7 @@ The PVE metric contract is checked against
 Agentless guest history uses the current counters `pve_network_receive_bytes_total`,
 `pve_network_transmit_bytes_total`, `pve_disk_read_bytes_total`, and
 `pve_disk_written_bytes_total`. That exporter also exposes deprecated gauge aliases;
-the integration deliberately uses the counter replacements. Unit tests cover these
-upstream labels and all four history expressions with synthetic data.
+the integration deliberately uses the counter replacements.
 
 ## Interpretation
 
@@ -190,18 +189,10 @@ them to avoid duplicate series. `metrics_success` and sample freshness guard bot
 current values and history; an accounting failure never changes app health.
 Native history begins at deployment, without copying host history into app graphs.
 
-The native collector tests use temporary synthetic cgroups and clean them up:
-`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s deploy/monitoring -p 'test_*.py'`.
+## Local development
 
-## Local preview
-
-`bun run dev:identity` remains fully isolated by default. To preview real **read-only
-telemetry** while keeping identity and dashboard databases disposable, explicitly
-set `HOMELAB_PREVIEW_METRICS_URL` to an endpoint the development host may read. Do
-not use production identity/database credentials. Stop with Ctrl+C to remove the
-owned development database and all synthetic accounts.
-
-The monitoring integration is tested with local synthetic HTTP responses and
-disposable PostgreSQL databases. Chart data preparation and resource normalization
-have unit tests; UI states have Happy DOM tests. Browser inspection is still needed
-for chart sizing, keyboard navigation and narrow-screen layout.
+`bun run dev` uses the real applications with a temporary database and synthetic
+account. Unconfigured monitoring integrations remain unavailable. Use
+`bun run dev:services` with explicit development configuration when read-only
+telemetry is needed. Never use production identity/database credentials. Stop the
+temporary development command with Ctrl+C to remove its database.

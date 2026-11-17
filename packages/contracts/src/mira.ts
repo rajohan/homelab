@@ -22,6 +22,24 @@ export const miraConversationPageSchema = v.strictObject({
     ...miraPageSchema.entries,
     before: v.optional(miraConversationCursorSchema),
 });
+export const miraActionKindSchema = v.picklist([
+    "code",
+    "job",
+    "mail",
+    "publication",
+    "social",
+]);
+export const miraActionCursorSchema = v.strictObject({
+    id: idSchema,
+    kind: miraActionKindSchema,
+    pending: v.boolean(),
+    createdAt: v.pipe(v.string(), v.isoTimestamp()),
+});
+export type MiraActionCursor = v.InferOutput<typeof miraActionCursorSchema>;
+export const miraActionPageSchema = v.strictObject({
+    id: v.exactOptional(idSchema),
+    before: v.exactOptional(miraActionCursorSchema),
+});
 export const miraHistorySearchSchema = v.strictObject({
     query: v.pipe(text(160), v.minLength(2)),
 });
@@ -207,6 +225,8 @@ export interface MiraConversation {
 }
 export interface MiraMessagePart {
     id: string;
+    /** Speaker for a question/answer segment; ordinary replies inherit their message role. */
+    role?: "user" | "assistant";
     /** Unicode code-point offset, matching PostgreSQL substring and history chunks. */
     offset: number;
     createdAt: string;

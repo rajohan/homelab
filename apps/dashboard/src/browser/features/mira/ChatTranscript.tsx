@@ -17,7 +17,11 @@ export function ChatTranscript({
     messages,
     continuation,
     activity,
+    onReadAloud,
+    readingId,
 }: {
+    readonly onReadAloud?: ((message: MiraMessage) => void) | undefined;
+    readonly readingId?: string | null;
     readonly activity?: ReactNode;
     readonly messages: MiraMessage[];
     readonly continuation: InfiniteScrollContinuation;
@@ -113,7 +117,11 @@ export function ChatTranscript({
                         )
                         .map((message) => (
                             <div key={message.id} data-message-id={message.id}>
-                                <ChatMessage message={message} />
+                                <ChatMessage
+                                    message={message}
+                                    onReadAloud={onReadAloud}
+                                    reading={readingId === message.id}
+                                />
                             </div>
                         ))}
                     {activity}

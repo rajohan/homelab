@@ -186,7 +186,7 @@ export async function claimMiraRun(
                         : (catalog.nativeDefaultModel ?? null);
                 await query`UPDATE mira_runs SET settings=jsonb_set(settings,'{model}',to_jsonb(COALESCE(settings->>'model',${automatic}::text))) WHERE id=${run.id}`;
             }
-            await query`UPDATE mira_runs SET state = 'running', worker_id = ${workerId}, lease_token = ${leaseToken}, lease_expires_at = clock_timestamp() + interval '30 seconds', lane = ${lane}, started_at = clock_timestamp(), observation_hash = ${observationHash} WHERE id = ${run.id}`;
+            await query`UPDATE mira_runs SET state = 'running', message = NULL, worker_id = ${workerId}, lease_token = ${leaseToken}, lease_expires_at = clock_timestamp() + interval '30 seconds', lane = ${lane}, started_at = clock_timestamp(), observation_hash = ${observationHash} WHERE id = ${run.id}`;
             await query`UPDATE mira_messages SET state = 'streaming' WHERE id = ${run.assistantMessageId}`;
             await auditMira(
                 query,
@@ -423,4 +423,25 @@ export async function saveMiraActivity(
         { id: string }[]
     >`UPDATE mira_runs SET activity = ${JSON.stringify(activity)}::text::jsonb WHERE id = ${run.id} AND state = 'running' AND NOT cancel_requested AND lease_token = ${run.leaseToken} AND lease_expires_at > now() RETURNING id`;
     return rows.length === 1;
+}
+
+/** Return a claimed message to its existing queue entry before submitting anything to the provider.
+ * @param client - Executor database.
+ * @param run - Current fenced lease, with no provider turn or tool receipts.
+ * @param message - Safe actionable explanation.
+ * @returns Whether the unstarted message was preserved for automatic dispatch after reconnecting.
+ */
+export async function deferMiraRun(
+    client: SQL,
+    run: MiraClaim,
+    message: string
+): Promise<boolean> {
+    return client.begin(async (query) => {
+        const rows = await query<
+            { id: string }[]
+        >`UPDATE mira_runs SET state='queued',message=${message},worker_id=NULL,lease_token=NULL,lease_expires_at=NULL,started_at=NULL,lane=NULL WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() AND provider_turn IS NULL AND NOT EXISTS(SELECT 1 FROM mira_tool_receipts WHERE run_id=${run.id}) RETURNING id`;
+        if (!rows[0]) return false;
+        await query`UPDATE mira_messages SET state='queued' WHERE id=${run.assistantMessageId}`;
+        return true;
+    });
 }

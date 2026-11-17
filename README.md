@@ -1,151 +1,81 @@
 # Homelab
 
-A modular home infrastructure dashboard with an independently deployable identity service.
+A home infrastructure dashboard, independent Auth service and Mira assistant.
+The web app and Windows client share the same React UI and server workflows.
 
-Account security, OIDC, ForwardAuth, background jobs, automation access and infrastructure
-monitoring are implemented. New application controls and the notification inbox are developed
-independently of production rollout. A PR, successful build or green readiness check is not
-approval to change live services, identities or routes.
+## Develop
 
-## Start developing
-
-Use the immutable Bun Canary package in `.bun-version` and the exact source revision in
-`.bun-revision`. With stable Bun installed, bootstrap it into this checkout first:
+Use the Bun package and revision in `.bun-version` and `.bun-revision`:
 
 ```sh
 bun --no-env-file scripts/installBun.ts "$PWD/.cache/bun"
 export PATH="$PWD/.cache/bun/bin:$PATH"
-```
-
-In PowerShell, use `"$PWD/.cache/bun"` for the same install command, then
-`$env:PATH = "$PWD/.cache/bun/bin;$env:PATH"`. The installer supports glibc Linux and
-Windows x64. Alpine/musl is rejected before downloading. It refuses to overwrite an
-existing executable and does not change the global Bun installation.
-For a pin update, choose a fresh destination. Continue with:
-
-```sh
 bun install --frozen-lockfile
 bun run setup
-bun run dev:identity
+bun run dev
 ```
 
-The identity preview requires Docker for one disposable PostgreSQL 18 container. It binds both
-apps and PostgreSQL to loopback, generates independent keys in memory, and seeds only a
-synthetic account: **developer / Development-only-password-123!**. Open
-`http://localhost:3100`. Development emails appear only in the local terminal, never in Resend.
-Use synthetic data only. Ctrl+C closes both apps and removes the exact temporary database;
-nothing is imported from production or retained as a second backup.
+Open `http://localhost:3100`. Sign in as **developer** with
+**Development-only-password-123!**. For the temporary authenticator, run
+`bun run dev --code`. Docker is needed for one disposable PostgreSQL container.
+The command starts the real Auth and Dashboard applications with development
+configuration. UI changes use Bun hot reload; restart for server changes.
+Ctrl+C stops the processes and removes the temporary database.
+No production credentials or data are needed, and there are no mock service APIs.
 
-The preview also serves synthetic Docker/Loki APIs and sample inbox notifications. Application
-controls affect only in-memory demo containers, never the Docker daemon hosting the preview.
-
-When developing on Main, forward **both ports with the same numbers**, because OIDC origins
-and callbacks must match:
+When developing on Main, forward both application ports:
 
 ```sh
 ssh -N -L localhost:3100:127.0.0.1:3100 -L localhost:3101:127.0.0.1:3101 main
 ```
 
-Open `http://localhost:3100`, not an IP alias or a different port. This preview is disposable;
-restart it after backend changes. For persistent, independently running development processes,
-supply isolated configuration and use `bun run dev`, `bun run dev auth` or
-`bun run dev dashboard` (Bun hot reload).
-They never automatically migrate or seed a configured database. See [configuration](docs/identity-operations.md).
-iPhone/NFC acceptance needs private HTTPS origins reachable by the actual device.
+For an already configured development database, `bun run dev:services`
+starts Auth and Dashboard with Bun server hot reload. Pass `auth`, `dashboard`,
+`mira` or `worker` to select services. Configuration is described in
+[identity operations](docs/identity-operations.md).
 
-## Implemented account flows
-
-- Password sign-in, TOTP, WebAuthn security keys/passkeys, one-use recovery codes.
-- Settings for email verification/change, password changes, factor enrollment/removal,
-  recovery codes, session inventory/revocation and security activity.
-- A shared security-verification modal: stale-proof actions pause and retry once after
-  verification. Cancel, logout, changed sessions and ambiguous network failures do not replay.
-- Confidential OIDC code + S256 PKCE, claims, rotating refresh tokens, introspection,
-  revocation and confirmed RP-initiated logout.
-- Traefik ForwardAuth with explicit host/path policies, a trusted proxy credential and
-  host-only resource sessions; public media/API exceptions stay explicit.
-- A dashboard BFF: browser JavaScript never receives access or refresh tokens.
-
-[Security design](docs/identity-security.md) documents limitations and trust boundaries.
-[Operations and cutover](docs/identity-operations.md) covers recovery, Doppler and production gates.
-
-## Operations workspace
-
-- Infrastructure inventory and resource history from the existing monitoring backend.
-- Durable background work, schedule controls, per-run events and narrowly scoped automation tokens.
-- [Application controls](docs/applications.md): existing-container and project lifecycle operations,
-  bounded safe metadata and allowlisted Loki history. Production control is opt-in.
-- [Maintenance](docs/maintenance.md): reserved control-job capacity, verified update receipts, reviewed restart targets and independent Homelab release reporting.
-- [Mira](docs/mira.md): server-side assistant delivery plan and isolated Codex runtime qualification; not yet deployed.
-- [Notifications](docs/notifications.md): durable producer events, personal acknowledgements,
-  filters and virtualized history. Existing Alertmanager/Pushover delivery is unchanged.
-
-## Verification
+## Check and build
 
 ```sh
 bun run check
-bun run test --coverage
 bun run db:check:auth
-export HOMELAB_TEST_DATABASE_URL=postgres://...@127.0.0.1:5432/homelab_auth_test
-bun run test:integration
+bun run db:check:dashboard
 bun run build
-bun run test:smoke
-bash scripts/testDocker.sh
 ```
 
-Integration tests require a **disposable** loopback database named exactly `homelab_auth_test`;
-they delete synthetic fixture data. Never supply a production database. See [testing](docs/testing.md).
-Bun/Happy DOM tests are intentionally used without Playwright, Storybook or Vitest. Physical
-authenticators and real browser security behavior still have a manual acceptance checklist.
+`check` uses the existing formatting, lint and TypeScript rules. There is no
+automated test suite or coverage pipeline. Review behavior manually where needed,
+particularly when changing authentication, external actions or deployment.
 
-`oidc-provider` officially targets Node LTS and emits an unsupported-runtime warning on Bun.
-The pinned library is tested here on the pinned Bun runtime, including actual code exchange, refresh and logout;
-this is compatibility evidence, not an upstream support guarantee. Do not suppress the warning.
-Re-run the protocol and device gates after runtime/library upgrades.
-
-## Layout
+The root `package.json` and `bun.lock` own all JavaScript dependencies. Shared
+source directories use TypeScript aliases; they are not separately installed packages.
 
 ```text
-apps/
-  auth/             Identity API, OIDC, persistence, migrations and sign-in UI
-  dashboard/        Dashboard shell, Settings, OIDC BFF and private tRPC API
-  mira/             Isolated agent runtime pilot (no production service yet)
-packages/
-  ui/               Reusable components and shared identity features
-  contracts/        Browser-safe shared schemas and types
-scripts/            Repository-owned setup, development, build and test commands
-deploy/             Independent application images and routing examples
-docs/               Architecture, security, configuration and operational boundaries
+apps/auth/          Sign-in, OIDC, ForwardAuth, identity API and migrations
+apps/dashboard/     Shared web UI, private API, operations and worker
+apps/mira/          Assistant execution, integrations and computer/browser access
+packages/           Shared UI, contracts, scheduling and notifications
+scripts/            Setup, development, checks, build and publication
+deploy/            Container definitions and deployment configuration
 ```
 
-Both applications separate `src/browser/` from `src/server/`. Within `ui`, generic
-`components/` do not depend on `features/identity/`; account panels, dialogs, API validation
-and verification coordination live in that feature. Each React component has its own file,
-enforced by lint. See [architecture](docs/architecture.md) for the folder conventions.
+## Release and deployment
 
-Auth can run on Edge and dashboard on Main. Shared packages compile into each build;
-neither app needs the other's source tree or process at runtime. Auth has no Docker socket,
-host SSH key, OpenClaw dependency or homelab administration privileges.
+PRs run formatting, lint, types, migration metadata checks and application builds.
+Release Please manages the version and changelog. The release workflow builds
+**Auth**, **Main** and the small **network proxy** once, plus the Windows installer.
+Main's Dashboard, worker, Mira, browser and code execution use the same image.
+Separate containers keep their existing permissions and configuration.
 
-After building, start a service with its scoped runtime environment, for example
-`NODE_ENV=production bun --cwd apps/auth/dist --no-env-file index.js`.
-Use `apps/dashboard/dist` or `apps/mira/dist` for the other services; the dashboard
-worker entry point is `worker.js`. Containers already use these built entry points.
-Startup fails closed when production configuration is missing. These commands select the
-correct artifact directory and disable automatic `.env` loading. See [deployment](deploy/README.md).
+Release publication does not deploy. Use the existing backup, migration and health
+verification procedure. See [releases](docs/releases.md),
+[deployment](docs/release-deployment.md) and [dependencies](docs/dependencies.md).
 
-## Project conventions
+See [contributing](CONTRIBUTING.md), [architecture](docs/architecture.md),
+[security](SECURITY.md), [Mira](docs/mira.md), [operations](docs/operations.md)
+and [application controls](docs/applications.md).
 
-English code, documentation and UI. Bun for installation, tests, scripts, builds and runtime.
-Typed Oxc configuration, strict TypeScript, Tailwind 4, Headless UI, TanStack Form/Query/Router,
-Effect server boundaries, Valibot and private tRPC/SuperJSON. Drizzle and Effect remain on the
-explicitly requested release candidates.
+English code, documentation and UI. Developed with AI assistance. MIT licensed.
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md),
-[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), [architecture](docs/architecture.md),
-[release workflow](docs/releases.md) and [dependency policy](docs/dependencies.md).
-Release-please coordinates versioning; image publication runs with the approved release workflow.
-
-Developed with AI assistance, retaining selected conventions and security-flow behavior from
-[Mira-Dashboard](https://github.com/rajohan/Mira-Dashboard), without importing production
-credentials or identity data. Licensed under [MIT](LICENSE).
+Windows package changes also compile the installer on a Windows runner. UI-only
+changes skip that workflow; it runs no acceptance or test suite.

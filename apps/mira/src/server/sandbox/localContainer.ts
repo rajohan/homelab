@@ -85,7 +85,7 @@ export function localCodeContainerSpec(configuration: Configuration, owner: stri
     v.parse(id, owner);
     return {
         Image: config.imageId,
-        User: "postgres",
+        User: "bun",
         WorkingDir: "/tmp",
         Entrypoint: ["/usr/bin/timeout"],
         Cmd: [
@@ -118,8 +118,6 @@ export function localCodeContainerSpec(configuration: Configuration, owner: stri
             PidsLimit: 1024,
             Tmpfs: {
                 "/tmp": "rw,nosuid,nodev,exec,size=2147483648,mode=1777",
-                // Override the PostgreSQL base image's implicit persistent volume.
-                "/var/lib/postgresql": "rw,nosuid,nodev,noexec,size=1m,mode=0700",
             },
             LogConfig: { Type: "none", Config: {} },
             RestartPolicy: { Name: "no", MaximumRetryCount: 0 },
