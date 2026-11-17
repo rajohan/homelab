@@ -18,6 +18,7 @@ import {
     deploymentPlanSchema,
     type DeploymentRelease,
 } from "./deploymentProtocol";
+import { releaseImageVersion } from "./imageReference";
 import { readHomelabRelease } from "./read";
 
 /**
@@ -86,12 +87,14 @@ export function authDeploymentCurrent(
         return true;
     const next = release.version.split(".").map(Number);
     const older = services.every(({ service, current }) => {
-        const prefix = `ghcr.io/${release.repository.toLowerCase()}/${service.app}:`;
-        if (!current!.image.startsWith(prefix)) return false;
-        const version = /^(\d+)\.(\d+)\.(\d+)@sha256:[a-f0-9]{64}$/
-            .exec(current!.image.slice(prefix.length))
-            ?.slice(1)
+        const version = releaseImageVersion(
+            release.repository,
+            service.app,
+            current!.image
+        )
+            ?.split(".")
             .map(Number);
+
         if (
             !version?.every((part) => Number.isSafeInteger(part)) ||
             !next.every((part) => Number.isSafeInteger(part))

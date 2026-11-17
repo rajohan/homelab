@@ -322,8 +322,10 @@ fails without replacing the original. Already oversized legacy history preserves
 its existing checkpoint and later text without resending the rejected image body.
 Facts visible only in an old, unrecorded screenshot cannot be recovered after expiry.
 
-Completed Codex replies also retire remaining image copies. The predecessor is
-permanently deleted through the native API after the replacement is committed.
+Before the next run starts its first model turn, remaining image copies from the
+previous reply are retired. A completed reply is recorded immediately instead of
+waiting for another provider compaction under a misleading working status. The
+predecessor is permanently deleted through the native API after the replacement is committed.
 Failed replacements and unacknowledged deletions remain in the durable retirement
 queue; cleanup retries only while that conversation is idle. Failed or interrupted
 runs preserve the source for the next safe maintenance attempt. User-uploaded files,

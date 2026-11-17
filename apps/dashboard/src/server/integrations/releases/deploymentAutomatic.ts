@@ -21,6 +21,7 @@ import {
     type DeploymentPlan,
 } from "./deploymentProtocol";
 import { deploymentWindowEnd } from "./deploymentWindow";
+import { releaseImageVersion } from "./imageReference";
 import { readHomelabRelease } from "./read";
 
 /**
@@ -50,11 +51,12 @@ export function automaticReleaseEligible(
             const observed = (host === target ? plan.expected : plan.authExpected)
                 ?.containers[service.name];
             if (!observed) return false;
-            const prefix = `ghcr.io/${plan.release.repository.toLowerCase()}/${service.app}:`;
-            if (!observed.image.startsWith(prefix)) return false;
-            const before = /^(\d+)\.(\d+)\.(\d+)@sha256:[a-f0-9]{64}$/
-                .exec(observed.image.slice(prefix.length))
-                ?.slice(1)
+            const before = releaseImageVersion(
+                plan.release.repository,
+                service.app,
+                observed.image
+            )
+                ?.split(".")
                 .map(Number);
             if (
                 !before?.every((part) => Number.isSafeInteger(part)) ||

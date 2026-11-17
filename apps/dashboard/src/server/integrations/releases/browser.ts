@@ -1,6 +1,7 @@
 import * as v from "valibot";
 
 import { readReleaseAsset } from "./asset";
+import { releaseImageVersion } from "./imageReference";
 
 const manifestSchema = v.object({
     version: v.pipe(v.string(), v.regex(/^\d+\.\d+\.\d+$/)),
@@ -73,13 +74,11 @@ export async function readRuntimeRelease(options: {
             manifest.images.length !== apps.length ||
             new Set(manifest.images.map((image) => image.app)).size !== apps.length ||
             !manifest.images.every((image) => apps.includes(image.app)) ||
-            !manifest.images.every((image) => {
-                const prefix = `ghcr.io/${repository.toLowerCase()}/${image.app}:${version}@sha256:`;
-                return (
-                    image.reference.startsWith(prefix) &&
-                    /^[a-f0-9]{64}$/.test(image.reference.slice(prefix.length))
-                );
-            })
+            !manifest.images.every(
+                (image) =>
+                    releaseImageVersion(repository, image.app, image.reference) ===
+                    version
+            )
         )
             return null;
         const name = `${kind}-manifest-${build.run_attempt}.json`;

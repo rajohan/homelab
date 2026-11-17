@@ -4,6 +4,7 @@ import { readBoundedJson } from "../http/readJson";
 import { readReleaseAsset } from "./asset";
 import { readRuntimeRelease } from "./browser";
 import { readComputerDownload } from "./computer";
+import { releaseImageVersion } from "./imageReference";
 
 const repositorySchema = v.pipe(
     v.string(),
@@ -180,15 +181,8 @@ export async function readHomelabRelease(
         !manifest.images.some((image) => image.app === "dashboard") ||
         !manifest.images.every(
             (image) =>
-                image.reference.startsWith(
-                    `ghcr.io/${repository.toLowerCase()}/${image.app}:${manifest.version}@sha256:`
-                ) &&
-                /^[a-f0-9]{64}$/.test(
-                    image.reference.slice(
-                        `ghcr.io/${repository.toLowerCase()}/${image.app}:${manifest.version}@sha256:`
-                            .length
-                    )
-                )
+                releaseImageVersion(repository, image.app, image.reference) ===
+                manifest.version
         )
     )
         throw new Error("Release image references do not match the published version");

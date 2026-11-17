@@ -141,12 +141,15 @@ monitoring and the explicit production cutover gate.
 ## Published images
 
 For production, wait for the release's **Container images** workflow and download its
-`container-images.json`. Each application has its own GHCR digest reference and Compose
-override. Supply only the selected app's scoped runtime environment and the corresponding
-nonsecret image reference:
+`container-images.json`, `browser-image.json` and `daytona-image.json`. Only three GHCR
+packages are published: `auth`, `dashboard` and `mira-browser-proxy`. Dashboard,
+worker, Mira, browser and code execution all use the same immutable `dashboard`
+reference. Their logical roles and Compose overrides still select separate service
+commands and scoped environments; they do not imply separate registry packages.
+Use the complete tag-and-digest reference from the verified manifest:
 
 ```sh
-export HOMELAB_AUTH_IMAGE='ghcr.io/rajohan/homelab/auth@sha256:<auth-digest-from-release>'
+export HOMELAB_AUTH_IMAGE='ghcr.io/rajohan/homelab/auth:<release-version>@sha256:<auth-digest-from-release>'
 docker compose -f deploy/compose.yaml -f deploy/compose.auth-image.yaml pull auth
 docker compose -f deploy/compose.yaml -f deploy/compose.auth-image.yaml up -d --no-build --no-deps auth
 ```
@@ -154,7 +157,7 @@ docker compose -f deploy/compose.yaml -f deploy/compose.auth-image.yaml up -d --
 On Main, deploy dashboard independently:
 
 ```sh
-export HOMELAB_DASHBOARD_IMAGE='ghcr.io/rajohan/homelab/dashboard@sha256:<dashboard-digest-from-release>'
+export HOMELAB_DASHBOARD_IMAGE='ghcr.io/rajohan/homelab/dashboard:<release-version>@sha256:<dashboard-digest-from-release>'
 docker compose -f deploy/compose.yaml -f deploy/compose.dashboard-image.yaml pull dashboard
 docker compose -f deploy/compose.yaml -f deploy/compose.dashboard-image.yaml up -d --no-build --no-deps dashboard
 ```

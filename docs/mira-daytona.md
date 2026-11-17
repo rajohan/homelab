@@ -14,7 +14,7 @@ A job's command outcome, exit code and sandbox cleanup are separate. Cancellatio
 
 ## Version and transport
 
-Mira pins the official `@daytona/api-client` at `0.231.1` in its Bun workspace. The existing weekly Bun Dependabot group includes it; dependency changes follow the existing `chore(deps)` patch-release policy. No third-party package is patched. The generated request-parameter builders provide the current API routes and typed payloads; Homelab sends those requests using its bounded fetch transport. It does not instantiate the high-level SDK, inherit its dotenv configuration, initialize telemetry or start background sockets. Requests use the fixed `https://app.daytona.io/api` origin, reject redirects, omit cookies, cap metadata at 256 KiB and bound headers plus body delivery to 15 seconds. They are not automatically retried.
+Mira pins the official `@daytona/api-client` in the root `package.json` and `bun.lock`. The existing weekly Bun Dependabot group includes it; dependency changes follow the existing `chore(deps)` patch-release policy. No third-party package is patched. The generated request-parameter builders provide the current API routes and typed payloads; Homelab sends those requests using its bounded fetch transport. It does not instantiate the high-level SDK, inherit its dotenv configuration, initialize telemetry or start background sockets. Requests use the fixed `https://app.daytona.io/api` origin, reject redirects, omit cookies, cap metadata at 256 KiB and bound headers plus body delivery to 15 seconds. They are not automatically retried.
 
 The reviewed official SDK `0.226.1` uses connection retry rules, automatic environment discovery and optional telemetry. Its explicit `otelEnabled: false` does not override an environment value of `true`. The generated client avoids importing those runtime behaviors without a local patch. See the [official clients](https://github.com/daytona/clients) and [Daytona API](https://www.daytona.io/docs/en/api/).
 
@@ -64,7 +64,7 @@ lookup or execution against a renamed resource.
 
 ## Bounded command and file transport
 
-The toolbox pins the paired official `@daytona/toolbox-api-client` at `0.231.1`. It uses generated request builders and the fixed `https://proxy.app.daytona.io/toolbox/<persisted-sandbox-UUID>` origin, never a URL supplied by the provider, a model or a file. It advertises `X-Daytona-SDK-Version` from the installed toolbox package metadata so command logs use the documented structured response. It does not instantiate the high-level SDK, open following sockets or retry writes. No host command, local filesystem path, environment or credential is passed to the sandbox. See [Daytona process sessions](https://www.daytona.io/docs/en/typescript-sdk/process/) and [file operations](https://www.daytona.io/docs/en/typescript-sdk/file-system/).
+The toolbox uses the paired official `@daytona/toolbox-api-client` from the same root manifest and lockfile. It uses generated request builders and the fixed `https://proxy.app.daytona.io/toolbox/<persisted-sandbox-UUID>` origin, never a URL supplied by the provider, a model or a file. It advertises `X-Daytona-SDK-Version` from the installed toolbox package metadata so command logs use the documented structured response. It does not instantiate the high-level SDK, open following sockets or retry writes. No host command, local filesystem path, environment or credential is passed to the sandbox. See [Daytona process sessions](https://www.daytona.io/docs/en/typescript-sdk/process/) and [file operations](https://www.daytona.io/docs/en/typescript-sdk/file-system/).
 
 Each attempt has one deterministic session and at most one submitted command. `open`, `upload` and `submit` independently perform fresh account/membership and sandbox identity/settings checks, then invoke a final caller-owned authorization callback immediately before their external write. At least 30 seconds of the current idle window must remain before a write; the observed absolute expiry is rechecked immediately after the final authorization callback, before dispatch. These callbacks must atomically check owner access, control versions, live lease, phase, exact content approval and limits, and persist each unique phase attempt **before dispatch**. The caller must serialize upload/session/command phases; a provider read is not a lock. Do not use this low-level interface directly as a model tool or treat possession of the API key as user consent.
 
@@ -119,8 +119,10 @@ never evidence that authorizes automatic GitHub writes, merge or deployment.
 The profile does not run image builds or provider qualification inside itself.
 
 `deploy/Dockerfile` builds the shared Main image, including the fixed code harness.
-The release workflow publishes this same image under the existing `daytona-check`
-registry role and records its immutable reference in `daytona-image.json`.
+The release workflow publishes this image once in the `dashboard` registry package.
+`daytona-image.json` keeps the logical `daytona-check` role but points to that same
+immutable `dashboard` reference. Import that verified reference for code execution;
+there is no separately published `daytona-check` package.
 Dependabot proposes Docker base updates through normal reviewed PRs. Snapshot
 activation in Daytona remains explicit; importing a release must preserve the
 configured resources and fixed runtime.
