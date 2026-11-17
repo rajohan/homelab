@@ -3,6 +3,7 @@ import * as v from "valibot";
 
 import information from "../package.json";
 import { verifyBun } from "./verifyBun";
+import { verifySkills } from "./verifySkills";
 
 /**
  * Check formatting, lint and TypeScript without changing source files.
@@ -11,6 +12,7 @@ import { verifyBun } from "./verifyBun";
 export async function main(): Promise<void> {
     await verifyBun();
     v.parse(sourceDependencyConfigSchema, information.config);
+    await verifySkills();
     for (const command of ["format:check", "lint", "typecheck"]) {
         const child = Bun.spawn([process.execPath, "run", command], {
             stdin: "inherit",

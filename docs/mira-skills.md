@@ -1,87 +1,101 @@
 # Mira skills
 
-The Automations page contains nine release-owned guidance packages: task tracking,
-AgentMail, Daytona, GitHub, here.now, Moltbook, frontend improvement, Impeccable and
-Intent. These adapt
-selected legacy workflows to the existing native product tools. They do not copy
-the entire legacy skill directory or its scripts and credential paths.
+The Automations page contains nine release-owned skill packages. Impeccable and
+Intent contain the complete original upstream skill trees at the root-manifest
+revisions. Their instructions, references, agent definitions, templates, helper
+script sources, licenses and attribution are preserved as exact UTF-8 bytes with
+their original repository-relative paths. The other seven packages remain
+Homelab's existing native integration guidance.
 
-## Operator controls
+## Original sources and Mira integration
 
-View opens a bounded Markdown preview without enabling anything. Each skill starts
-paused and supports its own reason and optional timed resumption. Pausing prevents
-new guidance loads; it cannot remove text already loaded into a conversation.
-Provider access and automatic-work permissions remain separate controls. Enabling a
-skill never enables an integration, expands a tool set or approves an external action.
+The original entrypoints are
+`.agents/skills/impeccable/SKILL.md` and
+`skills/intent/SKILL.md`.
+There are no replacement summaries of their workflows. Intent includes all 18
+skills, their references and its six agent definitions. Impeccable includes all
+files in its official agent skill directory, including init, critique, audit and
+the accompanying references.
 
-Activation and timed resumption require a fresh, ready executor with the same
-catalog digest. Its heartbeat binds that digest to its process identity, so an old
-executor after rollback cannot inherit a newer executor's compatibility receipt.
-Skill resume deadlines use a dedicated column while the legacy `until` stays null,
-with a database constraint enforcing that separation. Older executors cannot select
-these pauses for their generic resume loop.
-An offline or mismatched executor leaves preview available but activation disabled.
-Deploy the dashboard and executor from the same reviewed release.
+A separate integration note describes how the package is accessed in Mira. It is
+metadata beside the original files, never inserted into or substituted for them.
+The model reads the original entrypoint, selects the actual workflow and follows
+its references. Resolve relative links from the current file; use the exact key
+in the installed catalog. A CLI-style command in the documentation may invoke an
+agent workflow or require an actual executable; these are distinct capabilities.
 
-## Package contract
+Bundling a script or agent definition does not execute it, register a specialist
+agent or expose a native engine, hook or browser overlay. The current tool registry,
+provider capabilities and permissions decide what can run. Use the original
+documented fallback where applicable and report unsupported steps explicitly.
+Never claim an upstream command ran because its documentation was read. No remote
+skill installer runs during synchronization, builds, loading or update discovery.
 
-`apps/mira/src/server/skills/packages.json` is compiled into the application. Each
-entry records its adapter version, required native tools, integration
-controls, repository-context eligibility and complete Markdown files. Upstream skill
-versions, revisions, update feeds and source paths are owned by the root
-`package.json` under `config.skills`; the catalog derives exact source links from it. The initial
-packages contain `SKILL.md`; the format also supports companion Markdown files.
-The API describes every file's byte size and SHA-256 digest, plus a complete package
-digest. Reads require that exact package digest and a manifest-listed file key.
-There is no host-path discovery, network fetch, script execution or remote installer.
+Existing confirmed project context can be reused. Follow the relevant original
+workflow, including its required artifacts and checks, without making the operator
+repeat known facts or inventing missing inputs.
 
-Validation requires exactly one entry for every supported skill, a semantic version,
-HTTPS source links, bounded tool/control names and safe relative Markdown keys.
-Packages allow at most eight files, 48,000 UTF-8 bytes per file and 256 KiB across the
-catalog. Source links identify the documentation used to author the installed instructions.
-The existing updater checks the configured upstream release feeds automatically.
+## Operator controls and access
 
-The model lists applicable guidance with `mira_skills_list` and loads it with
-`mira_skill_read`. Every load rechecks the owner's current pause control. Improvement
-runs and legacy runs without a captured kind can load only repository guidance.
-The existing run lease, cancellation and tool receipt checks still apply. Loading a
-file cannot grant a tool or authorize a privileged effect. Native pinned Codex system
-skill verification remains unchanged.
+View opens the original entrypoint and lets the operator inspect every bundled
+file using the shared Markdown/code preview. Large files have explicit previous
+and next sections; no source is silently shortened or reformatted in storage.
 
-## Updates and qualification
+Each package has its own pause reason and optional timed resumption. Pausing
+prevents new loads; it cannot remove text already loaded in a conversation.
+Loading or enabling a package never enables integrations, expands tool access or
+approves an external action. Native pinned Codex system-skill verification remains
+unchanged, and both supported chat providers use the same Mira skill tools.
 
-Changes to instructions, files or metadata use a Homelab PR, required checks, reviewed
-release and the existing updater. Bump the package version when its guidance changes;
-content and catalog hashes change with the installed bytes. The hourly
-`homelab.dependencies` job reports available Impeccable and Intent updates on Updates,
-using their root-manifest source versions. No manual upstream search is needed.
-An available release is a candidate for updating the adaptation, not proof that new
-guidance has already been installed. Update content and its source pin together. Never run a
-downloaded skill installer as part of updating the catalog.
+Activation and timed resumption require a fresh executor with the matching catalog
+digest bound to its process identity. An old executor after rollback cannot inherit
+a newer compatibility receipt. An offline or mismatched executor leaves preview
+available but activation disabled. Deploy dashboard and executor from the same
+reviewed release. Existing enabled controls remain enabled across a matching update;
+new package controls start paused.
 
-Qualification checks bundle bounds and hashes, owner isolation, exact-version reads,
-pause and timed resume, executor mismatch/rollback, original automation scope and
-expired leases. Use the existing repository checks and disposable development state;
-the project does not maintain an automated test suite.
+## Package and read contract
 
-## Design workflow
+`apps/mira/src/server/skills/packages.json` is compiled into the application.
+Each entry records its original entrypoint, complete text sources, version and
+revision, separate integration note, required native tools, integration controls
+and repository-context eligibility.
 
-The Impeccable and Intent packages are reviewed, passive adaptations pinned to exact
-upstream commits, with their source links, attribution and licenses inside the bundle.
-They are available to both supported chat providers through the existing skill tools.
-Deploy the matching dashboard and Mira release, then enable each package in Skills.
-New packages retain the same initially paused behavior as the existing catalog.
+The root `package.json` under `config.skills` owns upstream version, exact
+commit, official update feed, complete directory/file selection and source-content
+fingerprint. It is the only dependency manifest. Runtime and the normal repository
+check reject a bundle whose version, revision, entrypoint or original-content hash
+does not match these pins.
 
-Intent supports product structure, navigation, user journeys, UX writing and recovery.
-Impeccable supports visual critique, hierarchy, typography, layout, simplification and
-responsive refinement. A whole-dashboard brief covers the shell and all relevant
-routes together; implementation can proceed in coherent parts using shared components.
-Read existing PRODUCT.md and DESIGN.md when present and record accepted decisions,
-without turning the current design's accidental inconsistencies into requirements.
+Packages allow up to 256 files, 2 MiB per file and 8 MiB across the catalog. Only
+regular losslessly decoded UTF-8 files are synchronized; symlinks and submodules
+are unsupported. Keys are bounded relative paths with no traversal segments.
+The API describes complete file sizes and SHA-256 digests and fingerprints the
+original sources together with the separate integration metadata.
 
-These adaptations do not install upstream CLIs, detector binaries, live overlays,
-hooks or specialist agents. They do not add tools or authorize automatic design work.
-Use ordinary language in Chat to request the workflow, for example: “Use Intent and
-Impeccable to review the whole dashboard and improve its shared design.” Reuse the
-established development application for visual feedback and retain normal review and
-deployment requirements.
+`mira_skills_list` returns entrypoints, file keys and current controls.
+`mira_skill_read` defaults to the original entrypoint and returns at most
+24,000 UTF-16 characters. Follow `nextOffset` until null before treating a
+document as fully read; the returned hash always describes the entire file.
+Every segment rechecks the exact package hash, owner's pause, original run scope
+and lease. Loading remains passive: no filesystem discovery or code execution.
+
+## Updates and verification
+
+The existing hourly `homelab.dependencies` job discovers new official upstream
+releases and shows current/available/unknown status on Updates. Its snapshot is
+bound to the exact root manifest. Discovery does not silently install a release.
+
+To incorporate an upstream release, update its root version and immutable revision,
+then run `bun run skills:sync`. The script fetches only those explicit Git commits,
+reads every file in the configured selections without checking out or executing
+upstream code, and regenerates the bundle and its root content fingerprint.
+It preserves original paths and bytes, including CRLF/BOM when present. Temporary
+Git source directories are cleaned on success or failure. Review the original
+content changes and separate integration notes together.
+
+Run normal formatting, lint, types, both migration metadata checks and builds.
+The existing check validates bundle bounds and content/pin consistency offline;
+it does not depend on GitHub availability. Qualification should also compare the
+generated files with the pinned upstream objects and reassemble paged reads.
+There is no separate automated test suite or remote installer.

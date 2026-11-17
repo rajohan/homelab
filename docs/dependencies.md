@@ -79,6 +79,8 @@ pin in the bundled catalog. Internal Homelab guidance follows this repository, w
 Codex's system skills follow the root Codex dependency and generated build manifest.
 
 An available source update still needs the appropriate code/content/checksum change,
-review and Homelab release. Bumping metadata alone does not update an adapted skill.
+review and Homelab release. For skills, `bun run skills:sync` imports the complete original source trees at the
+root pins and updates their content fingerprint. Normal checks reject metadata-only
+version/revision bumps or changed original text. See [Mira skills](mira-skills.md).
 No remote skill installer or upstream executable runs during discovery. Existing
 schedule pauses and installation policies remain separate.

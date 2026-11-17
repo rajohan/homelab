@@ -36,7 +36,7 @@ export async function listMiraSkills(
  * @returns Passive document bytes and their installed version/digest.
  */
 export function inspectMiraSkill(input: v.InferOutput<typeof miraSkillReadSchema>) {
-    const document = readBundledMiraSkill(input.id, input.file);
+    const document = readBundledMiraSkill(input.id, input.file, input.offset);
     if (!document) throw new MiraFailure("NOT_FOUND", "Skill file not found.");
     if (document.packageHash !== input.packageHash)
         throw new MiraFailure(

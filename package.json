@@ -15,7 +15,8 @@
         "db:check:auth": "bun node_modules/drizzle-kit/bin.cjs check --config apps/auth/drizzle.config.ts",
         "db:check:dashboard": "bun node_modules/drizzle-kit/bin.cjs check --config apps/dashboard/drizzle.config.ts",
         "auth:admin": "bun apps/auth/src/server/cli/admin.ts",
-        "dev:services": "bun scripts/dev.ts"
+        "dev:services": "bun scripts/dev.ts",
+        "skills:sync": "bun scripts/syncSkills.ts"
     },
     "dependencies": {
         "@daypicker/react": "10.0.2",
@@ -92,8 +93,16 @@
                 },
                 "paths": [
                     ".agents/skills/impeccable/SKILL.md",
-                    ".agents/skills/impeccable/reference/operate.md"
-                ]
+                    ".agents/skills/impeccable/reference/init.md"
+                ],
+                "include": [
+                    ".agents/skills/impeccable",
+                    "LICENSE",
+                    "NOTICE.md",
+                    "README.md"
+                ],
+                "entrypoint": ".agents/skills/impeccable/SKILL.md",
+                "contentHash": "7cd0400625edec655267e59f85097b074a959fda93611da2308ab0bafd9737d4"
             },
             "intent": {
                 "version": "1.7.4",
@@ -105,8 +114,19 @@
                 },
                 "paths": [
                     "skills/intent/SKILL.md",
-                    "skills/organize/SKILL.md"
-                ]
+                    "HOW-TO-USE.md"
+                ],
+                "include": [
+                    "skills",
+                    "agents",
+                    "hooks",
+                    ".claude-plugin",
+                    "README.md",
+                    "HOW-TO-USE.md",
+                    "LICENSE"
+                ],
+                "entrypoint": "skills/intent/SKILL.md",
+                "contentHash": "4d35adbac4c19780877a5313fb1d4f3f35fe8b9e0e7a825b5f50665be3e5732b"
             }
         },
         "windows": {

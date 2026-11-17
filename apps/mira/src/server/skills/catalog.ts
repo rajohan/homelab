@@ -1,8 +1,10 @@
 import {
+    skillSourceText,
+    validateMiraSkillPackages,
+} from "@homelab/contracts/miraSkillPackages";
+import {
     type MiraSkillDocument,
     type MiraSkillId,
-    miraSkillIds,
-    miraSkillIdSchema,
     type MiraSkillSummary,
 } from "@homelab/contracts/miraSkills";
 import { sourceDependencyConfigSchema } from "@homelab/contracts/sourceDependencies";
@@ -11,118 +13,37 @@ import * as v from "valibot";
 import { config } from "../../../../../package.json";
 import bundle from "./packages.json";
 
-const text = (maximum: number) =>
-    v.pipe(v.string(), v.minLength(1), v.maxLength(maximum));
-const fileSchema = v.pipe(
-    text(160),
-    v.regex(/^(?:[a-z0-9-]+\/)*[a-zA-Z0-9][a-zA-Z0-9_.-]*\.md$/)
-);
-const packageSchema = v.strictObject({
-    id: miraSkillIdSchema,
-    title: text(80),
-    description: text(300),
-    version: v.pipe(text(40), v.regex(/^\d+\.\d+\.\d+$/)),
-    repositoryContext: v.boolean(),
-    sources: v.pipe(
-        v.array(v.pipe(text(500), v.url(), v.startsWith("https://"))),
-        v.minLength(1),
-        v.maxLength(8)
-    ),
-    tools: v.pipe(v.array(v.pipe(text(100), v.regex(/^mira_[a-z_]+$/))), v.maxLength(30)),
-    controls: v.pipe(
-        v.array(v.pipe(text(100), v.regex(/^integration:[a-z-]+$/))),
-        v.maxLength(8)
-    ),
-    files: v.pipe(
-        v.record(
-            fileSchema,
-            v.pipe(
-                text(48_000),
-                v.check((value) => Buffer.byteLength(value, "utf8") <= 48_000)
-            )
-        ),
-        v.check(
-            (files) => Object.hasOwn(files, "SKILL.md") && Object.keys(files).length <= 8
-        )
-    ),
-});
-
-/**
- * Validate the complete bundled guidance without discovering or executing host files.
- * @param input - Release-owned package data; never a model or downloaded installer.
- * @returns Bounded packages with one entry for every supported skill identifier.
- */
-export function validateMiraSkillPackages(input: unknown) {
-    return v.parse(
-        v.pipe(
-            v.array(packageSchema),
-            v.length(miraSkillIds.length),
-            v.check(
-                (entries) =>
-                    new Set(entries.map((entry) => entry.id)).size === entries.length
-            ),
-            v.check(
-                (entries) =>
-                    entries.reduce(
-                        (total, entry) =>
-                            total +
-                            Object.values(entry.files).reduce(
-                                (bytes, content) =>
-                                    bytes + Buffer.byteLength(content, "utf8"),
-                                0
-                            ),
-                        0
-                    ) <= 262_144
-            )
-        ),
-        input
-    );
-}
-
 const sourceConfig = v.parse(sourceDependencyConfigSchema, config);
-if (
-    Object.keys(sourceConfig.skills).some(
-        (id) => !bundle.some((entry) => entry.id === id)
+const packages = validateMiraSkillPackages(bundle);
+for (const [id, source] of Object.entries(sourceConfig.skills)) {
+    const entry = packages.find((item) => item.id === id);
+    if (
+        !entry ||
+        entry.version !== source.version ||
+        entry.revision !== source.revision ||
+        entry.entrypoint !== source.entrypoint ||
+        new Bun.CryptoHasher("sha256")
+            .update(skillSourceText(entry.files))
+            .digest("hex") !== source.contentHash
     )
-)
-    throw new Error("An upstream skill has no bundled adaptation.");
-
-const packages = validateMiraSkillPackages(
-    bundle.map((entry) => {
-        const source = Object.hasOwn(sourceConfig.skills, entry.id)
-            ? sourceConfig.skills[entry.id]
-            : undefined;
-        if (!source) return entry;
-        const base = `https://github.com/${source.update.repository}`;
-        return {
-            ...entry,
-            sources: [
-                `${base}/tree/${source.revision}`,
-                ...source.paths.map((file) => `${base}/blob/${source.revision}/${file}`),
-            ],
-        };
-    })
-);
+        throw new Error(
+            "Bundled skill sources do not match package.json. Run bun run skills:sync."
+        );
+    const base = `https://github.com/${source.update.repository}`;
+    entry.sources = [
+        `${base}/tree/${source.revision}`,
+        ...source.paths.map((file) => `${base}/blob/${source.revision}/${file}`),
+    ];
+}
 const digest = (value: string) =>
     new Bun.CryptoHasher("sha256").update(value).digest("hex");
-
-/**
- * Describe the installed release's guidance without including its instruction bodies.
- * @returns Fresh metadata objects, file hashes and a digest of each complete package.
- */
-export function describeMiraSkillPackages(): Omit<
-    MiraSkillSummary,
-    "control" | "compatibility"
->[] {
-    return packages.map(({ files, ...entry }) => {
+const summaries: Omit<MiraSkillSummary, "control" | "compatibility">[] = packages.map(
+    ({ files, ...entry }) => {
         const ordered = Object.entries(files).toSorted(([left], [right]) =>
             left.localeCompare(right)
         );
         return {
             ...entry,
-            sources: [...entry.sources],
-            tools: [...entry.tools],
-            controls: [...entry.controls],
             packageHash: digest(JSON.stringify([entry, ordered])),
             files: ordered.map(([path, content]) => ({
                 path,
@@ -130,36 +51,63 @@ export function describeMiraSkillPackages(): Omit<
                 bytes: Buffer.byteLength(content, "utf8"),
             })),
         };
-    });
+    }
+);
+
+/**
+ * Describe installed sources and integration notes without including upstream file bodies.
+ * @returns Fresh metadata and fingerprints, computed once for the immutable release.
+ */
+export function describeMiraSkillPackages(): Omit<
+    MiraSkillSummary,
+    "control" | "compatibility"
+>[] {
+    return summaries.map((entry) => ({
+        ...entry,
+        sources: [...entry.sources],
+        tools: [...entry.tools],
+        controls: [...entry.controls],
+        files: entry.files.map((file) => ({ ...file })),
+    }));
 }
 
 /**
- * Read only a manifest-listed passive Markdown file from the compiled bundle.
+ * Read a bounded segment of a manifest-listed original source file without executing it.
  * @param id - Supported package identifier.
- * @param file - Exact manifest key; no filesystem or network resolution is performed.
- * @returns The versioned document, or null for an absent package/file.
+ * @param file - Exact manifest key, or the package's original SKILL.md entrypoint.
+ * @param offset - UTF-16 character offset returned by the previous segment.
+ * @returns Versioned source with the full-file hash and next offset, or null for a missing file.
  */
 export function readBundledMiraSkill(
     id: MiraSkillId,
-    file: string
+    file?: string,
+    offset = 0
 ): MiraSkillDocument | null {
     const entry = packages.find((item) => item.id === id);
-    if (!entry || !Object.hasOwn(entry.files, file)) return null;
-    const summary = describeMiraSkillPackages().find((item) => item.id === id)!;
-    const content = entry.files[file]!;
+    if (!entry) return null;
+    const key = file ?? entry.entrypoint;
+    if (!Object.hasOwn(entry.files, key)) return null;
+    const source = entry.files[key]!;
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > source.length)
+        throw new Error("Invalid skill file offset.");
+    let end = Math.min(offset + 24_000, source.length);
+    if (end < source.length && source.codePointAt(end - 1)! > 0xff_ff) end--;
+    const summary = summaries.find((item) => item.id === id)!;
     return {
         id,
         version: entry.version,
         packageHash: summary.packageHash,
-        path: file,
-        sha256: digest(content),
-        content,
+        path: key,
+        sha256: summary.files.find((item) => item.path === key)!.sha256,
+        content: source.slice(offset, end),
+        offset,
+        nextOffset: end < source.length ? end : null,
+        totalCharacters: source.length,
+        integration: entry.integration,
     };
 }
 
-/** Digest of the complete compiled guidance exposed by this executor release. */
+/** Digest of complete compiled sources and separate integration notes for executor compatibility. */
 export const miraSkillCatalogHash = digest(
-    JSON.stringify(
-        describeMiraSkillPackages().map((entry) => [entry.id, entry.packageHash])
-    )
+    JSON.stringify(summaries.map((entry) => [entry.id, entry.packageHash]))
 );
