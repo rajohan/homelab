@@ -1,6 +1,7 @@
 import { PageHeader } from "@homelab/ui";
 
 import { MaintenancePanel } from "../features/maintenance/MaintenancePanel";
+import { BuildDependencies } from "../features/releases/BuildDependencies";
 import { ReleasesPanel } from "../features/releases/ReleasesPanel";
 import { UpdatesPanel } from "../features/updates/UpdatesPanel";
 
@@ -19,6 +20,7 @@ export function Updates() {
                 <UpdatesPanel />
                 <MaintenancePanel />
                 <ReleasesPanel />
+                <BuildDependencies />
             </div>
         </>
     );

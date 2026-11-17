@@ -50,6 +50,35 @@ Chromium and Linux utilities come from Debian packages in the Main Dockerfile;
 the release build refreshes that package layer weekly. Dependabot monitors both
 application and proxy base images. Installed images update through Homelab releases.
 Windows build-tool pins are centralized in `package.json` under `config.windows`,
-including their checksum and publisher. These non-npm pins require review when updated;
-Dependabot updates the npm dependencies, not custom metadata. The installed companion
+including their checksum, publisher and official update feed. Skill source versions,
+revisions and source paths live under `config.skills`. The updater checks all these
+entries and the root `packageManager` Bun Canary channel every hour; no manual search
+for new upstream releases is required. Dependabot continues to own npm dependencies,
+GitHub Actions and both Dockerfiles. The installed companion
 continues to use the standard Homelab release updater; no locally installed helper is introduced.
+
+## Source dependency checks
+
+The existing worker scheduler runs `homelab.dependencies` hourly alongside release
+checks. Updates shows each manifest pin, upstream version, freshness and unavailable
+feeds. The read-only Check updates action uses the same job and permissions. An
+individual feed failure stays unknown without hiding successful checks or blocking
+Homelab release verification. The snapshot is bound to the exact manifest, so a new
+release or rollback cannot show another version's pins as current.
+
+Impeccable and Intent use their official stable GitHub releases. Inno Setup uses its
+official GitHub release tags; WebView2 uses the stable NuGet SDK feed. Bun follows
+the existing Canary channel and requires matching Linux/Windows package versions.
+Newer stable Bun releases do not silently replace that chosen channel. All reads
+are bounded, and GitHub uses the existing release credential/cache/backoff.
+
+New source entries in `config.windows` or `config.skills` must include a supported
+official update feed; the offline repository check validates this metadata. Skill
+source links are generated from the same root revision instead of carrying another
+pin in the bundled catalog. Internal Homelab guidance follows this repository, while
+Codex's system skills follow the root Codex dependency and generated build manifest.
+
+An available source update still needs the appropriate code/content/checksum change,
+review and Homelab release. Bumping metadata alone does not update an adapted skill.
+No remote skill installer or upstream executable runs during discovery. Existing
+schedule pauses and installation policies remain separate.
