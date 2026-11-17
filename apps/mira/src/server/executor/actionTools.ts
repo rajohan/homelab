@@ -4,6 +4,7 @@ import * as v from "valibot";
 
 import {
     type MiraActionKind,
+    miraActionPreparing,
     miraJobApprovalScope,
     miraManualRunAllowed,
 } from "../data/approvalPolicy";
@@ -206,6 +207,21 @@ export function directMiraActionTools(
                             transaction: query,
                         })
                     );
+                    if (
+                        record.state === "draft" &&
+                        !record.message?.startsWith("Automatic review (")
+                    ) {
+                        const receipt = await query<
+                            { id: string }[]
+                        >`UPDATE mira_tool_receipts
+                            SET message=${miraActionPreparing},proposal=${JSON.stringify({ kind, id: record.id, version: record.version, contentHash: record.contentHash })}::text::jsonb
+                            WHERE id=${context.receiptId} AND run_id=${run.id} AND state='running' RETURNING id`;
+                        if (!receipt[0])
+                            throw new MiraFailure(
+                                "CONFLICT",
+                                "The action receipt changed before review."
+                            );
+                    }
                     const [origin] = await query<{ epoch: string | null }[]>`
                         SELECT approval_revoked_at::text AS epoch FROM mira_runs WHERE id=${run.id} AND owner=${run.owner}`;
                     return { record, epoch: origin!.epoch };

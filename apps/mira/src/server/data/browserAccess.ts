@@ -114,7 +114,7 @@ export async function readBrowserAccess(
                 AND (r.automation_id IS NULL OR (a.deleted_at IS NULL AND s.enabled AND
                     (a.schedule->>'event' IS DISTINCT FROM 'agentmail' OR i.enabled)))
                 AND (NOT (g.policy ? 'delegated') OR (
-                    r.approval_revoked_at IS NULL AND r.automation_id IS NULL AND r.task_id IS NULL AND c.archived_at IS NULL))
+                    r.automation_id IS NULL AND r.task_id IS NULL AND c.archived_at IS NULL))
                 AND g.controls=jsonb_build_array(coalesce(u.version,1),b.version,a.version,s.version,
                     CASE WHEN a.schedule->>'event'='agentmail' THEN i.version END)) IS TRUE AS available,
             greatest(0,least(5000,floor(extract(epoch FROM (least(g.expires_at,r.lease_expires_at,
@@ -295,7 +295,7 @@ async function reserveBrowserAccess(
             WHERE r.id=${request.runId} AND r.owner=${context.owner} AND r.manual AND r.state='running' AND NOT r.cancel_requested
                 AND r.lease_expires_at>clock_timestamp() AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
                 AND (NOT ${Boolean(policy.connected)} OR r.automation_id IS NULL)
-                AND (NOT ${delegated} OR (r.lease_token=${context.run?.leaseToken ?? null} AND r.automation_id IS NULL AND r.task_id IS NULL AND r.approval_revoked_at IS NULL AND c.archived_at IS NULL))
+                AND (NOT ${delegated} OR (r.lease_token=${context.run?.leaseToken ?? null} AND r.automation_id IS NULL AND r.task_id IS NULL AND c.archived_at IS NULL))
                 AND c.deleted_at IS NULL AND coalesce(u.enabled,true) AND b.enabled
                 AND (r.automation_id IS NULL OR (a.deleted_at IS NULL AND s.enabled AND
                     (a.schedule->>'event' IS DISTINCT FROM 'agentmail' OR i.enabled))) FOR SHARE OF r`;

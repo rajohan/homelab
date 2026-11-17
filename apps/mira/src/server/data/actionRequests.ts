@@ -1,5 +1,6 @@
 import { type MiraActionCursor } from "@homelab/contracts/mira";
 
+import { miraActionPreparing } from "./approvalPolicy";
 import { readMiraCode } from "./code";
 import type { MiraContext } from "./context";
 import { readMiraDaytona } from "./daytona";
@@ -23,14 +24,22 @@ export async function listMiraActionRequests(
 ) {
     const rows = await context.client<(MiraActionCursor & { state: string })[]>`
         WITH actions AS (
-            SELECT id,'code' AS kind,created_at,state,owner,conversation_id,message FROM mira_code_publications
-            UNION ALL SELECT id,'job',created_at,CASE WHEN cleanup='pending' THEN 'needs_attention' ELSE state END,owner,conversation_id,message FROM mira_daytona_jobs
-            UNION ALL SELECT id,'mail',created_at,state,owner,conversation_id,message FROM mira_mail_drafts
-            UNION ALL SELECT id,'publication',created_at,state,owner,conversation_id,message FROM mira_publications
-            UNION ALL SELECT id,'social',created_at,state,owner,conversation_id,message FROM mira_social_drafts
+            SELECT id,'code' AS kind,created_at,state,owner,conversation_id,version,content_hash FROM mira_code_publications
+            UNION ALL SELECT id,'job',created_at,CASE WHEN cleanup='pending' THEN 'needs_attention' ELSE state END,owner,conversation_id,version,content_hash FROM mira_daytona_jobs
+            UNION ALL SELECT id,'mail',created_at,state,owner,conversation_id,version,content_hash FROM mira_mail_drafts
+            UNION ALL SELECT id,'publication',created_at,state,owner,conversation_id,version,content_hash FROM mira_publications
+            UNION ALL SELECT id,'social',created_at,state,owner,conversation_id,version,content_hash FROM mira_social_drafts
         ), owned AS (
             SELECT id,kind,state,created_at,true AS pending
-            FROM actions WHERE state='draft' AND (message LIKE 'Automatic review (%' OR message LIKE 'Review required:%') AND owner=${context.owner} AND (
+            FROM actions WHERE state='draft' AND owner=${context.owner}
+            AND NOT EXISTS (
+                SELECT 1 FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id
+                WHERE r.owner=actions.owner AND r.conversation_id=actions.conversation_id
+                AND t.state='running' AND t.message=${miraActionPreparing}
+                AND t.proposal->>'id'=actions.id::text AND t.proposal->>'kind'=actions.kind
+                AND t.proposal->>'version'=actions.version::text AND t.proposal->>'contentHash'=actions.content_hash
+                AND r.state='running' AND NOT r.cancel_requested AND r.lease_expires_at>clock_timestamp()
+            ) AND (
                 conversation_id=${conversationId ?? null}::uuid
                 OR (${conversationId ?? null}::uuid IS NULL AND NOT EXISTS (
                     SELECT 1 FROM mira_conversations c

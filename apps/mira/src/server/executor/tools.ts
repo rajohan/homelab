@@ -514,9 +514,10 @@ export function createMiraTools(
             transactional: true,
             automatic: false,
             description:
-                "Send the plain-text email requested by the operator. Specify every recipient explicitly. Optional attachments must already be shared in this conversation; at most five files totaling 4 MiB. Use mira_mail_reply for threaded replies. If the operator only asks for wording or a draft, return that text without calling this sending tool.",
+                "Send the plain-text email requested by the operator. Supply one stable action UUID and reuse it when inspecting the same logical send after a reconnect; never generate a replacement for an uncertain send. Specify every recipient explicitly. Optional attachments must already be shared in this conversation; at most five files totaling 4 MiB. Use mira_mail_reply for threaded replies. If the operator only asks for wording or a draft, return that text without calling this sending tool.",
             inputSchema: object(
                 {
+                    id: uuid,
                     to: { type: "array", items: string },
                     cc: { type: "array", items: string },
                     bcc: { type: "array", items: string },
@@ -524,19 +525,21 @@ export function createMiraTools(
                     text: string,
                     attachmentIds: { type: "array", items: uuid, maxItems: 5 },
                 },
-                ["to", "subject", "text"]
+                ["id", "to", "subject", "text"]
             ),
-            action: (input, _signal, scoped) =>
-                saveMiraMail(
+            action: (input, _signal, scoped) => {
+                const { id, ...fields } = v.parse(v.looseObject({ id: idSchema }), input);
+                return saveMiraMail(
                     scoped,
                     {
-                        id: Bun.randomUUIDv7(),
+                        id,
                         version: 0,
-                        content: v.parse(miraMailInputSchema, input),
+                        content: v.parse(miraMailInputSchema, fields),
                         conversationId: run.conversationId,
                     },
                     agentMail
-                ),
+                );
+            },
         },
         ...createMiraSkillTools(client, run),
         ...createAgentMailTools(client, run, agentMail, fetch, filesDirectory),

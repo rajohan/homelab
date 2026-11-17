@@ -3,6 +3,9 @@ import type { MiraDaytonaContent } from "@homelab/contracts/miraDaytona";
 import { localCodeRequest } from "../sandbox/localProtocol";
 import { type MiraContext, MiraFailure, type MiraQuery } from "./context";
 
+/** Receipt message used only while a live tool is preparing an exact requested action. */
+export const miraActionPreparing = "Preparing requested action.";
+
 export type MiraApprovalScope = "task" | "local_code" | "check" | "code" | "external";
 export type MiraActionKind = "mail" | "publication" | "social" | "code" | "job";
 
