@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.19.5](https://github.com/rajohan/homelab/compare/v0.19.4...v0.19.5) (2026-11-17)
+
+
+### Bug Fixes
+
+* **browser:** allow password entry during human takeover ([#228](https://github.com/rajohan/homelab/issues/228)) ([eb34c48](https://github.com/rajohan/homelab/commit/eb34c48e812a321dd9c02028743f279d1ab2946b))
+* **mira:** complete native skills and simplify Codex runtime ([#229](https://github.com/rajohan/homelab/issues/229)) ([1c7400c](https://github.com/rajohan/homelab/commit/1c7400c24c512641865fe17936f3c938d5259c12))
+
 ## [0.19.4](https://github.com/rajohan/homelab/compare/v0.19.3...v0.19.4) (2026-11-17)
 
 
