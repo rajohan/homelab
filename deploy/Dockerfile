@@ -28,6 +28,8 @@ RUN if [ "$APP" = homelab ]; then echo "$PACKAGES_WEEK" >/dev/null && apt-get up
 WORKDIR /app
 ENV NODE_ENV=production HOMELAB_MIRA_SANDBOX_PROFILE=homelab-check-v2
 COPY --from=build --chown=bun:bun /output/ ./
+# Existing Mira configuration uses this absolute path across image upgrades.
+RUN if [ "$APP" = homelab ]; then ln -s mira/runtime /app/runtime; fi
 COPY --from=build /browser/ /opt/mira-browser/
 COPY --from=build /tools/ /opt/homelab/
 COPY deploy/browser/start.sh deploy/browser/proxy-policy.json /opt/mira-browser/
