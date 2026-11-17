@@ -23,7 +23,7 @@ import {
     Pencil,
     Trash2,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
@@ -38,9 +38,11 @@ import { ComputerAccessDialog } from "./ComputerAccessDialog";
 import { ComputerAccessPanel } from "./ComputerAccessPanel";
 import { FileLibrary } from "./FileLibrary";
 import { LiveChatActivity } from "./LiveChatActivity";
+import { MiraVoice } from "./MiraVoice";
 import { ProposedChanges } from "./ProposedChanges";
 import { ProviderQuota } from "./ProviderQuota";
 import { readChatUpdate } from "./readChatUpdate";
+import { MiraVoiceConnection } from "./voiceConnection";
 
 /**
  * Send durable messages, observe streamed text and stop or manage an owned conversation.
@@ -66,6 +68,19 @@ export function ChatPanel({
     const request = useRef<{ text: string; id: string } | null>(null);
     const navigate = useNavigate();
     const client = useQueryClient();
+    const [voice] = useState(
+        () =>
+            new MiraVoiceConnection(id, () => {
+                void client.invalidateQueries({
+                    queryKey: ["operations", "mira", "conversation", id],
+                });
+            })
+    );
+    const voiceState = useSyncExternalStore(voice.subscribe, voice.snapshot);
+    useEffect(() => {
+        voice.mount();
+        return () => voice.destroy();
+    }, [voice]);
     const [expanded, setExpanded] = useState(false);
     const queryKey = ["operations", "mira", "conversation", id];
     const query = useQuery({
@@ -271,6 +286,10 @@ export function ChatPanel({
             <ChatTranscript
                 key={id}
                 messages={messages}
+                onReadAloud={
+                    conversation.archivedAt ? undefined : (message) => voice.read(message)
+                }
+                readingId={voiceState.readingId}
                 continuation={{
                     hasMore: history.data ? history.hasNextPage : !!latest.nextCursor,
                     loading: history.isFetching,
@@ -323,6 +342,9 @@ export function ChatPanel({
                 onManage={() => setDialog("computer")}
             />
             <ProposedChanges key={`proposals:${id}`} conversationId={id} />
+            {!conversation.archivedAt && (
+                <MiraVoice key={id} voice={voice} messages={latest.messages} />
+            )}
             {!conversation.archivedAt && (
                 <ChatComposer
                     text={text}

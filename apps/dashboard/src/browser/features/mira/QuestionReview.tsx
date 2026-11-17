@@ -91,6 +91,18 @@ export function QuestionReview({ proposal }: { readonly proposal: MiraProposal }
                         rows={1}
                         className="min-h-9"
                         placeholder="Type your own answer"
+                        onKeyDown={(event) => {
+                            if (
+                                event.key === "Enter" &&
+                                !event.shiftKey &&
+                                !event.altKey &&
+                                !event.nativeEvent.isComposing &&
+                                globalThis.matchMedia("(pointer: fine)").matches
+                            ) {
+                                event.preventDefault();
+                                void advance(value);
+                            }
+                        }}
                         onChange={(event) =>
                             setAnswers((current) => ({
                                 ...current,

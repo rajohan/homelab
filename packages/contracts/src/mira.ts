@@ -225,6 +225,8 @@ export interface MiraConversation {
 }
 export interface MiraMessagePart {
     id: string;
+    /** Speaker for a question/answer segment; ordinary replies inherit their message role. */
+    role?: "user" | "assistant";
     /** Unicode code-point offset, matching PostgreSQL substring and history chunks. */
     offset: number;
     createdAt: string;

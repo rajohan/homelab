@@ -344,3 +344,34 @@ with the pinned Codex runtime on 2026-11-11 preserved a visually read random val
 the original task reference and completed-action context after image-free transfer;
 both generated test threads were deleted afterward. Production activation uses the
 normal reviewed release and additive `provider_retired_threads` migration.
+
+## Voice
+
+Set `HOMELAB_MIRA_OPENAI_API_KEY` in the existing scoped Doppler dashboard configuration.
+The dashboard exchanges WebRTC offers with OpenAI; the API key never reaches the browser.
+No additional browser package, runtime service or production image is needed.
+
+Microphone capture, microphone pause and spoken replies are independent. Turning the
+microphone off releases its tracks; pausing removes its track from the sender while replies
+can still play. With both directions off, the audio connection closes. A message's speaker
+button reads that earlier reply without enabling automatic spoken replies. Stop reading
+only stops audio; the ordinary Stop action still stops Mira's task.
+
+The voice model selector uses the account's current Realtime catalog (initially
+`gpt-realtime-2.1-mini`). Built-in speaking voices are selected separately and can be previewed.
+These preferences belong to the selected conversation in this browser. The selected ChatGPT
+or Synthetic conversation model, credentials, permissions and billing still handle all
+reasoning, tools and tasks. OpenAI API usage pays only for voice and transcription; campaign
+credit balance is deliberately not displayed.
+
+Final speech transcripts enter the same durable, idempotent message route as typed text,
+including guidance while Mira works. Replies remain visible as text. A lost acknowledgement
+reuses the same request ID; a broken audio connection never replays old microphone audio or
+spoken replies. Unsent transcripts remain visible and can be retried or discarded. Leaving
+the conversation releases capture. Browser microphone permission requires HTTPS or localhost.
+
+The voice session has no tools and cannot automatically answer microphone input. Input uses
+server VAD with noise reduction and `gpt-transcribe`; the browser requests echo cancellation.
+Completed input audio is removed immediately. Spoken output uses explicit text with an
+out-of-band response, so the voice model receives no full task history or tool output. Long
+replies are read in bounded chunks, and an enabled session is renewed before its time limit.

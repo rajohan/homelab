@@ -1,5 +1,6 @@
 import type { MiraMessage } from "@homelab/contracts/mira";
-import { Badge, formatDateTime, Markdown } from "@homelab/ui";
+import { Badge, formatDateTime, IconButton, Markdown } from "@homelab/ui";
+import { Square, Volume2 } from "lucide-react";
 
 import { MessageAttachments } from "./MessageAttachments";
 import { miraStatusTone } from "./statusTone";
@@ -8,7 +9,15 @@ import { miraStatusTone } from "./statusTone";
  * Show a persisted message, including partial text and its actual terminal state.
  * @returns A readable chat entry that does not conceal interrupted or failed output.
  */
-export function ChatMessage({ message }: { readonly message: MiraMessage }) {
+export function ChatMessage({
+    message,
+    onReadAloud,
+    reading = false,
+}: {
+    readonly message: MiraMessage;
+    readonly onReadAloud?: ((message: MiraMessage) => void) | undefined;
+    readonly reading?: boolean;
+}) {
     const user = message.role === "user";
     if (!user && !message.content.trim() && message.attachmentIds.length === 0)
         return null;
@@ -36,6 +45,17 @@ export function ChatMessage({ message }: { readonly message: MiraMessage }) {
                         </Badge>
                     )}
                 </div>
+                {!user &&
+                    message.content &&
+                    message.state === "completed" &&
+                    onReadAloud && (
+                        <IconButton
+                            icon={reading ? Square : Volume2}
+                            label={reading ? "Stop reading this message" : "Read aloud"}
+                            className="float-right ml-2 size-8"
+                            onClick={() => onReadAloud(message)}
+                        />
+                    )}
                 {message.content ? (
                     <Markdown tone={user ? "onAccent" : "default"}>
                         {message.content}

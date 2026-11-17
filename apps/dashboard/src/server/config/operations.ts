@@ -66,6 +66,7 @@ const storeSchema = v.strictObject({
 });
 
 export interface OperationsConfiguration {
+    readonly miraOpenaiApiKey?: string | undefined;
     readonly deploymentTargets?: readonly ReleaseDeploymentTarget[];
     readonly miraFilesDirectory?: string | undefined;
     readonly agentMailHook?: AgentMailHookConfiguration | undefined;
@@ -276,6 +277,7 @@ export function parseOperationsConfiguration(
             updateTargets
         ),
         miraFilesDirectory: environment.HOMELAB_MIRA_FILES_DIR,
+        miraOpenaiApiKey: environment.HOMELAB_MIRA_OPENAI_API_KEY || undefined,
         agentMailHook: agentMailHookConfiguration(environment),
         moltbookBinding: moltbookBinding(environment),
         hereNowBinding: hereNowBinding(environment),

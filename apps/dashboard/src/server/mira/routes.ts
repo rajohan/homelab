@@ -59,6 +59,7 @@ import {
     miraSocialSaveSchema,
     miraSocialVerifySchema,
 } from "@homelab/contracts/miraSocial";
+import { miraVoiceNames } from "@homelab/contracts/miraVoice";
 import { idSchema, versionedIdSchema } from "@homelab/contracts/operations";
 import {
     listMiraActionRequests,
@@ -182,6 +183,7 @@ import { OperationFailure } from "../operations/errors";
 import { miraBrowserRouter } from "./browserRoutes";
 import { miraComputerRouter } from "./computerRoutes";
 import { listMiraRunHistory } from "./runHistory";
+import { connectVoice, readVoiceModels } from "./voice";
 
 function execute<T>(
     context: OperationsContext,
@@ -210,6 +212,42 @@ function execute<T>(
 
 const record = v.strictObject({ id: idSchema });
 export const miraRouter = trpc.router({
+    voice: trpc.router({
+        models: trpc.procedure.query(({ ctx }) =>
+            execute(ctx, () => {
+                authorizedOperations(ctx, "jobs:run");
+                return readVoiceModels(ctx.operations?.miraOpenaiApiKey);
+            })
+        ),
+        connect: trpc.procedure
+            .input(
+                v.strictObject({
+                    conversationId: idSchema,
+                    model: v.pipe(v.string(), v.maxLength(120)),
+                    voice: v.picklist(miraVoiceNames),
+                    sdp: v.pipe(v.string(), v.minLength(1), v.maxLength(65_536)),
+                })
+            )
+            .mutation(({ ctx, input }) =>
+                execute(ctx, async (mira) => {
+                    authorizedOperations(ctx, "jobs:run");
+                    const [chat] = await mira.client<
+                        { id: string }[]
+                    >`SELECT id FROM mira_conversations WHERE id=${input.conversationId} AND owner=${mira.owner} AND deleted_at IS NULL AND archived_at IS NULL`;
+                    if (!chat)
+                        throw new MiraFailure(
+                            "NOT_FOUND",
+                            "Open an active conversation before starting voice."
+                        );
+                    return connectVoice(
+                        ctx.operations?.miraOpenaiApiKey,
+                        input.model,
+                        input.voice,
+                        input.sdp
+                    );
+                })
+            ),
+    }),
     chatgpt: trpc.router({
         status: trpc.procedure.query(({ ctx }) =>
             execute(ctx, async (mira) => ({
