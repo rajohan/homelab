@@ -77,10 +77,6 @@ export function ChatPanel({
             })
     );
     const voiceState = useSyncExternalStore(voice.subscribe, voice.snapshot);
-    useEffect(() => {
-        voice.mount();
-        return () => voice.destroy();
-    }, [voice]);
     const [expanded, setExpanded] = useState(false);
     const queryKey = ["operations", "mira", "conversation", id];
     const query = useQuery({
@@ -94,6 +90,12 @@ export function ChatPanel({
                 : 5000,
     });
     const latest = query.data;
+    const archived = Boolean(latest?.conversation.archivedAt);
+    useEffect(() => {
+        if (archived) return;
+        voice.mount();
+        return () => voice.destroy();
+    }, [voice, archived]);
     const history = useInfiniteQuery({
         queryKey: ["operations", "mira", "conversation-history", id, latest?.nextCursor],
         initialPageParam: latest?.nextCursor as string | undefined,

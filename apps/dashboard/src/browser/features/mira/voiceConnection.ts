@@ -330,7 +330,6 @@ export class MiraVoiceConnection {
         this.closeConnection();
         this.releaseMicrophone();
         clearTimeout(this.sendTimer);
-        this.listeners.clear();
     }
     private releaseMicrophone() {
         const stream = this.stream;
