@@ -6,7 +6,7 @@ on:
       - .github/workflows/windows-build.yml
       - .github/workflows/container-images.yml
       - .github/actions/setup-bun/**
-      - apps/mira/native/windows/**
+      - apps/mira/native/**
       - apps/mira/src/server/**
       - packages/contracts/**
       - packages/ui/src/assets/rajohan.ico

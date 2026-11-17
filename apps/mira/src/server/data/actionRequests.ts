@@ -33,12 +33,12 @@ export async function listMiraActionRequests(
                 state IN ('draft','queued','running','sending','publishing','verification_required','queued_verification','verifying','needs_attention') AS pending
             FROM actions WHERE owner=${context.owner} AND (
                 conversation_id=${conversationId ?? null}::uuid
-                OR NOT EXISTS (
+                OR (${conversationId ?? null}::uuid IS NULL AND NOT EXISTS (
                     SELECT 1 FROM mira_conversations c
                     WHERE c.id=actions.conversation_id AND c.owner=${context.owner} AND c.deleted_at IS NULL
                     AND (NOT EXISTS (SELECT 1 FROM mira_runs r WHERE r.conversation_id=c.id AND NOT r.manual)
                         OR EXISTS (SELECT 1 FROM mira_runs r WHERE r.conversation_id=c.id AND r.manual))
-                )
+                ))
             )
         )
         SELECT id,kind,state,pending,
