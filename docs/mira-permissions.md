@@ -24,8 +24,6 @@ Chat settings remain available during work. Saving a different permission mode p
 
 The additive migration adds nullable `approval_run_id` references to the five existing action queues and `approval_revoked_at` to runs. Existing rows retain their human/policy approval path; no existing conversation receives broader permissions. Deploy dashboard, Mira and the Main code worker together before offering these modes: older workers do not implement delegated revocation. Do not roll workers back while delegated actions are queued or running; pause/cancel and reconcile those actions first. The migration does not move credentials, change provider grants or activate automations.
 
-Regression coverage uses a disposable PostgreSQL database and fake provider transports: all modes, same-owner/conversation checks, exact versions, stale leases, duplicate tool calls, Main/Daytona classification, queued email delivery, revocation and explicit human approval. Shared component tests cover defaults, all options, disabled controls and preservation of provider/context/target settings.
-
 ## Requests in Chat
 
 Web and Windows share compact requests immediately above the composer. Approval needed opens the shared review dialog with exact fields and approval/rejection actions. Questions can be minimized and reopened without losing drafts. Previous/next request controls appear only when there are multiple requests; previous-question navigation appears only when there is an earlier question. Selecting an option immediately advances or submits; free text uses the right-aligned Send/Next action. No default or silence submits an answer. Question text is saved as an assistant message, separately from the operator's answer. Pending requests remain available when a reply ends or the client reconnects, for up to 24 hours. Stopped, archived or deleted work cannot be resumed by an old card. A permission change invalidates old action approvals while unanswered questions remain available.
@@ -34,4 +32,4 @@ Host approvals bind the owner, conversation, exact normalized command hash and h
 
 This follows the documented [permission modes](https://learn.chatgpt.com/docs/permission-modes) and [automatic review](https://learn.chatgpt.com/docs/sandboxing/auto-review.md) interaction: asking the operator, independent automatic review and broader access are separate decisions. Homelab retains its own integration grants, fresh human verification, branch protection and release requirements. These cards do not replace browser or local PC consent.
 
-Deploy dashboard and Mira together. No schema migration is needed; pending requests use existing durable tool receipts. Regression tests use disposable data and fake host transports, including completion/reconnect, free text, exact-hash conflicts, duplicate replies, reviewer decisions and permission revocation.
+Deploy dashboard and Mira together. No schema migration is needed; pending requests use existing durable tool receipts.

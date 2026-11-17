@@ -1,4 +1,6 @@
 import {
+    miraActionKindSchema,
+    miraActionPageSchema,
     miraAutomationInputSchema,
     miraAutomationUpdateSchema,
     miraChatSettingsUpdateSchema,
@@ -201,10 +203,6 @@ function execute<T>(
     });
 }
 
-const actionPage = v.object({
-    id: idSchema,
-    before: v.exactOptional(v.pipe(v.string(), v.maxLength(64))),
-});
 const record = v.strictObject({ id: idSchema });
 export const miraRouter = trpc.router({
     computers: miraComputerRouter,
@@ -413,7 +411,7 @@ export const miraRouter = trpc.router({
     }),
     proposals: trpc.router({
         actions: trpc.procedure
-            .input(actionPage)
+            .input(miraActionPageSchema)
             .query(({ ctx, input }) =>
                 execute(ctx, (mira) =>
                     listMiraActionRequests(mira, input.id, input.before)
@@ -423,7 +421,7 @@ export const miraRouter = trpc.router({
             .input(
                 v.object({
                     id: idSchema,
-                    kind: v.picklist(["code", "job", "mail", "publication", "social"]),
+                    kind: miraActionKindSchema,
                 })
             )
             .query(({ ctx, input }) =>

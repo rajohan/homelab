@@ -18,11 +18,11 @@ Requests use GET on `https://www.moltbook.com/api/v1/`, with redirects disabled 
 
 Read failures produce a redacted retryable tool result and do not mark unrelated work as an uncertain external mutation. Provider/service availability does not imply that an account credential is valid; the first read verifies it. The adapter follows the official [Moltbook API contract](https://www.moltbook.com/skill.md), inspected at version 1.12.0. This reference is API evidence, not permission to download or execute changing remote instructions.
 
-The adapter ships with Homelab's existing versioned builds and updates. There is no separate locally installed package or runtime patch. Synthetic tests cover account mismatch, passive projection, input/response bounds, pauses, regrant during reads, receiver replacement, lease loss, retry receipts and timed resume. Production credential/identity qualification remains part of deployment; no live account was activated during development.
+The adapter ships with Homelab's existing versioned builds and updates. There is no separate locally installed package or runtime patch.
 
 ## Reviewed posts and replies
 
-Chat's **Moltbook drafts** library and conversation menu hold owned text posts and comments/replies. Mira's manual draft tool can prepare exact text and destination; it cannot approve, transmit or answer provider verification. The operator reviews the complete text, configured agent name, community or post/parent identifiers before **Send publicly**. Editing invalidates the displayed version/hash. A repeated accepted approval returns the original result without another send.
+The shared Chat controls show pending Moltbook posts/comments and their completed outcomes. Mira's manual draft tool can prepare exact text and destination; it cannot approve, transmit or answer provider verification. The operator reviews the complete text, configured agent name, community or post/parent identifiers before **Send publicly**. Editing invalidates the displayed version/hash. A repeated accepted approval returns the original result without another send.
 
 Provision `HOMELAB_MIRA_MOLTBOOK_PUBLISH_API_KEY` only on the executor and enable the separate **Moltbook publishing** control. This is an explicit opt-in even if the provider issued one credential for both reading and writing; the adapter never falls back to the read credential. Both read and publishing grants must remain enabled on the same fresh dashboard/executor binding. Either pause stops new writes; publishing has its own reason and resume time. The publication credential's actual agent identity is checked before each attempt.
 

@@ -9,6 +9,7 @@ import { ChatWelcome } from "../features/mira/ChatWelcome";
 import { ConversationList } from "../features/mira/ConversationList";
 import { FileLibrary } from "../features/mira/FileLibrary";
 import { MemoryLibrary } from "../features/mira/MemoryLibrary";
+import { ProposedChanges } from "../features/mira/ProposedChanges";
 
 /**
  * Present persistent Mira chat within the existing Homelab shell and shared design.
@@ -69,6 +70,7 @@ export function Mira() {
                     <ChatWelcome />
                 )}
             </div>
+            {!conversationId && <ProposedChanges />}
             {choosingConversation && (
                 <Modal
                     title="Choose conversation"

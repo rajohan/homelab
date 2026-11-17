@@ -101,10 +101,10 @@ If restoring the original proxy images recreates their containers, restore the o
 
 The runner has a thirty-minute systemd lifetime and an 8 GiB backup ceiling. Backups stream directly to the private file; ordinary command output remains limited to 2 MB. Each backup write checks that at least 1 GiB remains free on its filesystem. A size or space refusal stops the backup before migration and verifies recovery of the previous services. Admission requires 1 GiB free space and fewer than 100 retained operation directories. Backups are not automatically deleted. Review and archive completed history using the host's existing backup policy before these limits are reached. An interrupted or failed operation's files must remain available for recovery.
 
-## Qualification
+## Manual verification
 
-The ordinary Bun suites cover admission, MFA, frozen confirmation, queue draining, lost acknowledgements, concurrent controllers and migration failure. The worker integration test keeps local cleanup running after its durable claim has ended and verifies that replacement still waits. Host unit tests exercise file permissions, exact replay prevention, process limits and recovery.
-
-The native qualification is a local operator test, not a privileged pull-request CI job. Do not run it against production services or treat unit tests alone as qualification of a new host recipe.
-
-Production qualification on 2026-10-31 passed this rehearsal from the installed 0.9.0 artifact to the post-#142 schema. The separately approved Mira profile also passed packaged text/PDF/image input, recorded tools, continuation after container replacement and provider-history cleanup. These results do not by themselves activate production or qualify the actual Windows PC and external providers.
+After an authorized deployment, confirm the durable receipt, service readiness,
+installed image identities and affected product behavior. Use a development
+installation when changing deployment recipes; builds do not establish backup,
+migration or recovery behavior. The repository has no automated deployment test
+harness. Follow the recovery procedure above for an interrupted live deployment.

@@ -7,15 +7,20 @@ on:
       - .github/workflows/container-images.yml
       - .github/actions/setup-bun/**
       - apps/mira/native/windows/**
-      - apps/mira/src/server/computer/**
+      - apps/mira/src/server/**
+      - packages/contracts/**
+      - packages/ui/src/assets/rajohan.ico
       - scripts/buildComputer*.ts
       - scripts/buildWindows*.ts
       - scripts/copyDriverRuntime.ts
       - scripts/computerRelease.ts
+      - scripts/installBun.ts
+      - scripts/verifyBun.ts
       - scripts/setup*.ps1
       - deploy/computer/**
       - package.json
       - bun.lock
+      - bunfig.toml
       - .bun-version
       - .bun-revision
       - tsconfig*.json

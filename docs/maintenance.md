@@ -9,14 +9,6 @@ so a slow inventory lookup cannot occupy the reserved lane for several minutes.
 Installation and restart jobs keep their physical-host leases. The reservation does
 not bypass a pause, a shared resource lock, or deliberately exclusive work.
 
-The reserved-capacity integration test runs the actual three-lane worker against
-an isolated PostgreSQL database. Three long jobs are submitted over HTTP through
-the dashboard job API, two are held running, and the third remains queued. Both
-human-started light and bounded network checks must reach `succeeded` while those
-two jobs remain active. The same test covers long network jobs, which do not qualify
-for the reserved lane. Pause, shared-host leases and exclusive-work guards remain
-covered separately.
-
 Run details distinguish elapsed time, last progress and worker responsiveness.
 Quiet package managers are not classified as stuck. Update jobs retain bounded,
 verified per-item receipts even if a later item fails. Missing health probes remain

@@ -1,3 +1,5 @@
+import type { MiraActionCursor } from "@homelab/contracts/mira";
+
 import { readMiraCode } from "./code";
 import type { MiraContext } from "./context";
 import { readMiraDaytona } from "./daytona";
@@ -5,23 +7,21 @@ import { readMiraMail } from "./mail";
 import { readMiraPublication } from "./publications";
 import { readMiraSocial } from "./social";
 
-type ActionKind = "code" | "job" | "mail" | "publication" | "social";
+type ActionKind = MiraActionCursor["kind"];
 
 /**
  * Read one page of conversation action summaries, with outstanding actions first.
  * @param context - Authenticated owner and database connection.
- * @param conversationId - Owned conversation whose actions are requested.
- * @param before - Last kind:id from the preceding page, or absent for the first page.
+ * @param conversationId - Current conversation, or absent for actions without an accessible Chat conversation.
+ * @param before - Original sort tuple from the preceding page, unaffected by later state changes.
  * @returns Bounded summaries and a cursor; exact content is read only when opened.
  */
 export async function listMiraActionRequests(
     context: MiraContext,
-    conversationId: string,
-    before?: string
+    conversationId?: string,
+    before?: MiraActionCursor
 ) {
-    const rows = await context.client<
-        { id: string; kind: ActionKind; state: string; pending: boolean }[]
-    >`
+    const rows = await context.client<(MiraActionCursor & { state: string })[]>`
         WITH actions AS (
             SELECT id,'code' AS kind,created_at,state,owner,conversation_id FROM mira_code_publications
             UNION ALL SELECT id,'job',created_at,CASE WHEN cleanup='pending' THEN 'needs_attention' ELSE state END,owner,conversation_id FROM mira_daytona_jobs
@@ -31,18 +31,36 @@ export async function listMiraActionRequests(
         ), owned AS (
             SELECT id,kind,state,created_at,
                 state IN ('draft','queued','running','sending','publishing','verification_required','queued_verification','verifying','needs_attention') AS pending
-            FROM actions WHERE owner=${context.owner} AND conversation_id=${conversationId}::uuid
+            FROM actions WHERE owner=${context.owner} AND (
+                conversation_id=${conversationId ?? null}::uuid
+                OR NOT EXISTS (
+                    SELECT 1 FROM mira_conversations c
+                    WHERE c.id=actions.conversation_id AND c.owner=${context.owner} AND c.deleted_at IS NULL
+                    AND (NOT EXISTS (SELECT 1 FROM mira_runs r WHERE r.conversation_id=c.id AND NOT r.manual)
+                        OR EXISTS (SELECT 1 FROM mira_runs r WHERE r.conversation_id=c.id AND r.manual))
+                )
+            )
         )
-        SELECT id,kind,state,pending FROM owned
-        WHERE ${before ?? null}::text IS NULL OR (pending,created_at,id,kind)<(
-            SELECT pending,created_at,id,kind FROM owned WHERE kind || ':' || id::text=${before ?? null}
+        SELECT id,kind,state,pending,
+            to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "createdAt" FROM owned
+        WHERE ${before?.id ?? null}::uuid IS NULL OR (pending,created_at,id,kind)<(
+            ${before?.pending ?? null}::boolean,${before?.createdAt ?? null}::timestamptz,
+            ${before?.id ?? null}::uuid,${before?.kind ?? null}::text
         )
         ORDER BY pending DESC,created_at DESC,id DESC,kind DESC LIMIT 51`;
     const page = rows.slice(0, 50);
     const last = page.at(-1);
     return {
         rows: page,
-        nextCursor: rows.length > 50 && last ? `${last.kind}:${last.id}` : null,
+        nextCursor:
+            rows.length > 50 && last
+                ? {
+                      id: last.id,
+                      kind: last.kind,
+                      pending: last.pending,
+                      createdAt: last.createdAt,
+                  }
+                : null,
     };
 }
 

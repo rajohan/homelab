@@ -1,3 +1,4 @@
+import type { MiraActionCursor } from "@homelab/contracts/mira";
 import { Button, ErrorNotice, IconButton, Modal } from "@homelab/ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -12,22 +13,29 @@ import { QuestionReview } from "./QuestionReview";
  * Keep durable requests accessible without covering the conversation.
  * @returns Compact request navigation, collapsible questions and explicit approval dialogs.
  */
-export function ProposedChanges({ conversationId }: { readonly conversationId: string }) {
+export function ProposedChanges({
+    conversationId,
+}: {
+    readonly conversationId?: string;
+}) {
     const [selected, setSelected] = useState<string>();
     const [minimized, setMinimized] = useState(false);
     const query = useQuery({
         queryKey: ["operations", "mira", "proposals", conversationId],
-        queryFn: () => api.mira.proposals.list.query({ id: conversationId }),
+        queryFn: async () =>
+            conversationId
+                ? await api.mira.proposals.list.query({ id: conversationId })
+                : [],
         refetchInterval: 1500,
     });
     const actions = useInfiniteQuery({
         queryKey: ["operations", "mira", "action-requests", conversationId],
         queryFn: ({ pageParam }) =>
             api.mira.proposals.actions.query({
-                id: conversationId,
+                ...(conversationId ? { id: conversationId } : {}),
                 ...(pageParam ? { before: pageParam } : {}),
             }),
-        initialPageParam: undefined as string | undefined,
+        initialPageParam: undefined as MiraActionCursor | undefined,
         getNextPageParam: (page) => page.nextCursor ?? undefined,
         refetchInterval: 5000,
     });
@@ -37,11 +45,12 @@ export function ProposedChanges({ conversationId }: { readonly conversationId: s
             id: proposal.id,
             proposal,
         })),
-        ...(actions.data?.pages.flatMap((page) => page.rows) ?? []).map((action) => ({
-            kind: "action" as const,
-            id: `${action.kind}:${action.id}`,
-            action,
-        })),
+        ...new Map(
+            (actions.data?.pages.flatMap((page) => page.rows) ?? []).map((action) => [
+                `${action.kind}:${action.id}`,
+                { kind: "action" as const, id: `${action.kind}:${action.id}`, action },
+            ])
+        ).values(),
     ];
     const [review, setReview] = useState<(typeof requests)[number]>();
     const index = Math.max(

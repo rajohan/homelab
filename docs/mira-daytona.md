@@ -62,10 +62,6 @@ or `destroyed` state with the exact persisted sandbox ID, expected original name
 organization and ownership labels. It never authorizes creation, a name-only
 lookup or execution against a renamed resource.
 
-## Validation
-
-Synthetic tests exercise account, membership and snapshot disagreement, final admission revocation, cancellation before and during dispatch, uncertain writes with no replay, deterministic recovery, cross-owner/ID rejection, policy drift, cleanup during snapshot outages, explicit deletion outcomes, private response-field omission, and advertised/streamed response limits. These tests use the actual generated request builders and an injected provider transport. They incur no Daytona usage and do not replace later live qualification.
-
 ## Bounded command and file transport
 
 The toolbox pins the paired official `@daytona/toolbox-api-client` at `0.231.1`. It uses generated request builders and the fixed `https://proxy.app.daytona.io/toolbox/<persisted-sandbox-UUID>` origin, never a URL supplied by the provider, a model or a file. It advertises `X-Daytona-SDK-Version` from the installed toolbox package metadata so command logs use the documented structured response. It does not instantiate the high-level SDK, open following sockets or retry writes. No host command, local filesystem path, environment or credential is passed to the sandbox. See [Daytona process sessions](https://www.daytona.io/docs/en/typescript-sdk/process/) and [file operations](https://www.daytona.io/docs/en/typescript-sdk/file-system/).
@@ -78,7 +74,7 @@ Log reads verify command identity first and explicitly request `follow=false`. A
 
 Uploads accept only supplied in-memory bytes, copy them before asynchronous work and cap each at 1 MiB. Relative ASCII names are confined lexically to `/tmp/homelab-mira/<attempt>/inputs/`; uploads are refused once a command is observed. Uploads preserve the generated multipart `file` part, with fetch supplying its matching boundary. The provider must acknowledge the exact destination. Downloads request one explicitly selected relative name under the corresponding `outputs/` directory, return at most 1 MiB of untrusted bytes and never write or extract files on the host. Parent directories, absolute paths, query fragments and encoded separators are rejected. This is path selection, not a claim that the provider filesystem prevents symlink following or that a cloud artifact is trustworthy. Only the clean, dedicated, qualified sandbox may supply artifacts; the durable product layer must authorize exact output selections and enforce total file/count/storage limits before importing into the existing attachment pipeline. It must not execute returned bytes.
 
-The durable queue records each create/session/upload/command attempt before the external write. A ninety-second phase lease fences concurrent dispatchers and each provider phase has a sixty-second cancellation bound. A recovered ambiguous write phase goes to cleanup instead of replay. Provisioning has a separate fifteen-minute allowance. Once the provider reports a started sandbox, the executor renews activity before opening its session and replaces that allowance with a rolling five-minute activity window, not a total job duration. Refresh rechecks consent, ownership, pause, cancellation and the live phase lease immediately before dispatch. It records the possible new idle deadline before the provider request so an ambiguous acknowledgement cannot release capacity early. Expired activity is never revived. Selected file IDs are stable across import retries, and changed bytes cannot overwrite a previously accepted artifact. Synthetic PostgreSQL, transport and component tests exercise these transitions and exact review semantics without creating paid resources.
+The durable queue records each create/session/upload/command attempt before the external write. A ninety-second phase lease fences concurrent dispatchers and each provider phase has a sixty-second cancellation bound. A recovered ambiguous write phase goes to cleanup instead of replay. Provisioning has a separate fifteen-minute allowance. Once the provider reports a started sandbox, the executor renews activity before opening its session and replaces that allowance with a rolling five-minute activity window, not a total job duration. Refresh rechecks consent, ownership, pause, cancellation and the live phase lease immediately before dispatch. It records the possible new idle deadline before the provider request so an ambiguous acknowledgement cannot release capacity early. Expired activity is never revived. Selected file IDs are stable across import retries, and changed bytes cannot overwrite a previously accepted artifact.
 
 Still required before paid production activation: dedicated-account and immutable-snapshot qualification, provider billing/credit checks, a live end-to-end cancellation/idle-cleanup/artifact exercise and the explicit operator qualification receipt. A bounded coding harness, unattended improvement spending policy and production cutover are not delivered by this PR. Saving a draft does not change a provider account, key, snapshot or paid resource. Starting the executor may resume previously approved queued jobs; production qualification must therefore precede activation.
 
@@ -122,30 +118,23 @@ alter its own sandbox, so reports remain explicitly **untrusted sandbox results*
 never evidence that authorizes automatic GitHub writes, merge or deployment.
 The profile does not run image builds or provider qualification inside itself.
 
-`deploy/Dockerfile` is the versioned snapshot recipe. The **Daytona check
-image** workflow builds and tests the actual non-root image with no host mounts,
-then publishes the same tested image on stable releases. `daytona-image.json`
-records the immutable registry reference separately from the three service
-images. Dependabot proposes Docker base updates through normal reviewed PRs.
-A new image release does not silently replace the configured snapshot: import the
-recorded digest into the dedicated Daytona organization, verify the fixed
-resources and runtime, exercise outputs/cancellation/idle cleanup/deletion on that exact
-snapshot, then renew the qualified binding hash. The updater can track the
-versioned release artifact; snapshot activation remains an explicit qualified
-operation. Do not mark an image or binding qualified solely because CI passed.
+`deploy/Dockerfile` builds the shared Main image, including the fixed code harness.
+The release workflow publishes this same image under the existing `daytona-check`
+registry role and records its immutable reference in `daytona-image.json`.
+Dependabot proposes Docker base updates through normal reviewed PRs. Snapshot
+activation in Daytona remains explicit; importing a release must preserve the
+configured resources and fixed runtime.
 
-Local image qualification (Linux AMD64, Docker, public network access):
+Build the local image on Linux AMD64:
 
 ```sh
-docker build -f deploy/Dockerfile -t homelab-daytona-harness:tested .
-bun --no-env-file apps/mira/src/server/testing/daytonaSmoke.ts <exact-public-commit-sha>
+docker build -f deploy/Dockerfile --build-arg APP=homelab -t homelab-daytona-harness:local .
 ```
 
-This smoke test uses a read-only container with two CPUs, 4 GiB memory, bounded
-process count and a 2 GiB temporary filesystem. It runs all fixed checks, verifies
-all three artifacts and replay refusal, then removes the container. It does not
-contact Daytona or consume provider credits. Live provider acceptance is still
-required before production enablement.
+The repository no longer ships a smoke-test harness. After an authorized snapshot
+update, use the existing Chat code-execution controls for one fixed Homelab check
+and inspect its recorded output and cleanup. A local build alone does not verify
+Daytona allocation, provider networking or cleanup.
 
 ## Structured code edits
 
@@ -197,10 +186,3 @@ repository scripts or perform the verification suite. It follows the same normal
 Cloud job review, admission, reservation and cleanup controls. The model can read
 these returned artifacts using `mira_attachment_read`, then prepare the edit plan.
 Automatic improvement permissions and GitHub publication remain separate work.
-
-The image smoke test now exercises source inspection and a real structured edit, all required checks,
-patch recovery and replay refusal in the bounded local container. Existing patch
-arguments remain supported. The profile marker is `homelab-check-v2`, so importing
-and qualifying the new immutable snapshot is required before using edit drafts;
-a deployed version 1 snapshot must not be treated as compatible. No production
-binding is changed by this repository update.
