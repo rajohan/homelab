@@ -167,12 +167,13 @@ export class MiraVoiceConnection {
             this.releaseMicrophone();
             this.stream = stream;
             const track = stream.getAudioTracks()[0]!;
-            track.enabled = !this.value.paused;
+            track.enabled = false;
             track.addEventListener("ended", () => {
                 if (this.stream === stream) void this.microphone(false);
             });
-            if (this.sender && this.sessionReady && !this.value.paused)
-                await this.sender.replaceTrack(track);
+            // Negotiate the captured track, including its stream identity, in the offer.
+            // A playback-only session may not have negotiated microphone transmission.
+            this.closeConnection();
             this.reconcile();
         } catch {
             if (capture !== this.captureGeneration) return;
@@ -192,14 +193,10 @@ export class MiraVoiceConnection {
     async pause(paused: boolean) {
         if (!this.value.microphone) return;
         this.update({ paused, transcript: "" });
-        for (const track of this.stream?.getAudioTracks() ?? []) track.enabled = !paused;
-        await this.sender
-            ?.replaceTrack(
-                paused || !this.sessionReady
-                    ? null
-                    : (this.stream?.getAudioTracks()[0] ?? null)
-            )
-            .catch(() => {});
+        for (const track of this.stream?.getAudioTracks() ?? []) track.enabled = false;
+        await (paused
+            ? this.sender?.replaceTrack(null).catch(() => {})
+            : this.attachMicrophone());
         this.discardInput();
     }
     /** Toggle spoken replies without changing microphone capture.
@@ -341,6 +338,31 @@ export class MiraVoiceConnection {
         this.stream = undefined;
         for (const track of stream?.getTracks() ?? []) track.stop();
     }
+    private async attachMicrophone() {
+        if (!this.sessionReady || !this.value.microphone || this.value.paused) return;
+        const track = this.stream?.getAudioTracks()[0];
+        const sender = this.sender;
+        const generation = this.generation;
+        if (!track || !sender) return;
+        try {
+            await sender.replaceTrack(track);
+            if (
+                generation === this.generation &&
+                this.value.microphone &&
+                !this.value.paused
+            )
+                track.enabled = true;
+        } catch {
+            if (generation !== this.generation) return;
+            this.releaseMicrophone();
+            this.update({
+                microphone: false,
+                transcript: "",
+                error: "The microphone could not send audio. Turn it on again to reconnect.",
+            });
+            this.reconcile();
+        }
+    }
     private discardInput() {
         for (const item of this.utterances.values())
             if (item.text === null) item.discarded = true;
@@ -359,6 +381,7 @@ export class MiraVoiceConnection {
     private closeConnection() {
         this.generation++;
         this.sessionReady = false;
+        for (const track of this.stream?.getAudioTracks() ?? []) track.enabled = false;
         clearTimeout(this.reconnectTimer);
         clearTimeout(this.renewalTimer);
         clearTimeout(this.connectionTimer);
@@ -378,7 +401,15 @@ export class MiraVoiceConnection {
         const current = () => !this.destroyed && this.generation === generation;
         this.update({ connection: "connecting" });
         try {
-            this.sender = pc.addTransceiver("audio", { direction: "sendrecv" }).sender;
+            const track = this.stream?.getAudioTracks()[0];
+            if (track) {
+                track.enabled = false;
+                this.sender = pc.addTrack(track, this.stream!);
+            } else {
+                this.sender = pc.addTransceiver("audio", {
+                    direction: "sendrecv",
+                }).sender;
+            }
             pc.ontrack = (event) => {
                 if (!current()) return;
                 this.audio.srcObject = new MediaStream([event.track]);
@@ -482,13 +513,17 @@ export class MiraVoiceConnection {
             this.sessionReady = true;
             this.attempts = 0;
             this.update({ connection: "connected", error: "" });
-            if (this.value.microphone && !this.value.paused)
-                void this.sender
-                    ?.replaceTrack(this.stream?.getAudioTracks()[0] ?? null)
-                    .catch(() => {});
+            void this.attachMicrophone();
             this.pumpSpeech();
         }
-        if (event.type === "input_audio_buffer.speech_started" && event.item_id) {
+        if (
+            [
+                "input_audio_buffer.speech_started",
+                "input_audio_buffer.committed",
+            ].includes(event.type) &&
+            event.item_id &&
+            !this.utterances.has(event.item_id)
+        ) {
             this.utterances.set(event.item_id, {
                 id: crypto.randomUUID(),
                 text: null,
@@ -596,6 +631,7 @@ export class MiraVoiceConnection {
             });
             this.outbox = this.outbox.filter((item) => item.id !== next.id);
             this.persist();
+            if (this.value.transcript === next.text) this.update({ transcript: "" });
             this.changed();
         } catch {
             this.update({

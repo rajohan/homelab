@@ -46,10 +46,16 @@ export function ProposedChanges({
             proposal,
         })),
         ...new Map(
-            (actions.data?.pages.flatMap((page) => page.rows) ?? []).map((action) => [
-                `${action.kind}:${action.id}`,
-                { kind: "action" as const, id: `${action.kind}:${action.id}`, action },
-            ])
+            (actions.data?.pages.flatMap((page) => page.rows) ?? [])
+                .filter((action) => action.state === "draft")
+                .map((action) => [
+                    `${action.kind}:${action.id}`,
+                    {
+                        kind: "action" as const,
+                        id: `${action.kind}:${action.id}`,
+                        action,
+                    },
+                ])
         ).values(),
     ];
     const [review, setReview] = useState<(typeof requests)[number]>();
@@ -63,8 +69,7 @@ export function ProposedChanges({
         current.proposal.tool === "mira_request_user_input";
     let requestTitle = "Approval needed";
     if (question) requestTitle = "Your input is needed";
-    else if (current?.kind === "action" && current.action.state !== "draft")
-        requestTitle = current.action.pending ? "Action status" : "Action history";
+
     if (requests.length === 0 && !query.error && !actions.error && !review) return null;
     return (
         <section
