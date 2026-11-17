@@ -146,7 +146,6 @@ jobs:
     env:
       RELEASE_TAG: ${{ github.event.release.tag_name }}
       SOURCE_SHA: ${{ github.sha }}
-      COMPUTER_RELEASE_DIRECTORY: ${{ runner.temp }}/computer-release/release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -167,11 +166,12 @@ jobs:
         run: bun --no-env-file scripts/buildComputerRelease.ts "${{ runner.temp }}/computer-release" "${{ runner.temp }}/mira-inno/portable/ISCC.exe"
       - name: Publish immutable Windows files
         env:
+          COMPUTER_RELEASE_DIRECTORY: ${{ runner.temp }}/computer-release/release
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: python -I scripts/publishComputerRelease.py
       - name: Prepare Windows manifest evidence
-        run: Copy-Item "$env:COMPUTER_RELEASE_DIRECTORY/mira-computer-$($env:RELEASE_TAG.Substring(1))-windows-x64.json" "computer-manifest-$env:GITHUB_RUN_ATTEMPT.json"
+        run: Copy-Item "${{ runner.temp }}/computer-release/release/mira-computer-$($env:RELEASE_TAG.Substring(1))-windows-x64.json" "computer-manifest-$env:GITHUB_RUN_ATTEMPT.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           path: computer-manifest-${{ github.run_attempt }}.json
