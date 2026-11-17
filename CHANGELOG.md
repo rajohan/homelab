@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.4](https://github.com/rajohan/homelab/compare/v0.19.3...v0.19.4) (2026-11-17)
+
+
+### Bug Fixes
+
+* **updates:** discover skill and build dependency releases ([#226](https://github.com/rajohan/homelab/issues/226)) ([3f97cf4](https://github.com/rajohan/homelab/commit/3f97cf45f048c7ebe8d3ce6e1b8a44da34a27264))
+
 ## [0.19.3](https://github.com/rajohan/homelab/compare/v0.19.2...v0.19.3) (2026-11-17)
 
 
