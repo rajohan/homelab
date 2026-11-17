@@ -79,20 +79,17 @@ A connection has a server-issued generation, fifteen-second heartbeat cadence an
 
 **Pairing and a fresh heartbeat do not authorize input or prove the desktop is ready.** Every machine receipt explicitly reports `controlAllowed: false`. The separate per-run grant, local consent and command queue described below are required for screen/input access. Release distribution, interactive qualification and update qualification remain required before production activation. Installation/platform/version fields are self-reported metadata, not a trust attestation.
 
-## Repeatable qualification
+## Runtime and build verification
 
-The 0.48.0 SDK removes `get_session_state`. The packaged Windows worker's
-`--check-runtime` manifest permits only the supported `get_session` tool while
-reading driver metadata; it grants no application or desktop access. SDK updates
-must pass the Docker/native-computer, Windows consent-host and interruption jobs,
-including extracted-package startup and native input qualification, before merge.
-The server browser retains its separately pinned CUA CLI 0.38.0.
+The browser and Windows companion share the native SDK pinned in the root
+`package.json` and `bun.lock`. The packaged Windows worker's `--check-runtime`
+manifest permits only `get_session` while reading driver metadata; it grants no
+application or desktop access. Relevant pull requests compile the Windows package
+and installer. CI does not launch them or run desktop acceptance tests.
 
-The image starts Xvfb, Openbox and a synthetic Tk window, waiting for the display, window manager and visible application before publishing readiness. The qualification performs native operations through the supervised child. It reads an inline image, focuses the entry, types a literal string and clicks a counter. It verifies the text and exactly one increment through the fixture's separate state file. It also checks denied desktop discovery, denied out-of-manifest executable access, one-use observations and closed-session refusal. It prints only a content-free receipt. CI runs the same command in the existing secret-free source-verification job.
-
-Unit tests also run real synthetic child processes to verify hung initialization, hung input, cancellation, parent EOF, forced termination, process reaping, temporary cleanup, environment filtering and disabled dotenv loading. Protocol tests reject privilege-widening requests and suppress late results after pipe loss. Other tests cover scope validation, stale/superseded/cross-session observations, out-of-bounds input, overlapping calls, host revocation, cancellation, unknown results, malformed frames, native cleanup and exact fixed-tool request mapping.
-
-Passing this fixture qualifies Linux X11 with explicit foreground input. It does not qualify Windows, Wayland, browser origin handling, background keyboard input, OS lock detection or production computer access. Remaining delivery work includes interactive Windows/browser acceptance, installation, release distribution and updater integration for the deployed companion artifact.
+Check SDK changes manually on the affected platforms before enabling them. A
+successful build alone does not verify screen capture, input, interactive consent
+or installation on the operator's PC.
 
 Upstream references: [SDK](https://cua.ai/docs/cua-driver/guides/use-the-sdk), [permission manifests](https://cua.ai/docs/cua-driver/guides/permissions), [platform limits](https://cua.ai/docs/cua-driver/concepts/platform-support).
 

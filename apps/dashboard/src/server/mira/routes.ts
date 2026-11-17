@@ -58,7 +58,10 @@ import {
     miraSocialVerifySchema,
 } from "@homelab/contracts/miraSocial";
 import { idSchema, versionedIdSchema } from "@homelab/contracts/operations";
-import { listMiraActionRequests } from "@homelab/mira/data/actionRequests";
+import {
+    listMiraActionRequests,
+    readMiraActionRequest,
+} from "@homelab/mira/data/actionRequests";
 import {
     deleteMiraAutomation,
     installMiraPresets,
@@ -198,6 +201,10 @@ function execute<T>(
     });
 }
 
+const actionPage = v.object({
+    id: idSchema,
+    before: v.exactOptional(v.pipe(v.string(), v.maxLength(64))),
+});
 const record = v.strictObject({ id: idSchema });
 export const miraRouter = trpc.router({
     computers: miraComputerRouter,
@@ -406,9 +413,21 @@ export const miraRouter = trpc.router({
     }),
     proposals: trpc.router({
         actions: trpc.procedure
-            .input(record)
+            .input(actionPage)
             .query(({ ctx, input }) =>
-                execute(ctx, (mira) => listMiraActionRequests(mira, input.id))
+                execute(ctx, (mira) =>
+                    listMiraActionRequests(mira, input.id, input.before)
+                )
+            ),
+        action: trpc.procedure
+            .input(
+                v.object({
+                    id: idSchema,
+                    kind: v.picklist(["code", "job", "mail", "publication", "social"]),
+                })
+            )
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => readMiraActionRequest(mira, input.kind, input.id))
             ),
         answer: trpc.procedure
             .input(miraQuestionAnswerSchema)

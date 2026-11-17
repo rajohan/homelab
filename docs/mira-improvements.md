@@ -30,4 +30,7 @@ Queued and active attempts protect their conversations and input files from dele
 
 ## Validation
 
-Synthetic provider integration tests exercise grant ownership/versioning, old-run rejection, concurrency and daily admission, private-tool denial, source preflight, pause during reads, check/cleanup failures, modified artifacts, downstream revocation, publication and report creation, deletion protection and reviewed recovery. UI tests cover exact-version consent, unavailable-provider revocation and review-note submission. Main tests also exercise the durable host dispatcher, edit transfer, result collection, active revocation and cleanup with a synthetic container boundary. No live provider writes or paid sandbox allocations are needed for these tests.
+Run the shared repository checks and builds for implementation changes. Manually
+inspect affected admission, cancellation, cleanup and review flows with a temporary
+development database. Production publication and paid sandbox allocation require
+their normal explicit permissions.

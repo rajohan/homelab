@@ -1,5 +1,5 @@
 import { Button, ErrorNotice, IconButton, Modal } from "@homelab/ui";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
 
@@ -20,10 +20,16 @@ export function ProposedChanges({ conversationId }: { readonly conversationId: s
         queryFn: () => api.mira.proposals.list.query({ id: conversationId }),
         refetchInterval: 1500,
     });
-    const actions = useQuery({
+    const actions = useInfiniteQuery({
         queryKey: ["operations", "mira", "action-requests", conversationId],
-        queryFn: () => api.mira.proposals.actions.query({ id: conversationId }),
-        refetchInterval: 1500,
+        queryFn: ({ pageParam }) =>
+            api.mira.proposals.actions.query({
+                id: conversationId,
+                ...(pageParam ? { before: pageParam } : {}),
+            }),
+        initialPageParam: undefined as string | undefined,
+        getNextPageParam: (page) => page.nextCursor ?? undefined,
+        refetchInterval: 5000,
     });
     const requests = [
         ...(query.data ?? []).map((proposal) => ({
@@ -31,9 +37,9 @@ export function ProposedChanges({ conversationId }: { readonly conversationId: s
             id: proposal.id,
             proposal,
         })),
-        ...(actions.data ?? []).map((action) => ({
+        ...(actions.data?.pages.flatMap((page) => page.rows) ?? []).map((action) => ({
             kind: "action" as const,
-            id: `${action.kind}:${action.draft.id}`,
+            id: `${action.kind}:${action.id}`,
             action,
         })),
     ];
@@ -48,8 +54,8 @@ export function ProposedChanges({ conversationId }: { readonly conversationId: s
         current.proposal.tool === "mira_request_user_input";
     let requestTitle = "Approval needed";
     if (question) requestTitle = "Your input is needed";
-    else if (current?.kind === "action" && current.action.draft.state !== "draft")
-        requestTitle = "Action status";
+    else if (current?.kind === "action" && current.action.state !== "draft")
+        requestTitle = current.action.pending ? "Action status" : "Action history";
     if (requests.length === 0 && !query.error && !actions.error && !review) return null;
     return (
         <section
@@ -68,7 +74,7 @@ export function ProposedChanges({ conversationId }: { readonly conversationId: s
                             {requestTitle}
                         </p>
                         <div className="flex shrink-0 items-center gap-1">
-                            {requests.length > 1 && (
+                            {(requests.length > 1 || actions.hasNextPage) && (
                                 <>
                                     <IconButton
                                         icon={ChevronLeft}
@@ -87,10 +93,28 @@ export function ProposedChanges({ conversationId }: { readonly conversationId: s
                                     <IconButton
                                         icon={ChevronRight}
                                         label="Next request"
-                                        disabled={index === requests.length - 1}
-                                        onClick={() =>
-                                            setSelected(requests[index + 1]?.id)
+                                        disabled={
+                                            actions.isFetchingNextPage ||
+                                            (index === requests.length - 1 &&
+                                                !actions.hasNextPage)
                                         }
+                                        onClick={() => {
+                                            const next = requests[index + 1];
+                                            if (next) setSelected(next.id);
+                                            else
+                                                void actions
+                                                    .fetchNextPage()
+                                                    .then((result) => {
+                                                        const first =
+                                                            result.data?.pages.at(-1)
+                                                                ?.rows[0];
+                                                        if (first)
+                                                            return setSelected(
+                                                                `${first.kind}:${first.id}`
+                                                            );
+                                                        return;
+                                                    });
+                                        }}
                                     />
                                 </>
                             )}

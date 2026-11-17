@@ -1,4 +1,7 @@
-import type { api } from "../../api/client";
+import { ErrorNotice, LoadingState, Modal } from "@homelab/ui";
+import { useQuery } from "@tanstack/react-query";
+
+import { api } from "../../api/client";
 import { CodeReview } from "./CodeReview";
 import { DaytonaDetails } from "./DaytonaDetails";
 import { MailReview } from "./MailReview";
@@ -7,10 +10,10 @@ import { SocialReview } from "./SocialReview";
 
 export type ActionRequest = Awaited<
     ReturnType<typeof api.mira.proposals.actions.query>
->[number];
+>["rows"][number];
 
 /**
- * Reuse the existing exact-content review for each pending Chat action.
+ * Reuse the existing exact-content review for each Chat action and its durable outcome.
  * @returns A review dialog for the selected action.
  */
 export function ActionReview({
@@ -20,21 +23,38 @@ export function ActionReview({
     readonly action: ActionRequest;
     readonly onClose: () => void;
 }) {
-    switch (action.kind) {
+    const current = useQuery({
+        queryKey: ["operations", "mira", "action", action.kind, action.id],
+        queryFn: () =>
+            api.mira.proposals.action.query({ kind: action.kind, id: action.id }),
+        refetchInterval: action.pending ? 5000 : false,
+    });
+    const details = current.data;
+    if (!details)
+        return (
+            <Modal title="Action details" onClose={onClose}>
+                {current.error ? (
+                    <ErrorNotice error={current.error} />
+                ) : (
+                    <LoadingState label="Loading action…" />
+                )}
+            </Modal>
+        );
+    switch (details.kind) {
         case "code": {
-            return <CodeReview draft={action.draft} onClose={onClose} />;
+            return <CodeReview draft={details.draft} onClose={onClose} />;
         }
         case "job": {
-            return <DaytonaDetails job={action.draft} onClose={onClose} />;
+            return <DaytonaDetails job={details.draft} onClose={onClose} />;
         }
         case "mail": {
-            return <MailReview draft={action.draft} onClose={onClose} />;
+            return <MailReview draft={details.draft} onClose={onClose} />;
         }
         case "publication": {
-            return <PublicationReview draft={action.draft} onClose={onClose} />;
+            return <PublicationReview draft={details.draft} onClose={onClose} />;
         }
         case "social": {
-            return <SocialReview draft={action.draft} onClose={onClose} />;
+            return <SocialReview draft={details.draft} onClose={onClose} />;
         }
     }
 }

@@ -45,7 +45,7 @@ export function SocialReview({
     const verify = useOperation(() =>
         api.mira.social.verify.mutate({ id: draft.id, version: draft.version, answer })
     );
-    const busy = approve.isPending || verify.isPending;
+    const busy = approve.isPending || verify.isPending || cancel.isPending;
     const title =
         draft.content.kind === "post" ? draft.content.title : "Comment or reply";
     const postId =
@@ -137,7 +137,7 @@ export function SocialReview({
                         <Button
                             variant="secondary"
                             busy={cancel.isPending}
-                            disabled={approve.isPending}
+                            disabled={approve.isPending || verify.isPending}
                             onClick={() =>
                                 void cancel
                                     .mutateAsync(undefined)
@@ -166,7 +166,9 @@ export function SocialReview({
                     {draft.state === "verification_required" && (
                         <Button
                             busy={verify.isPending}
-                            disabled={!/^-?\d{1,12}\.\d{2}$/.test(answer)}
+                            disabled={
+                                cancel.isPending || !/^-?\d{1,12}\.\d{2}$/.test(answer)
+                            }
                             onClick={() =>
                                 void verify
                                     .mutateAsync(undefined)

@@ -168,12 +168,11 @@ real process/database faults. `homelab_schedule_enabled{action}` reports schedul
 paused. Use these intent gauges to gate schedule-freshness alerts; do not alert merely
 because the last successful run grows old while a schedule is deliberately disabled.
 
-`bun run dev` starts disposable Auth and Dashboard databases plus the worker on
-loopback, with synthetic Docker/Loki fixtures. It has no production control credentials.
-`HOMELAB_PREVIEW_METRICS_URL` may explicitly enable read-only telemetry during development;
-identity, jobs, notifications and application lifecycle state remain entirely synthetic.
-Stop with Ctrl+C to remove that exact container and all preview data. The ordinary
-integration suite also allocates a separate disposable database per test suite.
+`bun run dev` starts the real Auth, Dashboard and worker with a temporary database
+and synthetic development account on loopback. Application and integration code
+is shared with production; unconfigured integrations remain unavailable. It has
+no production control credentials. Stop with Ctrl+C to remove the temporary
+container and its development data.
 
 Expired job, audit, incident and notification rows are removed in repeated small
 transactions by the hourly retention job. Each batch checks cancellation and live

@@ -158,19 +158,6 @@ export function browserWorkerEnvironment(): boolean {
     return true;
 }
 
-/**
- * Select the browser container's OS environment and fixed profile/sandbox markers.
- * @returns No product credentials, loader overrides or arbitrary driver options.
- */
-export function browserDriverEnvironment(): Record<string, string> {
-    const environment = computerEnvironment();
-    for (const name of ["CUA_E2E_BROWSER_NO_SANDBOX", "CUA_DRIVER_BROWSER_NO_SANDBOX"])
-        if (process.env[name] === "1") environment[name] = "1";
-    if (browserWorkerEnvironment())
-        environment.CUA_DRIVER_BROWSER_PROFILE_ROOT = "/var/lib/mira-browser-profile";
-    return environment;
-}
-
 /** Check whether the browser host attached its verified private proxy slot.
  * @param mode - Whether the grant requires the operator network.
  * @returns Whether a transient browser may start in this container.

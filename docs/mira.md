@@ -179,20 +179,18 @@ isolated synthetic preview before production deployment.
   delivery use the separately reviewed [AgentMail](mira-agentmail.md) and
   [here.now](mira-herenow.md) outboxes; model tools only prepare their drafts. The dashboard-improvement preset remains paused until its bounded
   execution adapter is delivered and qualified.
-- An optional `deploy/compose.mira.yaml` overlay runs the separately built Mira image.
-  The pinned native runtime is bundled in that image; its updates follow reviewed
+- An optional `deploy/compose.mira.yaml` overlay runs the Mira process from the shared Main image.
+  The pinned native runtime is bundled in Main; its updates follow reviewed
   Homelab releases. Auth continues to build and run independently. Release metadata
   accepts existing two-image releases and new releases that include Mira.
   The separate `deploy/compose.computer.yaml` overlay enables the machine receiver
   behind a same-host private TLS proxy; it is not part of the public dashboard route.
   See the [deployment configuration](../deploy/README.md#optional-mira-and-private-computer-receiver).
 
-Verification includes static checks, unit/component tests, real HTTP/database
-integration tests, all three application builds, built-process smoke checks and
-complete source coverage inventory. The disposable UI preview uses synthetic data
-and synthetic replies, with no production or provider connection. Live product
-qualification is a separate operator-invoked check using only synthetic documents
-and the dedicated Mira login. CI never uses those credentials.
+Verification includes lint, formatting, type checks, migration metadata and
+application builds. `bun run dev` uses the real applications with a temporary
+database and synthetic account for manual checks. CI has no automated test suite
+and does not use production credentials.
 
 ## Product data and behavior
 

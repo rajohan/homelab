@@ -92,8 +92,7 @@ The PVE metric contract is checked against
 Agentless guest history uses the current counters `pve_network_receive_bytes_total`,
 `pve_network_transmit_bytes_total`, `pve_disk_read_bytes_total`, and
 `pve_disk_written_bytes_total`. That exporter also exposes deprecated gauge aliases;
-the integration deliberately uses the counter replacements. Unit tests cover these
-upstream labels and all four history expressions with synthetic data.
+the integration deliberately uses the counter replacements.
 
 ## Interpretation
 

@@ -12,7 +12,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify:
+    if: "!github.event.release.prerelease"
+    uses: ./.github/workflows/ci.yml
+    with:
+      build: false
+
   images:
+    needs: verify
     if: "!github.event.release.prerelease"
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -130,6 +137,7 @@ jobs:
           if-no-files-found: error
 
   computer:
+    needs: verify
     if: "!github.event.release.prerelease"
     runs-on: windows-latest
     timeout-minutes: 15

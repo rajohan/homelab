@@ -9,8 +9,9 @@ GitHub App. Review and required branch protection still apply.
 1. A PR runs `CI / verify`: formatting, lint, TypeScript, migration metadata and builds.
 2. After review, squash merge with a Conventional Commit title.
 3. Release Please proposes the next version. Merge its reviewed release PR when ready.
-4. **Container images** builds and publishes the release artifacts. It does not repeat
-   the PR verification or run test suites.
+4. **Container images** runs the shared formatting, lint, type and migration checks
+   on the exact release commit before publishing. It then builds the release
+   artifacts directly, without test suites or a duplicate application-build job.
 5. Deploy through the existing backup, migration and health verification process.
 
 `fix` proposes a patch release and `feat` a minor release. `chore(deps)` publishes
