@@ -27,6 +27,7 @@ import { metricsJob } from "../integrations/metrics/job";
 import { createInventoryReader } from "../integrations/metrics/liveInventory";
 import { readSavedInventory } from "../integrations/metrics/snapshot";
 import type { MetricsConfiguration } from "../integrations/metrics/transport";
+import { readBuildDependencies } from "../integrations/releases/dependencies";
 import { automaticDeploymentJobs } from "../integrations/releases/deploymentAutomatic";
 import type { ReleaseDeploymentTarget } from "../integrations/releases/deploymentConfiguration";
 import { deploymentPreparationJobs } from "../integrations/releases/deploymentPlans";
@@ -62,6 +63,7 @@ export function createOperationsRuntime(
               configuration.updateTargets ?? []
           )
         : undefined;
+    const dependencyRequest = githubReleaseRequest(configuration.githubToken);
     const registry = createJobRegistry([
         ...automaticDeploymentJobs({
             client: connection.client,
@@ -82,6 +84,15 @@ export function createOperationsRuntime(
         ),
         ...(configuration.releaseRepository
             ? [
+                  snapshotJob({
+                      key: "homelab.dependencies",
+                      label: "Check Homelab source dependencies",
+                      description:
+                          "Check skill, Windows tool and Bun channel updates from the root manifest.",
+                      capability: "updates:refresh",
+                      intervalSeconds: 3600,
+                      read: (signal) => readBuildDependencies(signal, dependencyRequest),
+                  }),
                   snapshotJob({
                       key: "homelab.release",
                       label: "Check Homelab release",

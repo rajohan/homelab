@@ -81,17 +81,55 @@
         "postcss-selector-parser": "7.1.7"
     },
     "config": {
+        "skills": {
+            "impeccable": {
+                "version": "4.9.2",
+                "revision": "d41d9860b0094dcb68030657da63461212835aaa",
+                "update": {
+                    "kind": "github",
+                    "repository": "pbakaus/impeccable",
+                    "tagPrefix": "cli-v"
+                },
+                "paths": [
+                    ".agents/skills/impeccable/SKILL.md",
+                    ".agents/skills/impeccable/reference/operate.md"
+                ]
+            },
+            "intent": {
+                "version": "1.7.4",
+                "revision": "1806110106a472bc588d7a8a2b7e3d39aee4a4b8",
+                "update": {
+                    "kind": "github",
+                    "repository": "ghaida/intent",
+                    "tagPrefix": "v"
+                },
+                "paths": [
+                    "skills/intent/SKILL.md",
+                    "skills/organize/SKILL.md"
+                ]
+            }
+        },
         "windows": {
             "inno": {
                 "version": "7.1.0",
                 "url": "https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe",
                 "sha256": "0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f",
-                "publisher": "CN=Pyrsys B.V., O=Pyrsys B.V., S=Noord-Holland, C=NL"
+                "publisher": "CN=Pyrsys B.V., O=Pyrsys B.V., S=Noord-Holland, C=NL",
+                "update": {
+                    "kind": "github",
+                    "repository": "jrsoftware/issrc",
+                    "tagPrefix": "is-",
+                    "separator": "_"
+                }
             },
             "webview2": {
                 "version": "1.0.4314.35",
                 "sha256": "90778deb1b77e36292828b4b5833c9255c27533f40e0ddd55891ae718944edc4",
-                "publisher": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+                "publisher": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+                "update": {
+                    "kind": "nuget",
+                    "package": "microsoft.web.webview2"
+                }
             }
         }
     },

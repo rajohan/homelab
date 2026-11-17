@@ -5,8 +5,10 @@ import {
     miraSkillIdSchema,
     type MiraSkillSummary,
 } from "@homelab/contracts/miraSkills";
+import { sourceDependencyConfigSchema } from "@homelab/contracts/sourceDependencies";
 import * as v from "valibot";
 
+import { config } from "../../../../../package.json";
 import bundle from "./packages.json";
 
 const text = (maximum: number) =>
@@ -77,7 +79,30 @@ export function validateMiraSkillPackages(input: unknown) {
     );
 }
 
-const packages = validateMiraSkillPackages(bundle);
+const sourceConfig = v.parse(sourceDependencyConfigSchema, config);
+if (
+    Object.keys(sourceConfig.skills).some(
+        (id) => !bundle.some((entry) => entry.id === id)
+    )
+)
+    throw new Error("An upstream skill has no bundled adaptation.");
+
+const packages = validateMiraSkillPackages(
+    bundle.map((entry) => {
+        const source = Object.hasOwn(sourceConfig.skills, entry.id)
+            ? sourceConfig.skills[entry.id]
+            : undefined;
+        if (!source) return entry;
+        const base = `https://github.com/${source.update.repository}`;
+        return {
+            ...entry,
+            sources: [
+                `${base}/tree/${source.revision}`,
+                ...source.paths.map((file) => `${base}/blob/${source.revision}/${file}`),
+            ],
+        };
+    })
+);
 const digest = (value: string) =>
     new Bun.CryptoHasher("sha256").update(value).digest("hex");
 

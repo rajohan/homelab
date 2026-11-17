@@ -4,11 +4,23 @@ import information from "../../../../../../package.json";
 import { runOperation, trpc } from "../../api/trpc";
 import { authorizedOperations } from "../../operations/authorization";
 import { authReleaseObservations } from "./authObservations";
+import { buildDependencySnapshot } from "./dependencies";
 import { deploymentRouter } from "./deploymentRoutes";
 import { releaseSnapshot } from "./snapshot";
 
 export const releasesRouter = trpc.router({
     deployment: deploymentRouter,
+    dependencies: trpc.procedure.query(({ ctx }) =>
+        runOperation(async () => {
+            const { operations } = authorizedOperations(ctx, "updates:read");
+            return {
+                configured: Boolean(operations.releaseRepository),
+                snapshot: operations.releaseRepository
+                    ? await buildDependencySnapshot(operations.client)
+                    : null,
+            };
+        })
+    ),
     overview: trpc.procedure.query(({ ctx }) =>
         runOperation(async () => {
             const { operations, principal } = authorizedOperations(ctx, "updates:read");

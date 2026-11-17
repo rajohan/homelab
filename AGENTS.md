@@ -16,3 +16,5 @@
 - Keep all JavaScript dependencies in the root `package.json` and `bun.lock`; shared source folders use TypeScript aliases, not workspace manifests.
 - Build Auth separately from the Main image. Main services and their browser/code tools share one image; the network proxy has its own small image.
 - Chat actions use the existing request/approval controls above the composer. Do not add separate code-job, code-proposal or publication draft workspaces.
+
+- Every external dependency and vendored upstream must have automatic version discovery through Dependabot or the existing Homelab updater. Custom root-manifest pins need an update feed; do not leave upstream checks as a manual maintenance step.

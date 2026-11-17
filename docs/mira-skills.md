@@ -26,8 +26,10 @@ Deploy the dashboard and executor from the same reviewed release.
 ## Package contract
 
 `apps/mira/src/server/skills/packages.json` is compiled into the application. Each
-entry records its version, pinned source links, required native tools, integration
-controls, repository-context eligibility and complete Markdown files. The initial
+entry records its adapter version, required native tools, integration
+controls, repository-context eligibility and complete Markdown files. Upstream skill
+versions, revisions, update feeds and source paths are owned by the root
+`package.json` under `config.skills`; the catalog derives exact source links from it. The initial
 packages contain `SKILL.md`; the format also supports companion Markdown files.
 The API describes every file's byte size and SHA-256 digest, plus a complete package
 digest. Reads require that exact package digest and a manifest-listed file key.
@@ -36,8 +38,8 @@ There is no host-path discovery, network fetch, script execution or remote insta
 Validation requires exactly one entry for every supported skill, a semantic version,
 HTTPS source links, bounded tool/control names and safe relative Markdown keys.
 Packages allow at most eight files, 48,000 UTF-8 bytes per file and 256 KiB across the
-catalog. Source links identify the documentation used to author the installed
-instructions; they are not automatic update locations.
+catalog. Source links identify the documentation used to author the installed instructions.
+The existing updater checks the configured upstream release feeds automatically.
 
 The model lists applicable guidance with `mira_skills_list` and loads it with
 `mira_skill_read`. Every load rechecks the owner's current pause control. Improvement
@@ -50,8 +52,11 @@ skill verification remains unchanged.
 
 Changes to instructions, files or metadata use a Homelab PR, required checks, reviewed
 release and the existing updater. Bump the package version when its guidance changes;
-content and catalog hashes change with the installed bytes. Upstream announcements
-are candidates for review, not proof of installed or qualified behavior. Never run a
+content and catalog hashes change with the installed bytes. The hourly
+`homelab.dependencies` job reports available Impeccable and Intent updates on Updates,
+using their root-manifest source versions. No manual upstream search is needed.
+An available release is a candidate for updating the adaptation, not proof that new
+guidance has already been installed. Update content and its source pin together. Never run a
 downloaded skill installer as part of updating the catalog.
 
 Qualification checks bundle bounds and hashes, owner isolation, exact-version reads,
