@@ -320,6 +320,10 @@ export class MiraVoiceConnection {
             microphone: false,
             paused: false,
             speech: false,
+            speaking: false,
+            readingId: null,
+            transcript: "",
+            error: "",
             connection: "off",
         });
     }
@@ -330,6 +334,7 @@ export class MiraVoiceConnection {
         this.closeConnection();
         this.releaseMicrophone();
         clearTimeout(this.sendTimer);
+        this.sendTimer = undefined;
     }
     private releaseMicrophone() {
         const stream = this.stream;
