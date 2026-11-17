@@ -33,7 +33,7 @@ coverage jobs or repeated full verification runs to a small change.
 
 Use a focused branch and a Conventional Commit PR title. Describe the behavior,
 validation and relevant rollout implications. Resolve CI and review findings;
-never bypass branch protection. CodeQL runs weekly and can be started manually.
+never bypass branch protection. CodeQL runs on pull requests and pushes to `main`, weekly, and on manual dispatch.
 
 Release Please owns version/changelog changes. The release workflow builds the
 publishable artifacts directly, without rerunning PR checks or transferring large
