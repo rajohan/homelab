@@ -20,16 +20,22 @@ not independently trigger a release. Never move or reuse a published version tag
 
 ## Three image builds
 
-| Build | Contents                                                  | Registry roles                                       |
-| ----- | --------------------------------------------------------- | ---------------------------------------------------- |
-| Auth  | Auth runtime, CLI and migrations                          | `auth`                                               |
-| Main  | Dashboard, worker, Mira, browser SDK/Chromium, code tools | `dashboard`, `mira`, `mira-browser`, `daytona-check` |
-| Proxy | Existing shared network proxy                             | `mira-browser-proxy`                                 |
+| Build | Contents                                                  | Registry roles       |
+| ----- | --------------------------------------------------------- | -------------------- |
+| Auth  | Auth runtime, CLI and migrations                          | `auth`               |
+| Main  | Dashboard, worker, Mira, browser SDK/Chromium, code tools | `dashboard`          |
+| Proxy | Existing shared network proxy                             | `mira-browser-proxy` |
 
-Main's four registry role names point to the **same built image**, not four builds.
-They keep already-installed updaters and Compose files compatible. Docker shares
-identical layers and the image ID locally. Service processes still run in their
-existing containers with their own permissions and scoped environment.
+Main is published once as `dashboard`. The release manifests retain logical roles
+for Mira, browser and code jobs, all pointing to that same immutable dashboard
+reference. The updater accepts these shared references and installed legacy names
+when observing an upgrade. Service processes still run in their existing containers
+with their own permissions and scoped environment.
+
+The first upgrade from a version that requires one registry package per role needs
+a manual coordinated installation using the reviewed release verifier and host
+runner. Keep backup, queue drain, migration and health checks. After that upgrade,
+ordinary dashboard deployments consume the three published packages directly.
 
 The Main entry point recognizes the existing Mira `HOMELAB_MIRA_CONFIG` and browser
 host command; Dashboard, worker, migration and Auth commands keep their current

@@ -14,7 +14,7 @@ def run(*args):
     return subprocess.check_output(args, text=True).strip()
 
 
-def publish(local, roles, repository, version, revision):
+def publish(local, package, roles, repository, version, revision):
     metadata = json.loads(run("docker", "image", "inspect", local))[0]
     labels = metadata["Config"].get("Labels", {})
     expected_user = "0:0" if roles == ["mira-browser-proxy"] else "bun"
@@ -31,26 +31,24 @@ def publish(local, roles, repository, version, revision):
             manifest = json.load(image.extractfile("manifest.json"))
             config = next(entry["Config"] for entry in manifest if local in entry["RepoTags"])
             digest = "sha256:" + hashlib.sha256(image.extractfile(config).read()).hexdigest()
-    references = []
-    for role in roles:
-        tag = f"ghcr.io/{repository}/{role}:{version}"
-        existing = subprocess.run(["docker", "manifest", "inspect", tag], capture_output=True, text=True)
-        if existing.returncode == 0:
-            if json.loads(existing.stdout).get("config", {}).get("digest") != digest:
-                raise ValueError("Published release image differs; refusing replacement")
-        else:
-            if not any(reason in existing.stderr for reason in ["manifest unknown", "no such manifest", "NAME_UNKNOWN"]):
-                raise ValueError("Cannot verify registry state")
-            subprocess.run(["docker", "tag", local, tag], check=True)
-            subprocess.run(["docker", "push", tag], check=True)
-        remote = json.loads(run("docker", "manifest", "inspect", tag))
-        if remote.get("config", {}).get("digest") != digest:
-            raise ValueError("Published image config differs")
-        subprocess.run(["docker", "pull", tag], check=True)
-        prefix = f"ghcr.io/{repository}/{role}@sha256:"
-        found = json.loads(run("docker", "image", "inspect", tag))[0]["RepoDigests"]
-        reference = next(value for value in found if value.startswith(prefix))
-        references.append({"app": role, "tag": tag, "reference": tag + "@" + reference.split("@", 1)[1]})
+    tag = f"ghcr.io/{repository}/{package}:{version}"
+    existing = subprocess.run(["docker", "manifest", "inspect", tag], capture_output=True, text=True)
+    if existing.returncode == 0:
+        if json.loads(existing.stdout).get("config", {}).get("digest") != digest:
+            raise ValueError("Published release image differs; refusing replacement")
+    else:
+        if not any(reason in existing.stderr for reason in ["manifest unknown", "no such manifest", "NAME_UNKNOWN"]):
+            raise ValueError("Cannot verify registry state")
+        subprocess.run(["docker", "tag", local, tag], check=True)
+        subprocess.run(["docker", "push", tag], check=True)
+    remote = json.loads(run("docker", "manifest", "inspect", tag))
+    if remote.get("config", {}).get("digest") != digest:
+        raise ValueError("Published image config differs")
+    subprocess.run(["docker", "pull", tag], check=True)
+    prefix = f"ghcr.io/{repository}/{package}@sha256:"
+    found = json.loads(run("docker", "image", "inspect", tag))[0]["RepoDigests"]
+    reference = next(value for value in found if value.startswith(prefix))
+    references = [{"app": role, "tag": tag, "reference": tag + "@" + reference.split("@", 1)[1]} for role in roles]
     return references, labels
 
 
@@ -60,9 +58,9 @@ def main():
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag) or not re.fullmatch(r"[a-f0-9]{40}", revision):
         raise ValueError("Invalid release identity")
     version = tag[1:]
-    auth, auth_labels = publish("homelab-release/auth:built", ["auth"], repository, version, revision)
-    main_images, labels = publish("homelab-release/homelab:built", ["dashboard", "mira", "mira-browser", "daytona-check"], repository, version, revision)
-    proxy, _ = publish("homelab-release/mira-browser-proxy:built", ["mira-browser-proxy"], repository, version, revision)
+    auth, auth_labels = publish("homelab-release/auth:built", "auth", ["auth"], repository, version, revision)
+    main_images, labels = publish("homelab-release/homelab:built", "dashboard", ["dashboard", "mira", "mira-browser", "daytona-check"], repository, version, revision)
+    proxy, _ = publish("homelab-release/mira-browser-proxy:built", "mira-browser-proxy", ["mira-browser-proxy"], repository, version, revision)
     schemas = {"dashboardSchema": labels.get("io.homelab.dashboard-schema"), "authSchema": auth_labels.get("io.homelab.auth-schema")}
     if not all(isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value) for value in schemas.values()):
         raise ValueError("Missing migration fingerprints")

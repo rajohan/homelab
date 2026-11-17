@@ -343,6 +343,17 @@ def verify_browser_recovery(target, directory, before, observed):
         raise Refusal("configuration_changed")
 
 
+def image_version(repository, app, reference):
+    """Accept shared Main publication and installed legacy package references."""
+    package = "dashboard" if app in {"mira", "mira-browser", "daytona-check"} else app
+    for name in {package, app}:
+        prefix = "ghcr.io/" + repository.lower() + "/" + name + ":"
+        match = re.fullmatch(re.escape(prefix) + r"(\d+)\.(\d+)\.(\d+)@sha256:[a-f0-9]{64}", reference)
+        if match:
+            return tuple(map(int, match.groups()))
+    return None
+
+
 def release_images(release):
     repository, version, revision = release["repository"].lower(), release["version"], release["revision"]
     if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,99}/[a-z0-9][a-z0-9_.-]{0,99}", repository) or not re.fullmatch(r"\d+\.\d+\.\d+", version) or not re.fullmatch("[a-f0-9]{40}", revision):
@@ -352,8 +363,7 @@ def release_images(release):
     images = {}
     for image in release["images"]:
         app, reference = image["app"], image["reference"]
-        prefix = "ghcr.io/" + repository + "/" + app + ":" + version + "@sha256:"
-        if app not in {"auth", "dashboard", "mira", "mira-browser", "mira-browser-proxy", "daytona-check"} or app in images or not reference.startswith(prefix) or not re.fullmatch("[a-f0-9]{64}", reference[len(prefix):]):
+        if app not in {"auth", "dashboard", "mira", "mira-browser", "mira-browser-proxy", "daytona-check"} or app in images or image_version(repository, app, reference) != tuple(map(int, version.split("."))):
             raise Refusal("release_invalid")
         images[app] = reference
     if "dashboard" not in images:
@@ -376,9 +386,8 @@ def inspect(target, release, allow_current=False, drained=False):
         current = container(target, name)
         if config.get("services", {}).get(name, {}).get("image") != current["image"] or not current["running"] or current["health"] != "healthy":
             raise Refusal("service_unavailable")
-        prefix = "ghcr.io/" + release["repository"].lower() + "/" + app + ":"
-        match = re.fullmatch(re.escape(prefix) + r"(\d+)\.(\d+)\.(\d+)@sha256:[a-f0-9]{64}", current["image"])
-        if not match or (not allow_current and tuple(map(int, match.groups())) >= tuple(map(int, release["version"].split(".")))):
+        before = image_version(release["repository"], app, current["image"])
+        if before is None or (not allow_current and before >= tuple(map(int, release["version"].split(".")))):
             raise Refusal("release_not_newer")
         if allow_current and current["image"] == images[app] and current["imageId"] != image_identity(target, images[app], release):
             raise Refusal("image_verification")
