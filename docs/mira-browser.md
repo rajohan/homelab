@@ -48,7 +48,7 @@ Create intent commits before Docker dispatch; the returned ID commits before sta
 
 ## Fixed runtime boundary
 
-The browser and Windows companion use the same unmodified `@trycua/cua-driver` native SDK, pinned in the root `package.json` and `bun.lock`. The build copies its installed runtime with the shared `copyDriverRuntime.ts` helper. `deploy/Dockerfile` packages Chromium and Xvfb/Openbox in the Main image. Chromium and OS packages refresh through the normal release build; there is no separate driver download or installation during deployment. Browser containers contain no host profiles or model credentials.
+The browser and Windows companion use the same unmodified `@trycua/cua-driver` native SDK, pinned in the root `package.json` and `bun.lock`. The build copies its installed runtime with the shared `copyDriverRuntime.ts` helper. `deploy/Dockerfile` packages Chromium and Xvfb/Openbox in the Main image. `browser-image.json` points its logical `mira-browser` role to the shared `dashboard` registry package and its proxy role to `mira-browser-proxy`; no separate `mira-browser` package is published. Chromium and OS packages refresh through the normal release build; there is no separate driver download or installation during deployment. Browser containers contain no host profiles or model credentials.
 
 The fixed container runs as UID/GID 1000 with a read-only root, no host mounts or published ports, no capabilities, no-new-privileges, bounded temporary filesystems, 1536 MiB RAM, two CPUs and 256 PIDs. Docker init, automatic removal and `/usr/bin/timeout --signal=KILL 305s` bound descendants independently of native cleanup. The upstream browser no-sandbox setting is confined to this outer container boundary; do not run the worker outside it.
 
