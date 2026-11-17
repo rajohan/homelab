@@ -87,35 +87,49 @@ async function latest(
     signal: AbortSignal,
     request: typeof fetch
 ) {
-    const read = async (url: string) =>
+    const read = async (url: string, maximumBytes = 262_144) =>
         readBoundedJson(
             await request(url, {
                 signal,
                 redirect: "error",
                 headers: { Accept: "application/json" },
             }),
-            262_144
+            maximumBytes
         );
     const source = dependency.source;
     if (source.kind === "github") {
-        const release = v.parse(
-            v.object({
-                tag_name: v.string(),
-                draft: v.literal(false),
-                prerelease: v.literal(false),
-            }),
+        const releases = v.parse(
+            v.pipe(
+                v.array(
+                    v.object({
+                        tag_name: v.string(),
+                        draft: v.boolean(),
+                        prerelease: v.boolean(),
+                    })
+                ),
+                v.maxLength(100)
+            ),
             await read(
-                `https://api.github.com/repos/${source.repository}/releases/latest`
+                `https://api.github.com/repos/${source.repository}/releases?per_page=100`,
+                2_000_000
             )
         );
-        if (!release.tag_name.startsWith(source.tagPrefix))
-            throw new Error("Unsupported release tag.");
-        return v.parse(
-            sourceVersionSchema,
-            release.tag_name
-                .slice(source.tagPrefix.length)
-                .replaceAll(source.separator, ".")
-        );
+        const version = releases
+            .filter(
+                (release) =>
+                    !release.draft &&
+                    !release.prerelease &&
+                    release.tag_name.startsWith(source.tagPrefix)
+            )
+            .map((release) =>
+                release.tag_name
+                    .slice(source.tagPrefix.length)
+                    .replaceAll(source.separator, ".")
+            )
+            .filter((value) => v.is(sourceVersionSchema, value))
+            .toSorted((left, right) => numericOrder(right, left))[0];
+        if (!version) throw new Error("No matching stable package release.");
+        return version;
     }
     if (source.kind === "nuget") {
         const catalog = v.parse(
