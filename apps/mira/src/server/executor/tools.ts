@@ -60,7 +60,6 @@ import type { MiraOperationsConfiguration } from "../operations/configuration";
 import { MiraHostCommandFailure } from "../operations/ssh";
 import { createMiraOperationsTools, type MiraHostReviewer } from "../operations/tools";
 import type { RuntimeTool } from "../runtime/protocol";
-import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { createMiraSkillTools } from "../skills/tools";
@@ -70,7 +69,6 @@ import { createMiraComputerTools } from "./computerTools";
 import { saveGeneratedMiraFile } from "./generatedFiles";
 import { createMiraRecallTools } from "./recallTools";
 import type { MiraToolContext, MiraToolDefinition } from "./toolDefinition";
-import { syntheticSearchTool } from "./webSearch";
 
 const taskAssessmentTools = new Set([
     "mira_tasks_list",
@@ -132,7 +130,6 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param hereNow - Optional scoped website metadata settings; credentials stay in the executor.
  * @param moltbook - Optional social read settings, retained only by the service.
  * @param github - Optional GitHub mapping and dedicated read credential, retained only in the service closure.
- * @param search - Owner-bound search for manual Synthetic chat turns.
  * @param reviewer - Server-selected independent host command reviewer.
  * @param operations - Explicit host administration, separate from sandbox execution.
  * @param localCode - Optional Main mapping; the run freezes its target before inference.
@@ -149,7 +146,6 @@ export function createMiraTools(
     daytona?: DaytonaBinding,
     github?: GitHubBinding | GitHubConfiguration,
     localCode?: LocalCodeBinding,
-    search?: SyntheticConfiguration,
     operations?: MiraOperationsConfiguration,
     reviewer?: MiraHostReviewer
 ): RuntimeTool<RuntimeToolResult>[] {
@@ -166,9 +162,6 @@ export function createMiraTools(
         ...createMiraRecallTools(client, run),
         ...createMiraComputerTools(),
         ...createMiraBrowserTools(),
-        ...(search?.owner === run.owner && run.manual && !run.automationId && !run.taskId
-            ? [syntheticSearchTool(search)]
-            : []),
         {
             name: "mira_file_create",
             description:
@@ -752,8 +745,6 @@ export function createMiraTools(
                             error instanceof MiraHostCommandFailure)
                     )
                         message = error.message;
-                    else if (readOnly && definition.name === "mira_web_search")
-                        message = "Web search failed. Check the query and try again.";
                     else if (readOnly && definition.name.startsWith("mira_homelab_"))
                         message =
                             "The host inspection failed. Check the connection before trying another read.";

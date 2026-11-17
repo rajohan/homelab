@@ -1,6 +1,6 @@
 # Homelab administration in Chat
 
-Manual Chat and manually started tasks can discover provisioned hosts, inspect them and run reviewed shell commands through Mira's trusted executor. This is independent of the Main/Daytona code-test setting. The same tools work with OpenAI and Synthetic and the same review UI works on web and Windows.
+Manual Chat and manually started tasks can discover provisioned hosts, inspect them and run reviewed shell commands through Mira's trusted executor. This is independent of the Main/Daytona code-test setting. ChatGPT/Codex uses these tools, and the same review UI works on web and Windows.
 
 `mira_homelab_targets` reports actual configured destinations. `mira_homelab_inspect` runs fixed identity, health, service, disk, Docker or managed-GitHub identity inspections. `mira_homelab_command` accepts the exact target, shell program, purpose and command deadline. Shell commands intentionally provide general administration, including SSH, restarting services, managed `gh` operations and the repository's deployment procedures. They are not confined to code-check profiles.
 

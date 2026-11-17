@@ -111,3 +111,11 @@ export function readBundledMiraSkill(
 export const miraSkillCatalogHash = digest(
     JSON.stringify(summaries.map((entry) => [entry.id, entry.packageHash]))
 );
+
+/**
+ * Return complete release-owned skill packages for native installation.
+ * @returns Native-compatible packages with upstream pins already verified; callers must not mutate them.
+ */
+export function bundledNativeMiraSkills() {
+    return packages;
+}

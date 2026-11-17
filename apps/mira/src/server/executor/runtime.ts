@@ -9,7 +9,6 @@ import type { SQL } from "bun";
 
 import { runtimeEnvironment } from "../config/environment";
 import { reconcileMiraControls } from "../data/automations";
-import { miraNativeDefaultModel } from "../data/chatSettings";
 import { scheduleChatFollowups } from "../data/chatSteering";
 import { claimMiraRun, reconcileMiraRuns, scheduleMiraRuns } from "../data/queue";
 import { dispatchMiraImprovement } from "../improvement/worker";
@@ -51,13 +50,6 @@ import type { MiraOperationsConfiguration } from "../operations/configuration";
 import { inspectChatgpt } from "../runtime/chatgptConnection";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
-import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
-import {
-    loadSyntheticModels,
-    readSyntheticQuota,
-    syntheticQuotaAvailable,
-    syntheticQuotaWindows,
-} from "../runtime/syntheticRuntime";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { miraSkillCatalogHash } from "../skills/catalog";
 import { runChatgptLogins } from "./chatgptLogin";
@@ -90,7 +82,6 @@ export async function runMiraExecutor(options: {
     hereNow?: HereNowReadConfiguration | undefined;
     daytona?: DaytonaExecutionConfiguration | undefined;
     github?: GitHubConfiguration | undefined;
-    synthetic?: SyntheticConfiguration | undefined;
     localCode?: LocalCodeBinding | undefined;
     operations?: MiraOperationsConfiguration | undefined;
 }): Promise<void> {
@@ -231,12 +222,12 @@ export async function runMiraExecutor(options: {
             if (deployment)
                 currentMessage =
                     "Mira is waiting for the Homelab deployment. Queued work is preserved.";
-            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models, integrations, skill_catalog_hash, skill_catalog_worker_id, deployment_drained_for, synthetic_owner, quotas, chatgpt) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready && !deployment}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb, ${JSON.stringify(integrationsCatalog)}::text::jsonb, ${miraSkillCatalogHash}, ${workerId}, ${maintenance.drained}, ${options.synthetic?.owner ?? null}, ${JSON.stringify(quotas)}::text::jsonb, ${JSON.stringify(chatgpt)}::text::jsonb) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models, integrations = EXCLUDED.integrations, skill_catalog_hash = EXCLUDED.skill_catalog_hash, skill_catalog_worker_id = EXCLUDED.skill_catalog_worker_id, deployment_drained_for = EXCLUDED.deployment_drained_for, synthetic_owner = EXCLUDED.synthetic_owner, quotas = EXCLUDED.quotas, chatgpt = EXCLUDED.chatgpt`;
+            await client`INSERT INTO mira_runtime_status (id, worker_id, version, model, ready, message, heartbeat_at, models, integrations, skill_catalog_hash, skill_catalog_worker_id, deployment_drained_for, quotas, chatgpt) VALUES (1, ${workerId}, ${options.version}, ${model}, ${health.ready && !deployment}, ${currentMessage}, now(), ${JSON.stringify(models)}::text::jsonb, ${JSON.stringify(integrationsCatalog)}::text::jsonb, ${miraSkillCatalogHash}, ${workerId}, ${maintenance.drained}, ${JSON.stringify(quotas)}::text::jsonb, ${JSON.stringify(chatgpt)}::text::jsonb) ON CONFLICT (id) DO UPDATE SET worker_id = EXCLUDED.worker_id, version = EXCLUDED.version, model = EXCLUDED.model, ready = EXCLUDED.ready, message = EXCLUDED.message, heartbeat_at = EXCLUDED.heartbeat_at, models = EXCLUDED.models, integrations = EXCLUDED.integrations, skill_catalog_hash = EXCLUDED.skill_catalog_hash, skill_catalog_worker_id = EXCLUDED.skill_catalog_worker_id, deployment_drained_for = EXCLUDED.deployment_drained_for, quotas = EXCLUDED.quotas, chatgpt = EXCLUDED.chatgpt`;
             const waiting =
                 chatgpt.state === "connected"
                     ? null
                     : chatgptStatusMessage(chatgpt.state);
-            await client`UPDATE mira_runs SET message=${waiting} WHERE state='queued' AND NOT cancel_requested AND coalesce(settings->>'model',CASE WHEN ${model}::text LIKE 'syn:%' AND owner IS DISTINCT FROM ${options.synthetic?.owner ?? null} THEN ${miraNativeDefaultModel(models, model)} ELSE ${model} END,'') NOT LIKE 'syn:%' AND message IS DISTINCT FROM ${waiting} AND (message IS NULL OR message LIKE 'ChatGPT %')`;
+            await client`UPDATE mira_runs SET message=${waiting} WHERE state='queued' AND NOT cancel_requested AND message IS DISTINCT FROM ${waiting} AND (message IS NULL OR message LIKE 'ChatGPT %')`;
             health.heartbeatAt = Date.now();
             await Promise.race([wait(5000), changed]);
         }
@@ -253,8 +244,6 @@ export async function runMiraExecutor(options: {
                     await scheduleMiraRuns(client, new Date(), {
                         models: models.map((entry) => entry.model),
                         defaultModel: model,
-                        nativeDefaultModel: miraNativeDefaultModel(models, model),
-                        syntheticOwner: options.synthetic?.owner,
                     });
             });
             await Promise.race([wait(5000), changed]);
@@ -290,38 +279,15 @@ export async function runMiraExecutor(options: {
                 await runtime?.close();
             }
             try {
-                let aliases: MiraModel[] = [];
-                if (options.synthetic) {
-                    try {
-                        const quota = await readSyntheticQuota(options.synthetic, signal);
-                        if (quota)
-                            observed.push({
-                                provider: "synthetic",
-                                observedAt: new Date().toISOString(),
-                                windows: syntheticQuotaWindows(quota),
-                            });
-                        if (quota && syntheticQuotaAvailable(quota))
-                            aliases = await loadSyntheticModels(
-                                options.synthetic,
-                                signal
-                            );
-                    } catch {
-                        /* Report unavailable telemetry without stopping the other provider. */
-                    }
-                }
                 quotas = observed;
-                models = [...nativeModels, ...aliases];
-                const defaults = model?.startsWith("syn:") ? aliases : nativeModels;
-                // Follow catalog changes within the current provider. Keep its previous
-                // default during an outage instead of silently changing provider/billing.
+                models = nativeModels;
+                // Keep the configured or previous default during an outage.
                 model =
                     config.model ??
-                    defaults.find((entry) => entry.model === model)?.model ??
-                    defaults.find((entry) => entry.isDefault)?.model ??
-                    defaults[0]?.model ??
-                    model ??
+                    models.find((entry) => entry.model === model)?.model ??
                     models.find((entry) => entry.isDefault)?.model ??
                     models[0]?.model ??
+                    model ??
                     null;
                 defaultReady = models.some((entry) => entry.model === model);
                 // Explicit available chats remain usable while default work waits.
@@ -331,7 +297,7 @@ export async function runMiraExecutor(options: {
                     : "The default model is unavailable. Work using it is waiting; choose an available model in Chat or Automation settings.";
                 message = health.ready
                     ? defaultMessage
-                    : "Mira needs a connected provider and an available model.";
+                    : "Mira needs a connected ChatGPT account and an available model.";
             } catch {
                 health.ready = false;
                 message =
@@ -434,8 +400,6 @@ export async function runMiraExecutor(options: {
                 claimMiraRun(client, workerId, name, {
                     models: models.map((entry) => entry.model),
                     defaultModel: model,
-                    nativeDefaultModel: miraNativeDefaultModel(models, model),
-                    syntheticOwner: options.synthetic?.owner,
                 }),
             execute: async (run, turnSignal) => {
                 health.active++;
@@ -451,15 +415,12 @@ export async function runMiraExecutor(options: {
                         options.hereNow,
                         options.daytona,
                         options.github,
-                        options.synthetic,
                         options.localCode,
                         options.operations,
                         (status) => {
                             chatgpt = status;
-                            models = models.filter((entry) =>
-                                entry.model.startsWith("syn:")
-                            );
-                            health.ready = models.length > 0;
+                            models = [];
+                            health.ready = false;
                             inspectionChanged.resolve();
                             inspectNow.resolve();
                         }

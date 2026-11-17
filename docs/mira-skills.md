@@ -4,12 +4,14 @@ The Automations page contains nine release-owned skill packages. Impeccable and
 Intent contain the complete original upstream skill trees at the root-manifest
 revisions. Their instructions, references, agent definitions, templates, helper
 script sources, licenses and attribution are preserved as exact UTF-8 bytes with
-their original repository-relative paths. The other seven packages remain
-Homelab's existing native integration guidance.
+their original repository-relative paths. The other seven packages contain
+Homelab's integration guidance with standard
+SKILL.md name/description frontmatter. All nine packages use the same native Codex
+installation, discovery and invocation path; there is no parallel skill engine.
 
 ## Original sources and Mira integration
 
-The original entrypoints are
+The upstream entrypoints are
 `.agents/skills/impeccable/SKILL.md` and
 `skills/intent/SKILL.md`.
 There are no replacement summaries of their workflows. Intent includes all 18
@@ -17,19 +19,34 @@ skills, their references and its six agent definitions. Impeccable includes all
 files in its official agent skill directory, including init, critique, audit and
 the accompanying references.
 
-A separate integration note describes how the package is accessed in Mira. It is
-metadata beside the original files, never inserted into or substituted for them.
-The model reads the original entrypoint, selects the actual workflow and follows
-its references. Resolve relative links from the current file; use the exact key
-in the installed catalog. A CLI-style command in the documentation may invoke an
-agent workflow or require an actual executable; these are distinct capabilities.
+Homelab entrypoints live at `skills/<package-id>/SKILL.md` and are named
+`homelab-<package-id>` in native discovery. The normal Mira build installs all skill trees beside the packaged
+Codex executable at `runtime/skills/<package-id>/`, preserving their original
+relative paths. On each work run, the executor verifies the installed files against
+the compiled release and registers only the owner's enabled packages through
+Codex's process-local `skills/extraRoots/set`. Native `skills/list` must discover
+exactly the expected original names, paths and scopes, alongside the pinned Codex
+system skills. Missing, modified, extra and linked entries are rejected.
 
-Bundling a script or agent definition does not execute it, register a specialist
-agent or expose a native engine, hook or browser overlay. The current tool registry,
-provider capabilities and permissions decide what can run. Use the original
-documented fallback where applicable and report unsupported steps explicitly.
-Never claim an upstream command ran because its documentation was read. No remote
-skill installer runs during synchronization, builds, loading or update discovery.
+Codex sees the original skills in its normal skill catalog and can select them for
+matching work. Explicit mentions such as `$impeccable critique`, `$intent:intent`
+and `$intent:evaluate` are sent as native skill inputs on turns and steering.
+Unknown names or packages paused before the run do not select a native skill. The original entrypoint is
+injected by Codex; no shortened replacement is substituted. Use the original
+workflow, references and verification steps.
+
+A separate host integration note maps native paths to `mira_skill_read` for
+referenced files. Resolve references relative to the current file, remove its
+package root and use the exact repository-relative key and package hash.
+The empty workspace and private credential profile stay separate;
+installation does not enable unrestricted shell access.
+
+Bundled helper sources, agent definitions, hooks and overlays do not become new
+execution tools. Use the current tool registry and permissions; follow an original
+workflow's documented fallback when a helper is unavailable and report that step
+accurately. In particular, Impeccable documents direct project-context loading when
+its launcher cannot run. No remote installer or upstream script runs during builds,
+loading or update discovery.
 
 Existing confirmed project context can be reused. Follow the relevant original
 workflow, including its required artifacts and checks, without making the operator
@@ -41,11 +58,15 @@ View opens the original entrypoint and lets the operator inspect every bundled
 file using the shared Markdown/code preview. Large files have explicit previous
 and next sections; no source is silently shortened or reformatted in storage.
 
-Each package has its own pause reason and optional timed resumption. Pausing
-prevents new loads; it cannot remove text already loaded in a conversation.
+Each package has its own pause reason and optional timed resumption. Every reader
+call rechecks the current pause. Native discovery is selected per run; a pause
+removes that package from the next run. A pause cannot erase instructions already
+loaded in an active model turn. Changing enabled packages or release contents
+rotates the provider thread before resuming so a stale native catalog is not reused.
 Loading or enabling a package never enables integrations, expands tool access or
 approves an external action. Native pinned Codex system-skill verification remains
-unchanged, and both supported chat providers use the same Mira skill tools.
+unchanged. Native roots are process-local and never written into a shared profile;
+login, connection checks and approval reviewers receive no upstream skills.
 
 Activation and timed resumption require a fresh executor with the matching catalog
 digest bound to its process identity. An old executor after rollback cannot inherit
@@ -97,5 +118,7 @@ content changes and separate integration notes together.
 Run normal formatting, lint, types, both migration metadata checks and builds.
 The existing check validates bundle bounds and content/pin consistency offline;
 it does not depend on GitHub availability. Qualification should also compare the
-generated files with the pinned upstream objects and reassemble paged reads.
+generated files with the pinned upstream objects and reassemble paged reads. Native qualification uses a credential-free temporary
+profile to verify discovery, thread setup, pause selection and rejection of altered
+files; actual model work is verified separately after deployment.
 There is no separate automated test suite or remote installer.

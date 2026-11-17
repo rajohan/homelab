@@ -465,7 +465,6 @@ export const miraRuntimeStatus = pgTable(
         id: integer().primaryKey().default(1),
         workerId: uuid("worker_id").notNull(),
         version: text().notNull(),
-        syntheticOwner: text("synthetic_owner"),
         skillCatalogHash: text("skill_catalog_hash"),
         skillCatalogWorkerId: uuid("skill_catalog_worker_id"),
         deploymentDrainedFor: uuid("deployment_drained_for"),

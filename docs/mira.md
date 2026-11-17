@@ -145,10 +145,9 @@ isolated synthetic preview before production deployment.
   Provider recovery supplies at most 32 recent messages and 48,000 characters, with
   message IDs, dates and explicit omissions. Older text stays in the database and
   can be retrieved on demand; it is not all sent on every turn. Failed/interrupted
-  messages retain their state and are not proof that an action succeeded. Switching
-  back from Synthetic restores intervening product messages. Provider-private
+  messages retain their state and are not proof that an action succeeded. Provider-private
   reasoning is not transferred, and older images may need to be attached again.
-  Relevant context goes to the provider selected for the run (ChatGPT or Synthetic);
+  Relevant context goes to the selected ChatGPT model;
   no separate embedding service or duplicate history store is added. Dashboard
   improvement and task-change assessments cannot retrieve private memory/history.
   Disabling history also excludes that conversation from future searches. It does
@@ -364,7 +363,7 @@ Mira's release-owned persona lives in `apps/mira/src/server/persona/`:
 - `USER.md`: rules for applying the current account's preferences, without a shared private profile.
 - `AGENTS.md`: runtime tools, permissions, continuity and memory behavior. The root `AGENTS.md` remains development guidance.
 
-Static text imports embed these files in the server artifact. ChatGPT and Synthetic receive the same foundation. All four files contribute to the existing instructions hash, so a changed release renews provider instructions and reconstructs context from product history instead of resuming an obsolete policy. Updates use the normal Homelab build, review and deployment flow; there is no remote instruction fetch or mutable host-directory override.
+Static text imports embed these files in the server artifact. ChatGPT receives this foundation. All four files contribute to the existing instructions hash, so a changed release renews provider instructions and reconstructs context from product history instead of resuming an obsolete policy. Updates use the normal Homelab build, review and deployment flow; there is no remote instruction fetch or mutable host-directory override.
 
 Saved memories and conversation history remain in the owner-scoped database with the existing recall controls. Old daily journals, private profiles and legacy VPS/OpenClaw paths are not imported. Changes to memory do not modify these reviewed instructions or grant additional permissions.
 
@@ -394,10 +393,10 @@ Run status appears below both panels. Work notes are provider-supplied display s
 not a complete internal reasoning log. Tool counts cover the full run, with bounded pages
 and refreshed durable receipt states.
 
-**Provider quota** shows ChatGPT and Synthetic provider-reported remaining percentages,
+**ChatGPT quota** shows provider-reported remaining percentages,
 reset times when supplied, and observation time. Missing or stale telemetry is shown as
-unavailable and never interpreted as a full allowance. Synthetic telemetry remains scoped
-to its configured owner. Quotas do not independently prove model availability.
+unavailable and never interpreted as a full allowance. Quotas do not independently
+prove model availability.
 
 Generated, imported and browser-downloaded files allow up to 100 attachments per run.
 Files retain their originating reply even as more commentary arrives; files created before

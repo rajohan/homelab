@@ -69,7 +69,7 @@ export async function connectVoice(
                     transcription: {
                         model: "gpt-transcribe",
                         languages: ["no", "en"],
-                        keywords: ["Mira", "Homelab", "ChatGPT", "Synthetic"],
+                        keywords: ["Mira", "Homelab", "ChatGPT"],
                     },
                     turn_detection: {
                         type: "server_vad",

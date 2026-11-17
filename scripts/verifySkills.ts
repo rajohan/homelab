@@ -7,9 +7,9 @@ import * as v from "valibot";
 
 /**
  * Verify compiled skill source content against the root manifest without contacting upstream.
- * @returns Completion when original content, revisions and entrypoints all match the pins.
+ * @returns All release-owned packages after verifying the upstream root-manifest pins.
  */
-export async function verifySkills(): Promise<void> {
+export async function verifySkills() {
     const manifest: unknown = await Bun.file(
         new URL("../package.json", import.meta.url)
     ).json();
@@ -35,4 +35,5 @@ export async function verifySkills(): Promise<void> {
             );
     }
     console.info("Verified original skill sources and manifest pins.");
+    return packages;
 }

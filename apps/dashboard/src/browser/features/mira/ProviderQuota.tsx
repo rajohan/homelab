@@ -10,7 +10,7 @@ function readClock() {
     return Math.floor(Date.now() / 10_000) * 10_000;
 }
 
-/** Show provider-reported allowance with freshness and explicit missing-data states.
+/** Show ChatGPT-reported allowance with freshness and explicit missing-data states.
  * @returns Compact quota windows that do not imply that model access is guaranteed.
  */
 export function ProviderQuota({
@@ -23,98 +23,52 @@ export function ProviderQuota({
     readonly now?: number;
 }) {
     const clock = useSyncExternalStore(subscribeClock, readClock, readClock);
-    const currentTime = now ?? clock;
+    const quota = quotas.find((entry) => entry.provider === "chatgpt");
+    const stale =
+        !fresh || !quota || (now ?? clock) - Date.parse(quota.observedAt) >= 90_000;
+    const windows = quota?.windows ?? [];
     return (
         <details className="border-b border-primary-700 px-4 py-2 text-xs text-primary-400">
             <summary className="cursor-pointer">
-                Provider quota ·{" "}
-                {(["chatgpt", "synthetic"] as const)
-                    .map((provider) => {
-                        const quota = quotas.find((entry) => entry.provider === provider);
-                        const valid =
-                            fresh &&
-                            quota &&
-                            currentTime - Date.parse(quota.observedAt) < 90_000;
-                        return `${provider === "chatgpt" ? "ChatGPT" : "Synthetic"}: ${valid && quota.windows.length > 0 ? `${Math.round(Math.min(...quota.windows.map((entry) => entry.remainingPercent)))}% left` : "quota unavailable"}`;
-                    })
-                    .join(" · ")}
+                ChatGPT quota ·{" "}
+                {!stale && windows.length > 0
+                    ? `${Math.round(Math.min(...windows.map((entry) => entry.remainingPercent)))}% left`
+                    : "quota unavailable"}
             </summary>
-            <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                {(["chatgpt", "synthetic"] as const).map((provider) => {
-                    const quota = quotas.find((entry) => entry.provider === provider);
-                    const stale =
-                        !fresh ||
-                        !quota ||
-                        currentTime - Date.parse(quota.observedAt) >= 90_000;
-                    return (
-                        <div key={provider} className="space-y-1">
-                            <p className="font-medium text-primary-200">
-                                {provider === "chatgpt" ? "ChatGPT" : "Synthetic"}
-                            </p>
-                            {(quota?.windows.length ?? 0) === 0 ? (
-                                <p>Quota unavailable</p>
-                            ) : (
-                                <>
-                                    {stale && (
-                                        <p>Last reported values · refresh unavailable</p>
-                                    )}
-                                    {quota?.windows.map((window) => (
-                                        <div key={window.label}>
-                                            <p>
-                                                {window.label}:{" "}
-                                                {Math.round(window.remainingPercent)}%
-                                                remaining
-                                            </p>
-                                            <div className="my-1 h-2 overflow-hidden rounded-full bg-primary-800">
-                                                <meter
-                                                    aria-label={`${provider} ${window.label} remaining`}
-                                                    min={0}
-                                                    max={100}
-                                                    value={window.remainingPercent}
-                                                    className="sr-only"
-                                                />
-                                                <div
-                                                    aria-hidden="true"
-                                                    className="h-full rounded-full bg-accent-400"
-                                                    style={{
-                                                        width: `${window.remainingPercent}%`,
-                                                    }}
-                                                />
-                                            </div>
-                                            {window.label === "Weekly credits" &&
-                                                provider === "synthetic" && (
-                                                    <p>
-                                                        Credits replenish gradually
-                                                        throughout the week.
-                                                    </p>
-                                                )}
-                                            {window.replenishesAt && (
-                                                <p>
-                                                    Next replenishment
-                                                    {window.replenishesPercent ===
-                                                    undefined
-                                                        ? ""
-                                                        : ` (+${window.replenishesPercent}%)`}
-                                                    :{" "}
-                                                    {formatDateTime(window.replenishesAt)}
-                                                </p>
-                                            )}
-                                            {window.resetsAt && (
-                                                <p>
-                                                    Resets{" "}
-                                                    {formatDateTime(window.resetsAt)}
-                                                </p>
-                                            )}
-                                        </div>
-                                    ))}
-                                    <p>
-                                        Updated {formatDateTime(quota?.observedAt ?? "")}
-                                    </p>
-                                </>
-                            )}
-                        </div>
-                    );
-                })}
+            <div className="mt-2 space-y-1">
+                {windows.length === 0 ? (
+                    <p>Quota unavailable</p>
+                ) : (
+                    <>
+                        {stale && <p>Last reported values · refresh unavailable</p>}
+                        {windows.map((window) => (
+                            <div key={window.label}>
+                                <p>
+                                    {window.label}: {Math.round(window.remainingPercent)}%
+                                    remaining
+                                </p>
+                                <div className="my-1 h-2 overflow-hidden rounded-full bg-primary-800">
+                                    <meter
+                                        aria-label={`ChatGPT ${window.label} remaining`}
+                                        min={0}
+                                        max={100}
+                                        value={window.remainingPercent}
+                                        className="sr-only"
+                                    />
+                                    <div
+                                        aria-hidden="true"
+                                        className="h-full rounded-full bg-accent-400"
+                                        style={{ width: `${window.remainingPercent}%` }}
+                                    />
+                                </div>
+                                {window.resetsAt && (
+                                    <p>Resets {formatDateTime(window.resetsAt)}</p>
+                                )}
+                            </div>
+                        ))}
+                        <p>Updated {formatDateTime(quota?.observedAt ?? "")}</p>
+                    </>
+                )}
             </div>
         </details>
     );

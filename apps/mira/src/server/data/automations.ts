@@ -114,8 +114,7 @@ export async function saveMiraAutomation(
     return context.client.begin(async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         const id = input.id ?? Bun.randomUUIDv7();
-        if (input.settings)
-            await validateMiraAutomationSettings(query, context.owner, input.settings);
+        if (input.settings) await validateMiraAutomationSettings(query, input.settings);
         if (input.id) {
             if (input.kind !== "improvement") {
                 const [improvement] = await query<

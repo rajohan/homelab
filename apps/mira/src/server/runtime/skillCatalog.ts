@@ -2,6 +2,7 @@ import path from "node:path";
 
 import * as v from "valibot";
 
+import type { NativeSkill } from "./nativeSkills";
 import type { SystemSkills } from "./systemSkills";
 
 /**
@@ -10,18 +11,20 @@ import type { SystemSkills } from "./systemSkills";
  * @param codexHome - Canonical private profile containing the verified pinned bundle.
  * @param workspace - Canonical empty workspace used for skill discovery and threads.
  * @param entries - Build-generated fingerprints from the locked native package.
+ * @param native - Current run's verified original upstream entrypoints.
  * @throws {Error} Discovery fails, omits expected skills, or exposes any unrelated skill.
  */
 export function assertSkillCatalog(
     input: unknown,
     codexHome: string,
     workspace: string,
-    entries: SystemSkills
+    entries: SystemSkills,
+    native: readonly NativeSkill[] = []
 ): void {
     const skill = v.object({
         name: v.string(),
         path: v.string(),
-        scope: v.literal("system"),
+        scope: v.picklist(["system", "user"]),
         enabled: v.literal(true),
         pluginId: v.nullish(v.never()),
     });
@@ -39,14 +42,19 @@ export function assertSkillCatalog(
             .filter((file) => file.endsWith("/SKILL.md"))
             .map((file) => [
                 path.join(codexHome, "skills", ".system", file),
-                file.split("/")[0]!,
+                { name: file.split("/")[0]!, scope: "system" },
             ])
     );
+    for (const skill of native)
+        expected.set(skill.path, { name: skill.name, scope: "user" });
     const skills = parsed.data[0]!.skills;
     if (skills.length !== expected.size)
-        throw new Error("Mira effective skills do not match the pinned system bundle.");
+        throw new Error("Mira effective skills do not match the reviewed release.");
     for (const skill of skills) {
-        if (expected.get(skill.path) !== skill.name)
+        if (
+            expected.get(skill.path)?.name !== skill.name ||
+            expected.get(skill.path)?.scope !== skill.scope
+        )
             throw new Error("Mira effective skill catalog contains an unrelated skill.");
         expected.delete(skill.path);
     }

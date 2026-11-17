@@ -4,7 +4,7 @@ import * as v from "valibot";
 
 import type { MiraContext } from "../data/context";
 import type { MiraClaim } from "../data/queue";
-import { listMiraSkills, loadMiraSkill } from "../data/skills";
+import { listMiraSkills, loadMiraSkill, miraSkillsRepositoryOnly } from "../data/skills";
 
 /**
  * Expose passive, owner-controlled guidance through the existing fenced tool router.
@@ -19,13 +19,7 @@ export function createMiraSkillTools(client: SQL, run: MiraClaim) {
         actor: `mira:${run.id}`,
         run: { id: run.id, leaseToken: run.leaseToken },
     };
-    const repositoryOnly = async () => {
-        if (!run.automationId) return false;
-        const [original] = await client<{ kind: string | null }[]>`
-            SELECT automation_kind AS kind FROM mira_runs
-            WHERE id=${run.id} AND owner=${run.owner}`;
-        return !original?.kind || original.kind === "improvement";
-    };
+    const repositoryOnly = () => miraSkillsRepositoryOnly(context);
     return [
         {
             name: "mira_skills_list",

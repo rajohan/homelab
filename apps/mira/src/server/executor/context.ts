@@ -8,14 +8,12 @@ import type { MiraClaim } from "../data/queue";
  * Load an owned turn and restore bounded product history until the provider has acknowledged its first contextual turn.
  * @param client - Executor product pool.
  * @param run - Claimed conversation and current user-message identity.
- * @param restoreHistory - Include product history for a stateless provider even when a native thread exists.
  * @param restoreImages - Include historical images only when the selected model accepts them; current attachments are preserved.
  * @returns Current settings, attachments and prompt with explicitly labelled historical context.
  */
 export async function readMiraTurnInput(
     client: SQL,
     run: MiraClaim,
-    restoreHistory = false,
     restoreImages = true
 ) {
     const [record] = await client<
@@ -29,8 +27,7 @@ export async function readMiraTurnInput(
         }[]
     >`SELECT c.provider_thread AS "providerThread", c.provider_policy_hash AS "providerPolicyHash", c.provider_context_ready AS "providerContextReady", m.content, m.attachment_ids AS "attachmentIds", r.settings FROM mira_conversations c JOIN mira_messages m ON m.id=${run.userMessageId} AND m.conversation_id=c.id JOIN mira_runs r ON r.id=${run.id} AND r.conversation_id=c.id WHERE c.id=${run.conversationId} AND c.owner=${run.owner} AND c.deleted_at IS NULL`;
     if (!record) throw new Error("Conversation unavailable.");
-    if (!restoreHistory && record.providerThread && record.providerContextReady)
-        return record;
+    if (record.providerThread && record.providerContextReady) return record;
     const rows = await readHistoryMessages(client, run, {
         limit: 33,
         characters: 48_000,

@@ -7,7 +7,6 @@ import { githubConfiguration } from "../integrations/github/configuration";
 import { hereNowReadConfiguration } from "../integrations/herenow/configuration";
 import { moltbookReadConfiguration } from "../integrations/moltbook/configuration";
 import { type PilotConfig, pilotEnvironment } from "../runtime/configuration";
-import { syntheticConfiguration } from "../runtime/syntheticConfiguration";
 import { localCodeEnvironment } from "../sandbox/localBinding";
 
 /**
@@ -44,7 +43,6 @@ export function miraEnvironment() {
         hereNow: hereNowReadConfiguration(process.env),
         daytona: daytonaExecutionConfiguration(process.env),
         github: githubConfiguration(process.env),
-        synthetic: syntheticConfiguration(process.env),
         localCode: localCodeEnvironment(process.env),
         operationsFile: process.env.HOMELAB_MIRA_OPERATIONS_FILE,
     };

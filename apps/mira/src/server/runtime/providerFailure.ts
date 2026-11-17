@@ -57,14 +57,10 @@ export function classifyProviderFailure(
 
 /**
  * Explain an observed provider failure without implying that completed tools were undone.
- * @param provider - Trusted provider display name.
  * @param failure - Classified failure; never raw upstream content.
  * @returns A stable message that preserves conversation continuity and action uncertainty.
  */
-export function providerFailureMessage(
-    provider: "OpenAI" | "Synthetic",
-    failure: ProviderFailure
-): string {
+export function providerFailureMessage(failure: ProviderFailure): string {
     const messages: Record<ProviderFailure, string> = {
         context_limit: "The conversation exceeded the model's context limit.",
         request_too_large: "The request exceeded the provider's size limit.",
@@ -80,7 +76,7 @@ export function providerFailureMessage(
         incomplete: "The provider ended the reply before confirming completion.",
         unknown: "The provider could not complete the reply.",
     };
-    return `${provider}: ${messages[failure]} Your conversation is saved. No actions were replayed.`;
+    return `ChatGPT: ${messages[failure]} Your conversation is saved. No actions were replayed.`;
 }
 
 /** A safe provider failure that may cross the executor's public error boundary. */
@@ -88,11 +84,10 @@ export class ProviderRequestError extends Error {
     readonly failure: ProviderFailure;
     /**
      * Create a classified error without retaining the upstream response body.
-     * @param provider - Trusted provider display name.
      * @param failure - Content-free failure category.
      */
-    constructor(provider: "OpenAI" | "Synthetic", failure: ProviderFailure) {
-        super(providerFailureMessage(provider, failure));
+    constructor(failure: ProviderFailure) {
+        super(providerFailureMessage(failure));
         this.failure = failure;
     }
 }
