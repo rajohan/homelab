@@ -65,6 +65,15 @@ export function createOperationsRuntime(
         : undefined;
     const dependencyRequest = githubReleaseRequest(configuration.githubToken);
     const registry = createJobRegistry([
+        snapshotJob({
+            key: "homelab.dependencies",
+            label: "Check Homelab source dependencies",
+            description:
+                "Check skill, Windows tool and Bun channel updates from the root manifest.",
+            capability: "updates:refresh",
+            intervalSeconds: 3600,
+            read: (signal) => readBuildDependencies(signal, dependencyRequest),
+        }),
         ...automaticDeploymentJobs({
             client: connection.client,
             targets: configuration.deploymentTargets ?? [],
@@ -84,15 +93,6 @@ export function createOperationsRuntime(
         ),
         ...(configuration.releaseRepository
             ? [
-                  snapshotJob({
-                      key: "homelab.dependencies",
-                      label: "Check Homelab source dependencies",
-                      description:
-                          "Check skill, Windows tool and Bun channel updates from the root manifest.",
-                      capability: "updates:refresh",
-                      intervalSeconds: 3600,
-                      read: (signal) => readBuildDependencies(signal, dependencyRequest),
-                  }),
                   snapshotJob({
                       key: "homelab.release",
                       label: "Check Homelab release",

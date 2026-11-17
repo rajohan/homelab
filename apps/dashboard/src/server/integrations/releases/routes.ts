@@ -14,10 +14,8 @@ export const releasesRouter = trpc.router({
         runOperation(async () => {
             const { operations } = authorizedOperations(ctx, "updates:read");
             return {
-                configured: Boolean(operations.releaseRepository),
-                snapshot: operations.releaseRepository
-                    ? await buildDependencySnapshot(operations.client)
-                    : null,
+                configured: Boolean(operations.registry.get("homelab.dependencies")),
+                snapshot: await buildDependencySnapshot(operations.client),
             };
         })
     ),
