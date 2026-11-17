@@ -162,7 +162,7 @@ export async function listMiraSocial(
 }
 /**
  * Queue only the exact text and destination displayed to the signed-in operator.
- * @param context - Human owner or fenced model context with Full access delegation.
+ * @param context - Human owner or fenced model context with an exact independent review.
  * @param input - Displayed version, hash and content snapshot.
  * @param binding - Current configured agent.
  * @returns Queued state or the result of the same previously accepted approval.
@@ -191,7 +191,8 @@ export async function approveMiraSocial(
             query,
             context,
             row.conversationId,
-            "external"
+            "external",
+            { id: input.id, contentHash: row.hash }
         );
         if (
             row.hash !== input.contentHash ||

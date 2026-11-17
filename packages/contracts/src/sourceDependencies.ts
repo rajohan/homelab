@@ -1,5 +1,7 @@
 import * as v from "valibot";
 
+import { miraSkillFileSchema } from "./miraSkills";
+
 export const sourceVersionSchema = v.pipe(
     v.string(),
     v.regex(/^\d{1,9}\.\d{1,9}\.\d{1,9}(?:\.\d{1,9})?$/)
@@ -33,6 +35,13 @@ export const sourceDependencyConfigSchema = v.object({
             update: sourceUpdateSchema.options[0],
             revision: v.pipe(v.string(), v.regex(/^[a-f0-9]{40}$/)),
             paths: v.pipe(v.array(sourcePathSchema), v.maxLength(7)),
+            include: v.pipe(
+                v.array(miraSkillFileSchema),
+                v.minLength(1),
+                v.maxLength(12)
+            ),
+            entrypoint: miraSkillFileSchema,
+            contentHash: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
         })
     ),
 });

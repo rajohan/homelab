@@ -2,70 +2,29 @@
 
 `apps/mira` contains the isolated Codex app-server adapter and qualification CLI used
 by the separate Mira executor. The product core adds authenticated dashboard APIs,
-durable state, scheduling and explicit product tools; see [Mira](mira.md). Production
-cutover has not occurred. The runtime's stdio connection is private, and auth and
-dashboard builds remain independent. This document retains the original qualification
-procedure; see the provider extension below for the current shared executor behavior.
+durable state, scheduling and explicit product tools; see [Mira](mira.md). The runtime's stdio connection is private, and auth and dashboard builds remain
+independent. This document describes the runtime and its qualification procedure.
 
-## Synthetic subscription provider
+## ChatGPT model selection
 
-Chat and Automations share the same server-backed model settings and UI controls.
-Chat settings stay editable during queued and running work. Model, thinking, code
-target and assistance choices apply to the next run; existing runs keep their frozen
-settings. Display preferences apply immediately. A permission-mode change revokes
-existing delegated approvals without stopping the response. New actions in the
-same active run use the current server-owned mode; old approvals remain revoked. Turning memory or history off prevents further retrieval in
-the active run; context already sent to a provider cannot be withdrawn.
-The optional Synthetic adapter uses the documented OpenAI-compatible Chat Completions
-API at `https://api.synthetic.new/openai/v1`. It does not modify the Codex runtime or
-reuse ChatGPT credentials. The four supported subscription aliases are
-`syn:large:text`, `syn:small:text`, `syn:large:vision` and `syn:small:vision`.
-The stored and transmitted selection remains the alias. Target names, image support
-and reasoning levels come from Synthetic's current catalog; no underlying
-model or capability is pinned. Unsupported saved settings fail with a visible outcome
-instead of silently choosing another model or thinking level.
+Chat and Automations share the native Codex model catalog and capability controls.
+Settings stay editable during work; model, thinking, code target and assistance
+changes apply to the next run while existing runs keep their frozen settings.
+Display preferences apply immediately. Permission changes revoke delegated approvals
+and apply to new actions in the current run. Recall restrictions prevent further
+retrieval but cannot withdraw context already sent to the model.
 
-Provision `HOMELAB_MIRA_SYNTHETIC_OWNER` (the existing Homelab account ID) and
-`HOMELAB_MIRA_SYNTHETIC_API_KEY` through the deployment's secret manager. Both are
-required together, and Compose passes the credential only to the Mira service.
-Other accounts cannot discover or use this subscription. Catalog, quota and inference
-and manual Chat search requests authenticate only at the fixed Synthetic origin and reject redirects.
-Subscription requests across both executor lanes are serialized per credential until
-the streamed response ends. Each request checks `/v2/quotas` for at least one remaining
-request and, when supplied, positive weekly credits. Missing, invalid or exhausted
-allowance stops inference. The new weekly-credit plan and legacy request quota are
-both supported; no five-hour reset schedule is assumed.
+Mira uses ChatGPT/Codex exclusively. The executor refreshes its native model catalog
+and reported quota. An unavailable selection waits without advancing an automation's
+occurrence; an explicitly available model can still run when the deployment default
+is unavailable. Automation preferences are copied into conversations and queued runs.
+There is no alternate provider or subscription credential in the executor.
 
-Before activating this binding, verify that **Enable usage-based fallbacks** and
-**Enable auto-reload** are off in [Synthetic Usage & Billing](https://dev.synthetic.new/usage).
-Keep them off while Mira uses the subscription. Synthetic then returns HTTP 429 when
-the subscription cannot cover a request. Quota inspection is an availability check,
-not a billing reservation: other clients and model-weighted token usage can consume
-allowance after inspection, and the public quota API does not expose the fallback
-setting. The provider-side setting is the billing boundary and must be rechecked
-after account changes. Mira never retries a rejected request or switches to a paid
-model ID, another account or another provider.
-
-The inspector refreshes both catalogs independently. A provider outage removes its
-currently available choices but leaves the other provider usable. Due automations
-with an unavailable selection wait without advancing their occurrence. Explicit
-available selections can run even while the deployment default is unavailable.
-Automation preferences are copied into each conversation and queued run, including
-event and Run now executions; later edits cannot change already queued work.
-Existing automations retain the deployment default until edited.
-
-Synthetic restores bounded conversation history from Homelab on every turn, including
-when switching providers. This is conversation continuity, not cross-conversation
-memory. Tool permissions, ownership, receipts, task steering and cancellation remain
-enforced by the same server services. Streaming does not expose private reasoning.
-Uncertain provider/tool outcomes are never automatically replayed. Images selected
-for the turn support PNG, JPEG and WebP up to 8 MiB each, with a 24 MiB encoded turn
-context limit; tool screenshots use the existing validated image boundary.
-
-Live subscription verification is a separate, explicitly authorized deployment step.
-Relevant upstream contracts: [models](https://dev.synthetic.new/docs/api/models),
-[Chat Completions](https://dev.synthetic.new/docs/openai/chat-completions) and
-[subscription quotas](https://dev.synthetic.new/docs/synthetic/quotas).
+The removal migration resets retired provider model/effort/speed preferences to the
+ChatGPT default in conversations, automation definitions and queued runs, preserving
+all other settings, pauses, messages and historical outcomes. Cached catalogs and
+quotas are cleared until the executor reports fresh values. Remove retired provider
+secrets from deployment configuration; they are no longer read or passed by Compose.
 
 The [official app-server protocol](https://learn.chatgpt.com/docs/app-server) provides
 authentication, streaming, thread restoration, host tools and interruption over a
@@ -80,7 +39,9 @@ credentials or rely on undocumented endpoints.
 Use Bun from `.bun-version` and `bun install --frozen-lockfile`. Mira pins the official
 `@openai/codex` package, including its native platform package, in the root manifest.
 Run `bun run build mira` and use `apps/mira/dist/runtime/codex` directly; the build
-extracts the bundled skill fingerprints beside the executable. System wrappers may change the user
+extracts system-skill fingerprints and installs the complete release-owned upstream
+skill trees beside the executable. Work runs register only enabled packages with
+native Codex discovery; see [Mira skills](mira-skills.md). System wrappers may change the user
 or discard `CODEX_HOME`. Scripted launchers are rejected. The protocol was qualified with Codex CLI 0.164.0;
 regenerate schemas and rerun this pilot when a runtime update changes that contract.
 
@@ -193,7 +154,7 @@ filesystem/network restrictions and scoped service adapters.
 
 ## Effective runtime isolation
 
-Initialization must return the canonical dedicated `codexHome` before account inspection. Effective configuration must retain every disabled capability, web search disabled by default, file-only credentials, the OpenAI provider and no custom provider definitions or MCP servers. Direct manual Chat enables live provider web search at thread start and resume. Synthetic Chat uses the subscription search endpoint and returns source URLs. Tasks and automations keep their existing tool sets. Thread start and resume must also report `modelProvider: openai`.
+Initialization must return the canonical dedicated `codexHome` before account inspection. Effective configuration must retain every disabled capability, web search disabled by default, file-only credentials, the OpenAI provider and no custom provider definitions or MCP servers. Direct manual Chat enables live provider web search at thread start and resume. Tasks and automations keep their existing tool sets. Thread start and resume must also report `modelProvider: openai`.
 
 The root `package.json` and `bun.lock` select the Codex version. The Mira build starts that exact native executable in a temporary unauthenticated profile, extracts its bundled system skills and writes their SHA-256 fingerprints beside the packaged executable. No second version or hand-maintained hash list is committed. The native runtime refreshes its own generated cache during initialization; Mira checks its contents and effective catalog before creating a thread. Extra, missing, altered or linked entries still fail closed. Dependency PRs update the package and lockfile; the build regenerates the skill metadata automatically.
 
@@ -300,7 +261,7 @@ check the adapter protocol, not the full packaged service or Windows access.
 Ordinary direct Chat has no elapsed-time deadline: it runs until provider completion,
 operator Stop, or an actual execution/connection failure. A zero `mira_runs.budget_seconds`
 records this policy; the executor and browser/computer authority checks share it.
-Codex and Synthetic receive `timeoutMs: null` for these runs. Transport requests,
+Codex receives `timeoutMs: null` for these runs. Transport requests,
 individual commands, leases and local access grants retain their own deadlines.
 Explicit automation/task budgets and timed live-assistance choices still apply.
 
@@ -332,17 +293,9 @@ runs preserve the source for the next safe maintenance attempt. User-uploaded fi
 product messages, memories and tool receipts are not deleted by this mechanism.
 Backups retain their existing retention policy; this does not rewrite old backups.
 
-Synthetic Chat Completions is stateless and has no documented compact endpoint.
-At a completed tool boundary, Mira requests a bounded, tool-free continuation
-checkpoint from the selected model before discarding old in-memory visual history.
-The original request and trusted policy remain, and further input requires fresh
-screen observations. A failed checkpoint never retries a tool action. Provider
-failures are classified into safe messages rather than exposing raw upstream bodies
-or collapsing every rejection into an unexplained incomplete reply.
-
 Regression coverage includes native compaction lifecycle/cancellation, complete
 call/output boundaries, image withdrawal, database lease loss, failed compaction,
-deferred deletion, and Synthetic visual-context continuation. A live qualification
+and deferred deletion. A live qualification
 with the pinned Codex runtime on 2026-11-11 preserved a visually read random value,
 the original task reference and completed-action context after image-free transfer;
 both generated test threads were deleted afterward. Production activation uses the
@@ -363,7 +316,7 @@ only stops audio; the ordinary Stop action still stops Mira's task.
 The voice model selector uses the account's current Realtime catalog (initially
 `gpt-realtime-2.1-mini`). Built-in speaking voices are selected separately and can be previewed.
 These preferences belong to the selected conversation in this browser. The selected ChatGPT
-or Synthetic conversation model, credentials, permissions and billing still handle all
+conversation model, credentials, permissions and billing still handle all
 reasoning, tools and tasks. OpenAI API usage pays only for voice and transcription; campaign
 credit balance is deliberately not displayed.
 

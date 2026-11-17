@@ -7,7 +7,6 @@ import { useOperation } from "../operations/useOperation";
 import { AssistanceSettings } from "./AssistanceSettings";
 import type { ChatDisplaySettings } from "./chatDisplay";
 import { ModelSettings } from "./ModelSettings";
-import { PermissionSettings } from "./PermissionSettings";
 import { RecallSettings } from "./RecallSettings";
 import type { MiraVoiceConnection } from "./voiceConnection";
 import { VoiceSettings } from "./VoiceSettings";
@@ -69,9 +68,7 @@ export function ChatSettings({
             >
                 <p className="text-sm text-primary-300">
                     Model, thinking, code target and assistance choices apply to the next
-                    run. Display changes apply immediately. Changing permissions returns
-                    current work to asking for approval; the new mode applies to the next
-                    run.
+                    run. Display changes apply immediately.
                 </p>
                 {!fresh && (
                     <p className="text-sm text-primary-300">
@@ -85,11 +82,6 @@ export function ChatSettings({
                     models={models}
                     defaultModel={defaultModel}
                     fresh={fresh}
-                    disabled={save.isPending}
-                />
-                <PermissionSettings
-                    settings={draft}
-                    onChange={setDraft}
                     disabled={save.isPending}
                 />
                 <RecallSettings

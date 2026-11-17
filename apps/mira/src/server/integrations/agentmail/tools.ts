@@ -1,4 +1,5 @@
 import { miraMailReplyDraftSchema } from "@homelab/contracts/miraMail";
+import { idSchema } from "@homelab/contracts/operations";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
@@ -169,12 +170,13 @@ export function createAgentMailTools(
             },
         },
         {
-            name: "mira_mail_reply_draft_create",
+            name: "mira_mail_reply",
             description:
-                "Prepare a local reply draft to an eligible received message in the configured inbox when the operator requests it. Read the message routing headers and honor Reply-To when choosing the explicit To/Cc/Bcc recipients; reply-all is never inferred. The original thread and subject are retained. Optional attachments must already be shared in this conversation. Sending requires dashboard approval or Full access through mira_action_execute.",
+                "Send the reply requested by the operator to an eligible received message. Supply one stable action UUID for this logical reply and retain it across reconnects; never replace an uncertain action with a new ID. Read routing headers and honor Reply-To when selecting explicit recipients; never infer reply-all. Preserve the original thread and subject. Optional attachments must already be shared in this conversation. For draft-only requests, return wording without calling this sending tool.",
             inputSchema: {
                 type: "object",
                 properties: {
+                    id: { type: "string", format: "uuid" },
                     messageId: { type: "string" },
                     to: { type: "array", items: { type: "string" } },
                     cc: { type: "array", items: { type: "string" } },
@@ -186,7 +188,7 @@ export function createAgentMailTools(
                         maxItems: 5,
                     },
                 },
-                required: ["messageId", "to", "text"],
+                required: ["id", "messageId", "to", "text"],
                 additionalProperties: false,
             },
             automatic: false,
@@ -201,7 +203,8 @@ export function createAgentMailTools(
                         "FORBIDDEN",
                         "Reply drafts require their owned execution transaction."
                     );
-                const parsed = v.parse(miraMailReplyDraftSchema, input);
+                const { id, ...fields } = v.parse(v.looseObject({ id: idSchema }), input);
+                const parsed = v.parse(miraMailReplyDraftSchema, fields);
                 const current = await requireAccess(signal);
                 const original = await readMail(() =>
                     current.reader.read(parsed.messageId, signal)
@@ -219,7 +222,7 @@ export function createAgentMailTools(
                 return saveMiraMail(
                     context,
                     {
-                        id: Bun.randomUUIDv7(),
+                        id,
                         version: 0,
                         conversationId: run.conversationId,
                         content: {

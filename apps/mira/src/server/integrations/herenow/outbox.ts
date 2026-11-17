@@ -20,7 +20,7 @@ import { HereNowPublisher, PublicationConflict } from "./publisher";
 const uncertainMessage =
     "Publication could not be fully confirmed. Inspect the known site in here.now before trying again; this attempt will not be repeated automatically.";
 const reviewMessage =
-    "Publication approval expired or here.now access changed. Review this draft again before publishing.";
+    "Review required: Publication approval expired or here.now access changed. Review this action again before publishing.";
 
 /**
  * Recover interrupted publications and revoke stale queued approvals without provider calls.

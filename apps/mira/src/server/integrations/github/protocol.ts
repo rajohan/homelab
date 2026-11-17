@@ -7,6 +7,7 @@ const positive = v.pipe(v.number(), v.integer(), v.minValue(1));
 export const githubPublicationSchema = v.strictObject({
     id: v.pipe(v.string(), v.uuid()),
     commit: gitShaSchema,
+    draft: v.boolean(),
     editsSha256: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
     title: miraCodeTitleSchema,
     body: miraCodeBodySchema,

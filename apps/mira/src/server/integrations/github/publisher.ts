@@ -36,7 +36,7 @@ type Guard = () => Promise<void>;
 type Progress = (event: GitHubPublicationProgress) => Promise<void>;
 type References = Omit<GitHubPublicationProgress, "phase" | "state">;
 
-/** Publish one reviewed change to a fresh branch and draft PR; no ref updates, merges or cleanup deletion. */
+/** Publish one reviewed change to a fresh branch and PR; no ref updates, merges or cleanup deletion. */
 export class GitHubPublisher extends GitHubClient {
     private async mutate<T>(
         phase: GitHubPublicationPhase,
@@ -74,7 +74,7 @@ export class GitHubPublisher extends GitHubClient {
      * @param stopping - Cancellation and caller's deadline; this adapter adds a two-minute limit.
      * @param guard - Recheck durable admission, current consent, pause and fenced attempt before each write.
      * @param progress - Persist sending/confirmed phases and known references; failure prevents further writes.
-     * @returns Verified draft PR reference. This is not evidence that tests passed or authority to merge/deploy.
+     * @returns Verified PR reference. This is not evidence that tests passed or authority to merge/deploy.
      */
     async publish(
         request: GitHubPublication,
@@ -219,7 +219,7 @@ export class GitHubPublisher extends GitHubClient {
                 body,
                 head: branch,
                 base: githubTarget.branch,
-                draft: true,
+                draft: input.draft,
                 maintainer_can_modify: false,
             },
             { branch, tree, commit },
@@ -232,12 +232,12 @@ export class GitHubPublisher extends GitHubClient {
                     created.head.sha !== commit ||
                     created.base.sha !== input.commit ||
                     created.state !== "open" ||
-                    !created.draft ||
+                    created.draft !== input.draft ||
                     created.title !== input.title ||
                     created.body !== body
                 )
                     throw new Error(
-                        "The draft pull request differs from the approved proposal."
+                        "The pull request differs from the approved proposal."
                     );
                 return created;
             },
@@ -250,7 +250,7 @@ export class GitHubPublisher extends GitHubClient {
             commit,
             tree,
             base: input.commit,
-            draft: true as const,
+            draft: pull.draft,
         };
     }
 }

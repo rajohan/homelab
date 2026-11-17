@@ -8,24 +8,7 @@ import {
 } from "@homelab/contracts/mira";
 import * as v from "valibot";
 
-import { isSyntheticModel } from "../runtime/syntheticCatalog";
 import { auditMira, type MiraContext, MiraFailure, type MiraQuery } from "./context";
-
-/**
- * Resolve the automatic model for accounts without the owner-bound subscription.
- * @param models - Current catalog, including the native provider's default marker.
- * @param deploymentDefault - Configured default; an unavailable native choice remains unavailable.
- * @returns The configured native model or the native provider default when Synthetic is owner-bound.
- */
-export function miraNativeDefaultModel(
-    models: MiraModel[],
-    deploymentDefault: string | null
-): string | null {
-    return deploymentDefault && !isSyntheticModel(deploymentDefault)
-        ? deploymentDefault
-        : (models.find((entry) => entry.isDefault && !isSyntheticModel(entry.model))
-              ?.model ?? null);
-}
 
 /**
  * Resolve one turn from the current runtime catalog, rejecting unsupported combinations.
@@ -72,19 +55,18 @@ export function resolveMiraChatSettings(
  * @returns Catalog, deployment default and freshness; availability is rechecked before inference.
  */
 export async function listMiraModels(context: MiraContext) {
-    return readCatalog(context.client, context.owner);
+    return readCatalog(context.client);
 }
 
-async function readCatalog(query: MiraQuery, owner: string) {
+async function readCatalog(query: MiraQuery) {
     const [row] = await query<
         {
             models: unknown;
             quotas: unknown;
             model: string | null;
             fresh: boolean;
-            syntheticOwner: string | null;
         }[]
-    >`SELECT models, quotas, model, synthetic_owner AS "syntheticOwner", ready AND heartbeat_at > now() - interval '45 seconds' AS fresh FROM mira_runtime_status WHERE id = 1`;
+    >`SELECT models, quotas, model, ready AND heartbeat_at > now() - interval '45 seconds' AS fresh FROM mira_runtime_status WHERE id = 1`;
     const parsed = v.safeParse(
         v.pipe(v.array(miraModelSchema), v.maxLength(2100)),
         row?.models ?? []
@@ -92,16 +74,9 @@ async function readCatalog(query: MiraQuery, owner: string) {
     const models = parsed.success ? parsed.output : [];
     const quota = v.safeParse(v.array(miraQuotaSchema), row?.quotas ?? []);
     return {
-        quotas: (quota.success ? quota.output : []).filter(
-            (entry) => entry.provider !== "synthetic" || row?.syntheticOwner === owner
-        ),
-        models: models.filter(
-            (entry) => !isSyntheticModel(entry.model) || row?.syntheticOwner === owner
-        ),
-        defaultModel:
-            row?.model && isSyntheticModel(row.model) && row.syntheticOwner !== owner
-                ? miraNativeDefaultModel(models, row.model)
-                : (row?.model ?? null),
+        quotas: quota.success ? quota.output : [],
+        models,
+        defaultModel: row?.model ?? null,
         fresh: row?.fresh === true,
     };
 }
@@ -139,7 +114,7 @@ export async function saveMiraChatSettings(
                 input.settings.liveAssistanceMinutes !==
                     conversation.settings.liveAssistanceMinutes)
         ) {
-            const catalog = await readCatalog(query, context.owner);
+            const catalog = await readCatalog(query);
             if (!catalog.fresh)
                 throw new MiraFailure(
                     "PRECONDITION_FAILED",
@@ -161,32 +136,25 @@ export async function saveMiraChatSettings(
                     "Live computer assistance requires a model that supports images. Choose another model in Chat settings."
                 );
         }
-        if (
-            (conversation.settings.permissionMode ?? "ask") !==
-            (input.settings.permissionMode ?? "ask")
-        )
-            await query`UPDATE mira_runs SET approval_revoked_at=clock_timestamp() WHERE conversation_id=${input.id} AND owner=${context.owner}`;
         await query`UPDATE mira_conversations SET settings = ${JSON.stringify(input.settings)}::text::jsonb, version = version + 1, updated_at = now() WHERE id = ${input.id}`;
         await auditMira(query, context, "conversation.settings_changed", input.id);
     });
 }
 
 /**
- * Validate an explicit automation model choice against its owner's current catalog.
+ * Validate an explicit automation model choice against the current native catalog.
  * @param query - Transaction saving the automation definition.
- * @param owner - Verified operator, never taken from the submitted form.
  * @param settings - Requested model preferences; null defaults remain editable while a provider is offline.
  * @returns Completion after capability and availability validation.
  */
 export async function validateMiraAutomationSettings(
     query: MiraQuery,
-    owner: string,
     settings: MiraChatSettings
 ): Promise<void> {
     const parsed = v.parse(miraChatSettingsSchema, settings);
     if (parsed.model === null && parsed.effort === null && parsed.serviceTier === null)
         return;
-    const catalog = await readCatalog(query, owner);
+    const catalog = await readCatalog(query);
     if (!catalog.fresh)
         throw new MiraFailure(
             "PRECONDITION_FAILED",

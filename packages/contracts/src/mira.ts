@@ -159,12 +159,6 @@ const modelIdentifier = v.pipe(
     v.maxLength(160),
     v.regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/)
 );
-export const miraPermissionModeSchema = v.picklist([
-    "ask",
-    "approve_for_me",
-    "full_access",
-]);
-export type MiraPermissionMode = v.InferOutput<typeof miraPermissionModeSchema>;
 export const miraLiveAssistanceMinutesSchema = v.picklist([-1, 0, 30, 60, 120]);
 export const miraChatSettingsSchema = v.strictObject({
     model: v.nullable(modelIdentifier),
@@ -173,7 +167,6 @@ export const miraChatSettingsSchema = v.strictObject({
     useMemory: v.optional(v.boolean()),
     useHistory: v.optional(v.boolean()),
     executionTarget: v.optional(miraCodeTargetSchema),
-    permissionMode: v.optional(miraPermissionModeSchema),
     liveAssistanceMinutes: v.optional(miraLiveAssistanceMinutesSchema),
 });
 export const miraDefaultChatSettings = { model: null, effort: null, serviceTier: null };
@@ -432,7 +425,7 @@ export interface MiraToolReceipt {
 }
 
 export const miraQuotaSchema = v.object({
-    provider: v.picklist(["chatgpt", "synthetic"]),
+    provider: v.literal("chatgpt"),
     observedAt: v.string(),
     windows: v.array(
         v.object({
@@ -444,10 +437,6 @@ export const miraQuotaSchema = v.object({
                 v.maxValue(100)
             ),
             resetsAt: v.nullable(v.string()),
-            replenishesAt: v.optional(v.string()),
-            replenishesPercent: v.optional(
-                v.pipe(v.number(), v.finite(), v.minValue(0), v.maxValue(100))
-            ),
         })
     ),
 });

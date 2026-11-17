@@ -5,6 +5,8 @@ export interface MiraContext {
     readonly transaction?: TransactionSQL;
     readonly owner: string;
     readonly actor: string;
+    /** Exact server-reviewed action; never populated from model input or HTTP payloads. */
+    readonly reviewedAction?: { readonly id: string; readonly contentHash: string };
     readonly run?: { readonly id: string; readonly leaseToken: string };
 }
 export type MiraQuery = SQL | TransactionSQL;

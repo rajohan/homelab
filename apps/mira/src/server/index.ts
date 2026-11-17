@@ -93,7 +93,6 @@ export async function main(): Promise<void> {
                         hereNow: configuration.hereNow,
                         daytona: configuration.daytona,
                         github: configuration.github,
-                        synthetic: configuration.synthetic,
                         localCode: configuration.localCode,
                         operations: configuration.operations,
                     }),

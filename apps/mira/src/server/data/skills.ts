@@ -36,7 +36,7 @@ export async function listMiraSkills(
  * @returns Passive document bytes and their installed version/digest.
  */
 export function inspectMiraSkill(input: v.InferOutput<typeof miraSkillReadSchema>) {
-    const document = readBundledMiraSkill(input.id, input.file);
+    const document = readBundledMiraSkill(input.id, input.file, input.offset);
     if (!document) throw new MiraFailure("NOT_FOUND", "Skill file not found.");
     if (document.packageHash !== input.packageHash)
         throw new MiraFailure(
@@ -73,4 +73,23 @@ export async function loadMiraSkill(
             "This skill is paused or not enabled."
         );
     return inspectMiraSkill(input);
+}
+
+/**
+ * Preserve the original automation's context scope when selecting native or reader skills.
+ * @param context - Current owner and optional fenced run, never model-selected ownership.
+ * @returns Whether only repository-context packages are allowed for this invocation.
+ */
+export async function miraSkillsRepositoryOnly(context: MiraContext): Promise<boolean> {
+    if (!context.run) return false;
+    const [original] = await context.client<
+        { automationId: string | null; kind: string | null }[]
+    >`
+        SELECT automation_id AS "automationId", automation_kind AS kind FROM mira_runs
+        WHERE id=${context.run.id} AND owner=${context.owner}`;
+    return (
+        !original ||
+        (original.automationId !== null &&
+            (!original.kind || original.kind === "improvement"))
+    );
 }

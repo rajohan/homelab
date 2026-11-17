@@ -4,8 +4,8 @@ import { FormField, Select } from "@homelab/ui";
 import { CodeTargetSettings } from "./CodeTargetSettings";
 
 /**
- * Share current provider, model and capability choices between Chat and Automations.
- * @returns Controlled fields; alias IDs remain unchanged when their underlying model rotates.
+ * Share current ChatGPT model and capability choices between Chat and Automations.
+ * @returns Controlled fields backed by the native Codex model catalog.
  */
 export function ModelSettings({
     draft,
@@ -29,9 +29,6 @@ export function ModelSettings({
     const missingDefault = automaticId
         ? `Default · ${automaticId} (unavailable)`
         : "Default · unavailable";
-    const provider = (draft.model ?? automaticId)?.startsWith("syn:")
-        ? "synthetic"
-        : "chatgpt";
     const selected = models.find((model) => model.model === (draft.model ?? automaticId));
     const thinking = selected?.supportedReasoningEfforts.find(
         (entry) =>
@@ -41,89 +38,22 @@ export function ModelSettings({
         (entry) => entry.id === (draft.serviceTier ?? selected.defaultServiceTier)
     );
     const modelOptions = [
-        ...((automaticId?.startsWith("syn:") ? "synthetic" : "chatgpt") === provider
-            ? [
-                  {
-                      value: "",
-                      label: automatic
-                          ? `Default · ${automatic.displayName || automatic.model}`
-                          : missingDefault,
-                  },
-              ]
-            : []),
-        ...models
-            .filter(
-                (entry) => entry.model.startsWith("syn:") === (provider === "synthetic")
-            )
-            .map((model) => ({
-                value: model.model,
-                label: model.displayName || model.model,
-            })),
+        {
+            value: "",
+            label: automatic
+                ? `Default · ${automatic.displayName || automatic.model}`
+                : missingDefault,
+        },
+        ...models.map((model) => ({
+            value: model.model,
+            label: model.displayName || model.model,
+        })),
     ];
     if (draft.model && !models.some((model) => model.model === draft.model))
         modelOptions.push({ value: draft.model, label: `${draft.model} (unavailable)` });
 
     return (
         <>
-            <FormField label="Provider">
-                <Select
-                    label="Model provider"
-                    value={provider}
-                    disabled={!fresh || disabled}
-                    options={[
-                        {
-                            value: "chatgpt",
-                            label: "ChatGPT subscription",
-                            disabled: !models.some(
-                                (entry) => !entry.model.startsWith("syn:")
-                            ),
-                        },
-                        ...(provider === "synthetic" ||
-                        models.some((entry) => entry.model.startsWith("syn:"))
-                            ? [{ value: "synthetic", label: "Synthetic subscription" }]
-                            : []),
-                    ]}
-                    onChange={(next) => {
-                        if (
-                            next === "chatgpt" &&
-                            automaticId &&
-                            !automaticId.startsWith("syn:") &&
-                            automatic
-                        ) {
-                            setDraft({
-                                ...draft,
-                                model: null,
-                                effort: null,
-                                serviceTier: null,
-                            });
-                            return;
-                        }
-                        setDraft({
-                            ...draft,
-                            model:
-                                next === "synthetic"
-                                    ? (models.find(
-                                          (entry) => entry.model === "syn:large:text"
-                                      )?.model ??
-                                      models.find((entry) =>
-                                          entry.model.startsWith("syn:")
-                                      )?.model ??
-                                      "syn:large:text")
-                                    : (models.find(
-                                          (entry) =>
-                                              !entry.model.startsWith("syn:") &&
-                                              entry.isDefault
-                                      )?.model ??
-                                      models.find(
-                                          (entry) => !entry.model.startsWith("syn:")
-                                      )?.model ??
-                                      null),
-                            effort: null,
-                            serviceTier: null,
-                        });
-                    }}
-                />
-            </FormField>
             <FormField label="Model">
                 <Select
                     label={label}

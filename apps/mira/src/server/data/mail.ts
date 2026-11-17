@@ -199,7 +199,7 @@ export async function listMiraMail(
 }
 
 /**
- * Queue an exact draft under direct human approval or live Full access delegation.
+ * Queue an exact draft under direct human approval or an exact independent automatic review.
  * @param context - Human owner or fenced model context with explicit conversation delegation.
  * @param input - Draft version and displayed content fingerprint.
  * @param binding - Dashboard's configured receiver, matched against the live executor.
@@ -231,7 +231,8 @@ export async function approveMiraMail(
             query,
             context,
             row.conversationId,
-            "external"
+            "external",
+            { id: input.id, contentHash: row.hash }
         );
         if (row.hash !== input.contentHash)
             throw new MiraFailure(

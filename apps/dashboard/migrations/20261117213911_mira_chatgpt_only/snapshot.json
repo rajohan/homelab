@@ -1,0 +1,30 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "ce7943de-e1dc-4830-91c5-4006a62cf706",
+    "prevIds": ["d94beac0-623b-4c85-b494-c414ffdc8365"],
+    "footprints": [
+        {
+            "statementType": "drop_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_runtime_status",
+                "synthetic_owner"
+            ],
+            "writes": [
+                "s|col|public.mira_runtime_status.synthetic_owner",
+                "n|col|public.mira_runtime_status.synthetic_owner",
+                "e|col|public.mira_runtime_status.synthetic_owner"
+            ],
+            "reads": ["n|tbl|public.mira_runtime_status", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "drop",
+            "key": "columns\u0000[\"public\",\"mira_runtime_status\",\"synthetic_owner\"]"
+        }
+    ]
+}

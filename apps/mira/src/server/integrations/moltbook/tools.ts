@@ -79,10 +79,10 @@ export function createMoltbookTools(
     };
     return [
         {
-            name: "mira_moltbook_drafts",
+            name: "mira_moltbook_submissions",
             automatic: true,
             description:
-                "Read local Moltbook drafts and submission outcomes for this conversation. No external calls or publication. Pending verification is an operator action, never proof that content is publicly visible.",
+                "Read requested Moltbook submissions and their outcomes in this conversation. Pending verification requires operator action and is not proof of public visibility.",
             inputSchema: { type: "object", properties: {}, additionalProperties: false },
             action: async (input) => {
                 v.parse(v.strictObject({}), input);
@@ -97,11 +97,11 @@ export function createMoltbookTools(
             },
         },
         {
-            name: "mira_moltbook_draft",
+            name: "mira_moltbook_publish",
             automatic: false,
             transactional: true,
             description:
-                "Prepare a local text post or reply requested by the operator. Supply a stable UUID and version 0 for a new draft or the current version to edit. Execution requires dashboard approval or Full access through mira_action_execute. This tool cannot publish, approve or solve provider verification.",
+                "Publish the text post or reply requested by the operator. Supply a stable UUID and version 0 for a new request, or the current version to revise an awaiting-approval request. Read mira_moltbook_submissions afterward; pending provider verification is not proof of public visibility. For draft-only requests, return wording without publishing.",
             inputSchema: {
                 type: "object",
                 additionalProperties: false,

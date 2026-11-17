@@ -13,7 +13,7 @@ import { idSchema, versionedIdSchema } from "@homelab/contracts/operations";
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
-import { miraModeAllows, miraRunPermission } from "../data/approvalPolicy";
+import { miraManualRunAllowed } from "../data/approvalPolicy";
 import { readMiraControlPage } from "../data/automations";
 import {
     lockMiraProposals,
@@ -58,19 +58,17 @@ import type { MoltbookReadConfiguration } from "../integrations/moltbook/configu
 import { createMoltbookTools } from "../integrations/moltbook/tools";
 import type { MiraOperationsConfiguration } from "../operations/configuration";
 import { MiraHostCommandFailure } from "../operations/ssh";
-import { createMiraOperationsTools, type MiraHostReviewer } from "../operations/tools";
+import { createMiraOperationsTools, type MiraActionReviewer } from "../operations/tools";
 import type { RuntimeTool } from "../runtime/protocol";
-import type { SyntheticConfiguration } from "../runtime/syntheticConfiguration";
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { createMiraSkillTools } from "../skills/tools";
-import { createMiraActionTools } from "./actionTools";
+import { directMiraActionTools } from "./actionTools";
 import { createMiraBrowserTools } from "./browserTools";
 import { createMiraComputerTools } from "./computerTools";
 import { saveGeneratedMiraFile } from "./generatedFiles";
 import { createMiraRecallTools } from "./recallTools";
 import type { MiraToolContext, MiraToolDefinition } from "./toolDefinition";
-import { syntheticSearchTool } from "./webSearch";
 
 const taskAssessmentTools = new Set([
     "mira_tasks_list",
@@ -93,9 +91,9 @@ const improvementContextTools = new Set([
     "mira_report_create",
     "mira_controls_list",
     "mira_dashboard_state",
-    "mira_daytona_jobs",
-    "mira_daytona_result",
-    "mira_code_proposals",
+    "mira_code_executions",
+    "mira_code_result",
+    "mira_github_publications",
     "mira_improvement_status",
     "mira_improvement_submit",
     "mira_github_work",
@@ -132,7 +130,6 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param hereNow - Optional scoped website metadata settings; credentials stay in the executor.
  * @param moltbook - Optional social read settings, retained only by the service.
  * @param github - Optional GitHub mapping and dedicated read credential, retained only in the service closure.
- * @param search - Owner-bound search for manual Synthetic chat turns.
  * @param reviewer - Server-selected independent host command reviewer.
  * @param operations - Explicit host administration, separate from sandbox execution.
  * @param localCode - Optional Main mapping; the run freezes its target before inference.
@@ -149,9 +146,8 @@ export function createMiraTools(
     daytona?: DaytonaBinding,
     github?: GitHubBinding | GitHubConfiguration,
     localCode?: LocalCodeBinding,
-    search?: SyntheticConfiguration,
     operations?: MiraOperationsConfiguration,
-    reviewer?: MiraHostReviewer
+    reviewer?: MiraActionReviewer
 ): RuntimeTool<RuntimeToolResult>[] {
     const context: MiraContext = {
         client,
@@ -166,9 +162,6 @@ export function createMiraTools(
         ...createMiraRecallTools(client, run),
         ...createMiraComputerTools(),
         ...createMiraBrowserTools(),
-        ...(search?.owner === run.owner && run.manual && !run.automationId && !run.taskId
-            ? [syntheticSearchTool(search)]
-            : []),
         {
             name: "mira_file_create",
             description:
@@ -505,9 +498,9 @@ export function createMiraTools(
             },
         },
         {
-            name: "mira_mail_drafts_list",
+            name: "mira_mail_deliveries",
             description:
-                "Read local email drafts and delivery outcomes for this conversation. These are separate from received mail. Execution uses mira_action_execute when the conversation permission allows it.",
+                "Read requested emails and delivery outcomes for this conversation. Queued is not sent. An uncertain outcome must be inspected, never resent.",
             inputSchema: object({ before: uuid }),
             automatic: true,
             action: (input) =>
@@ -517,13 +510,14 @@ export function createMiraTools(
                 }),
         },
         {
-            name: "mira_mail_draft_create",
+            name: "mira_mail_send",
             transactional: true,
             automatic: false,
             description:
-                "Prepare a local plain-text email draft when the operator requests it. Specify every recipient explicitly. Sending requires dashboard approval or Full access through mira_action_execute. Optional attachments must be files already shared in this conversation; at most five files totaling 4 MiB. Threaded replies are not supported by this draft tool.",
+                "Send the plain-text email requested by the operator. Supply one stable action UUID and reuse it when inspecting the same logical send after a reconnect; never generate a replacement for an uncertain send. Specify every recipient explicitly. Optional attachments must already be shared in this conversation; at most five files totaling 4 MiB. Use mira_mail_reply for threaded replies. If the operator only asks for wording or a draft, return that text without calling this sending tool.",
             inputSchema: object(
                 {
+                    id: uuid,
                     to: { type: "array", items: string },
                     cc: { type: "array", items: string },
                     bcc: { type: "array", items: string },
@@ -531,28 +525,22 @@ export function createMiraTools(
                     text: string,
                     attachmentIds: { type: "array", items: uuid, maxItems: 5 },
                 },
-                ["to", "subject", "text"]
+                ["id", "to", "subject", "text"]
             ),
-            action: (input, _signal, scoped) =>
-                saveMiraMail(
+            action: (input, _signal, scoped) => {
+                const { id, ...fields } = v.parse(v.looseObject({ id: idSchema }), input);
+                return saveMiraMail(
                     scoped,
                     {
-                        id: Bun.randomUUIDv7(),
+                        id,
                         version: 0,
-                        content: v.parse(miraMailInputSchema, input),
+                        content: v.parse(miraMailInputSchema, fields),
                         conversationId: run.conversationId,
                     },
                     agentMail
-                ),
+                );
+            },
         },
-        ...createMiraActionTools(run, {
-            mail: agentMail,
-            publication: hereNow,
-            social: moltbook,
-            code: github,
-            job: run.executionTarget === "main" ? localCode : daytona,
-            directory: filesDirectory,
-        }),
         ...createMiraSkillTools(client, run),
         ...createAgentMailTools(client, run, agentMail, fetch, filesDirectory),
         ...createMoltbookTools(client, run, moltbook),
@@ -574,9 +562,22 @@ export function createMiraTools(
             github && "token" in github ? github : undefined
         ),
     ];
+    const direct = directMiraActionTools(
+        definitions,
+        run,
+        {
+            mail: agentMail,
+            publication: hereNow,
+            social: moltbook,
+            code: github,
+            job: run.executionTarget === "main" ? localCode : daytona,
+            directory: filesDirectory,
+        },
+        reviewer
+    );
     const available = run.taskAssessment
-        ? definitions.filter((definition) => taskAssessmentTools.has(definition.name))
-        : definitions;
+        ? direct.filter((definition) => taskAssessmentTools.has(definition.name))
+        : direct;
     return available.map(
         ({
             action,
@@ -592,7 +593,7 @@ export function createMiraTools(
         }) => ({
             ...definition,
             description: confirmation
-                ? `${definition.description} In Ask for approval mode this proposes a change for operator review. Approve for me and Full access allow task changes directly. Inspect the returned state before reporting a change as applied.`
+                ? `${definition.description} Requested manual task changes apply directly. Automatic runs retain their separate policies. Inspect the returned state before reporting a change as applied.`
                 : definition.description,
             execute: async (input, signal, call) => {
                 signal.throwIfAborted();
@@ -654,10 +655,7 @@ export function createMiraTools(
                         }
                         if (
                             confirmation &&
-                            !miraModeAllows(
-                                await miraRunPermission(query ?? client, context),
-                                "task"
-                            )
+                            !(await miraManualRunAllowed(query ?? client, context))
                         ) {
                             const connection = query ?? client;
                             await lockMiraProposals(connection, run.owner);
@@ -752,8 +750,6 @@ export function createMiraTools(
                             error instanceof MiraHostCommandFailure)
                     )
                         message = error.message;
-                    else if (readOnly && definition.name === "mira_web_search")
-                        message = "Web search failed. Check the query and try again.";
                     else if (readOnly && definition.name.startsWith("mira_homelab_"))
                         message =
                             "The host inspection failed. Check the connection before trying another read.";

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import tailwind from "bun-plugin-tailwind";
 
+import { buildNativeSkills } from "./buildNativeSkills";
 import { buildSystemSkills } from "./buildSystemSkills";
 
 /**
@@ -130,6 +131,7 @@ export async function main(): Promise<void> {
                 );
             }
             await buildSystemSkills(path.join(destination, "codex" + extension));
+            await buildNativeSkills(path.join(destination, "codex" + extension));
         }
         console.info(
             `Built ${app}: ${result.outputs.length} artifacts in apps/${app}/dist.`

@@ -1,7 +1,14 @@
 import type { MiraActivity, MiraModel } from "@homelab/contracts/mira";
+import type { MiraSkillId } from "@homelab/contracts/miraSkills";
 import * as v from "valibot";
 
 import { assertRuntimeIsolation } from "./configuration";
+import {
+    nativeSkillGuidance,
+    nativeSkillInputs,
+    type NativeSkills,
+    readNativeSkills,
+} from "./nativeSkills";
 import {
     accountSchema,
     completedSchema,
@@ -58,12 +65,18 @@ export class CodexRuntime {
     private active: ActiveTurn | null = null;
     private compacting = false;
     private readonly home: string;
+    private readonly nativeSkills: NativeSkills;
+    private readonly nativeGuidance: string;
     private readonly contextSizes = new Map<string, { count: number; bytes: number }>();
 
     private constructor(
         options: Omit<RpcProcessOptions, "onRequest">,
-        webSearch: boolean
+        webSearch: boolean,
+        nativeSkills: NativeSkills,
+        enabledSkills: readonly MiraSkillId[]
     ) {
+        this.nativeSkills = nativeSkills;
+        this.nativeGuidance = nativeSkillGuidance(options.command, enabledSkills);
         this.webSearch = webSearch;
         this.workspace = options.cwd;
         this.home = options.env.CODEX_HOME ?? "";
@@ -77,17 +90,20 @@ export class CodexRuntime {
      * Initialize the private runtime handshake before accepting any operations.
      * @param options - Isolated child executable, environment and workspace.
      * @param webSearch - Enable provider web search for a direct manual Chat turn.
+     * @param enabledSkills - Current owner's enabled release-owned native skills, empty for login and service probes.
      * @returns An initialized adapter; initialization failure always reaps the child.
      */
     static async connect(
         options: Omit<RpcProcessOptions, "onRequest">,
-        webSearch = false
+        webSearch = false,
+        enabledSkills: readonly MiraSkillId[] = []
     ): Promise<CodexRuntime> {
         if (!options.env.CODEX_HOME)
             throw new Error("Mira requires an explicit Codex home.");
         await assertNoCustomSkills(options.env.CODEX_HOME);
         const systemSkills = await readSystemSkills(options.command);
-        const runtime = new CodexRuntime(options, webSearch);
+        const nativeSkills = await readNativeSkills(options.command, enabledSkills);
+        const runtime = new CodexRuntime(options, webSearch, nativeSkills, enabledSkills);
         try {
             const initialized = v.parse(
                 initializeSchema,
@@ -113,6 +129,9 @@ export class CodexRuntime {
                     cwd: options.cwd,
                 })
             );
+            await runtime.connection.request("skills/extraRoots/set", {
+                extraRoots: nativeSkills.roots,
+            });
             assertSkillCatalog(
                 await runtime.connection.request("skills/list", {
                     cwds: [options.cwd],
@@ -120,7 +139,8 @@ export class CodexRuntime {
                 }),
                 options.env.CODEX_HOME,
                 options.cwd,
-                systemSkills
+                systemSkills,
+                nativeSkills.skills
             );
             await assertSystemSkills(options.env.CODEX_HOME, systemSkills);
             return runtime;
@@ -307,7 +327,9 @@ export class CodexRuntime {
                 sandbox: "read-only",
                 config: { web_search: this.webSearch ? "live" : "disabled" },
                 approvalPolicy: "untrusted",
-                developerInstructions: instructions,
+                developerInstructions: [instructions, this.nativeGuidance]
+                    .filter(Boolean)
+                    .join("\n\n"),
                 dynamicTools: tools.map(({ name, description, inputSchema }) => ({
                     type: "function",
                     name,
@@ -341,7 +363,11 @@ export class CodexRuntime {
                 threadId,
                 ...(instructions === undefined
                     ? {}
-                    : { developerInstructions: instructions }),
+                    : {
+                          developerInstructions: [instructions, this.nativeGuidance]
+                              .filter(Boolean)
+                              .join("\n\n"),
+                      }),
                 excludeTurns: true,
                 cwd: this.workspace,
                 sandbox: "read-only",
@@ -435,6 +461,7 @@ export class CodexRuntime {
         text: string,
         options: {
             signal?: AbortSignal;
+            skillText?: string;
             timeoutMs?: number | null;
             onDelta?: (delta: string, messageId?: string) => void;
             onStarted?: (turnId: string) => Promise<void>;
@@ -606,6 +633,10 @@ export class CodexRuntime {
                     summary: "auto",
                     input: [
                         { type: "text", text, text_elements: [] },
+                        ...nativeSkillInputs(
+                            options.skillText ?? "",
+                            this.nativeSkills.skills
+                        ),
                         ...(options.attachments ?? []),
                     ],
                 })
@@ -675,7 +706,6 @@ export class CodexRuntime {
                 if (result.turn.status === "failed") {
                     completed.reject(
                         new ProviderRequestError(
-                            "OpenAI",
                             classifyProviderFailure(result.turn.error)
                         )
                     );
@@ -685,7 +715,7 @@ export class CodexRuntime {
                     result.turn.id === turnId
                 ) {
                     completed.resolve();
-                } else completed.reject(new ProviderRequestError("OpenAI", "incomplete"));
+                } else completed.reject(new ProviderRequestError("incomplete"));
             }
         });
         signal.addEventListener("abort", cancel, { once: true });
@@ -710,9 +740,15 @@ export class CodexRuntime {
      * @param threadId - Previously acknowledged provider thread.
      * @param turnId - Expected active turn; never inferred from a late notification.
      * @param text - Server-created guidance referencing a verified human task edit.
+     * @param skillText - Raw current operator message for explicit skill selection; excludes recalled context.
      * @returns True only after a matching provider acknowledgement, or false if the turn already ended.
      */
-    async steer(threadId: string, turnId: string, text: string): Promise<boolean> {
+    async steer(
+        threadId: string,
+        turnId: string,
+        text: string,
+        skillText = ""
+    ): Promise<boolean> {
         const active = this.active;
         if (
             !active ||
@@ -727,7 +763,10 @@ export class CodexRuntime {
             await this.connection.request("turn/steer", {
                 threadId,
                 expectedTurnId: turnId,
-                input: [{ type: "text", text, text_elements: [] }],
+                input: [
+                    { type: "text", text, text_elements: [] },
+                    ...nativeSkillInputs(skillText, this.nativeSkills.skills),
+                ],
             })
         );
         if (result.turnId !== turnId)
