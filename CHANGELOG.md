@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.2](https://github.com/rajohan/homelab/compare/v0.19.1...v0.19.2) (2026-11-17)
+
+
+### Bug Fixes
+
+* **mira:** stabilize chat rendering and integrate voice controls ([#222](https://github.com/rajohan/homelab/issues/222)) ([5b2f30e](https://github.com/rajohan/homelab/commit/5b2f30ef4c498755707013bd85a0f80ac6a0a545))
+
 ## [0.19.1](https://github.com/rajohan/homelab/compare/v0.19.0...v0.19.1) (2026-11-17)
 
 
