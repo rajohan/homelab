@@ -168,7 +168,7 @@ real process/database faults. `homelab_schedule_enabled{action}` reports schedul
 paused. Use these intent gauges to gate schedule-freshness alerts; do not alert merely
 because the last successful run grows old while a schedule is deliberately disabled.
 
-`bun run dev:identity` starts disposable Auth and Dashboard databases plus the worker on
+`bun run dev` starts disposable Auth and Dashboard databases plus the worker on
 loopback, with synthetic Docker/Loki fixtures. It has no production control credentials.
 `HOMELAB_PREVIEW_METRICS_URL` may explicitly enable read-only telemetry during development;
 identity, jobs, notifications and application lifecycle state remain entirely synthetic.

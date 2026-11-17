@@ -195,7 +195,7 @@ The native collector tests use temporary synthetic cgroups and clean them up:
 
 ## Local preview
 
-`bun run dev:identity` remains fully isolated by default. To preview real **read-only
+`bun run dev` remains fully isolated by default. To preview real **read-only
 telemetry** while keeping identity and dashboard databases disposable, explicitly
 set `HOMELAB_PREVIEW_METRICS_URL` to an endpoint the development host may read. Do
 not use production identity/database credentials. Stop with Ctrl+C to remove the

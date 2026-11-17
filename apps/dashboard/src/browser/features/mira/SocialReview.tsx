@@ -31,6 +31,9 @@ export function SocialReview({
     readonly onClose: () => void;
 }) {
     const [answer, setAnswer] = useState("");
+    const cancel = useOperation(() =>
+        api.mira.social.cancel.mutate({ id: draft.id, version: draft.version })
+    );
     const approve = useOperation(() =>
         api.mira.social.approve.mutate({
             id: draft.id,
@@ -123,10 +126,32 @@ export function SocialReview({
                 {(approve.error || verify.error) && (
                     <ErrorNotice error={approve.error ?? verify.error} />
                 )}
+                {cancel.error && <ErrorNotice error={cancel.error} />}
                 <ActionGroup>
+                    {[
+                        "draft",
+                        "queued",
+                        "verification_required",
+                        "queued_verification",
+                    ].includes(draft.state) && (
+                        <Button
+                            variant="secondary"
+                            busy={cancel.isPending}
+                            disabled={approve.isPending}
+                            onClick={() =>
+                                void cancel
+                                    .mutateAsync(undefined)
+                                    .then(onClose)
+                                    .catch(() => {})
+                            }
+                        >
+                            Cancel action
+                        </Button>
+                    )}
                     {draft.state === "draft" && (
                         <Button
                             busy={approve.isPending}
+                            disabled={cancel.isPending}
                             onClick={() =>
                                 void approve
                                     .mutateAsync(undefined)

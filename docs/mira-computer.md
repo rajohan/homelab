@@ -36,20 +36,13 @@ user-initiated HTTPS links open in the normal browser. Downloads use WebView2's
 normal user-facing download UI. Certificate validation is never bypassed.
 
 The Bun build downloads the official WebView2 SDK pinned by version and SHA-256 in
-`deploy/computer/webview2.json`, verifies Microsoft's signatures and packages only
+`package.json` → `config.windows.webview2`, verifies Microsoft's signatures and packages only
 the two .NET assemblies, x64 loader and license. It introduces no additional package
 manager or application framework. Update the SDK pin and hash together in reviewed
 repository changes. The separate Evergreen runtime is maintained by Microsoft;
 reopening Mira adopts its updates. If it is missing, the app links to Microsoft's
 installer instead of silently installing software. The repository release/update
 pipeline ships the Windows shell and verified SDK files together.
-
-`bun --no-env-file scripts/testWindowsDesktop.ts` covers native connection and update
-lifecycle, pairing-to-connection handoff and an actual WebView2 instance. Synthetic
-HTTPS responses exercise dashboard/Auth navigation, message round-trips, rejected
-origins and process exit before deleting the test profile. The external-browser
-launcher is replaced in this fixture, so tests never open the operator's browser.
-Live sign-in, security-key handling and installation remain deployment qualification.
 
 References: [Microsoft WebView2 distribution](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution),
 [Microsoft WebView2 security guidance](https://learn.microsoft.com/microsoft-edge/webview2/concepts/security).
@@ -94,8 +87,6 @@ reading driver metadata; it grants no application or desktop access. SDK updates
 must pass the Docker/native-computer, Windows consent-host and interruption jobs,
 including extracted-package startup and native input qualification, before merge.
 The server browser retains its separately pinned CUA CLI 0.38.0.
-
-Run `bash scripts/testComputer.sh` on a Docker-capable development host. The command builds the repository's fixture image and runs it with no network, no host desktop/device mounts, no capabilities, no elevated privileges and a read-only filesystem with bounded temporary storage. The SDK remains an ordinary repository dependency, covered by lockfile and dependency updates; the disposable image is not a new deployed service.
 
 The image starts Xvfb, Openbox and a synthetic Tk window, waiting for the display, window manager and visible application before publishing readiness. The qualification performs native operations through the supervised child. It reads an inline image, focuses the entry, types a literal string and clicks a counter. It verifies the text and exactly one increment through the fixture's separate state file. It also checks denied desktop discovery, denied out-of-manifest executable access, one-use observations and closed-session refusal. It prints only a content-free receipt. CI runs the same command in the existing secret-free source-verification job.
 
@@ -303,14 +294,6 @@ Its abort immediately retires the controller, and cleanup waits for both
 processes before admitting a replacement. No device token, server credential,
 screenshot or input command is sent to this host.
 
-`bun --no-env-file scripts/testWindowsConsent.ts` compiles the actual GUI binary and checks its
-redirected-pipe bootstrap, strict protocol parsing, deadline rules, session-state
-matrix and process/window identity checks. The native test entrypoint is compiled
-separately and is not distributed. CI runs these checks and the actual Bun child
-transport tests on Windows; CodeQL also analyzes the compiled C# host. Linux unit
-coverage is reported separately and does not claim C# line coverage or interactive
-Windows input qualification.
-
 The GUI host, controller and driver factory now share a tested lifecycle.
 `ComputerLocalConsentHost` retains the immutable selected target and exact
 view/control scope, checks readiness around startup, and owns late-starting
@@ -365,19 +348,6 @@ unconfirmed cleanup, permanently rejects repeated close attempts, retains the
 private temporary directory and blocks a replacement controller. Startup failures
 retain the same cleanup failure even when no driver port was returned. Interrupted
 input is never replayed.
-
-`bun --no-env-file scripts/testWindowsWorker.ts` compiles the actual supervisor and separate
-harmless fixtures. It verifies child and grandchild exit after parent EOF,
-supervisor termination and worker exit, with retained process handles to avoid PID
-reuse. It also checks environment filtering, builds the complete package, loads
-native SDK metadata from an unrelated working directory, initializes/closes the
-actual private port, explicitly loads both N-API addons, and rejects each missing
-DLL/N-API binary in a separate fresh process. The `@ubjs/node` wrapper must resolve
-the exact packaged addon. These checks do not capture
-the desktop or send input. Windows CI runs them alongside consent/controller and
-cleanup-failure tests. CodeQL compiles and analyzes both C# executables without a
-third-party restore. Native assertions are reported separately from TypeScript
-coverage.
 
 This qualifies packaged startup and process ownership, not interactive Windows
 capture/input, lock/sleep transitions, installer signing, release distribution,
@@ -496,15 +466,6 @@ loss and cleanup failure. These tests do not grant access to the operator's desk
 
 ## Qualified Windows release archive
 
-`bun --no-env-file scripts/testWindowsWorker.ts [absolute-export-directory]` builds the
-complete Windows x64 package with the pinned Bun and SDK, inventories its files,
-creates a ZIP with the operating system's .NET compression library, and extracts
-that freshly built archive into an isolated directory. Native qualification runs
-against the extracted executables and libraries, including startup/cleanup and
-missing-library refusal. The original and extracted trees must have exactly the
-same paths, lengths and SHA-256 hashes. Export occurs only after qualification
-succeeds. No real window is captured or controlled by this test.
-
 Stable Homelab releases attach `mira-computer-<version>-windows-x64.zip` and the
 matching `.json` manifest. The existing release workflow reuses the Windows
 artifact from its successful CI invocation; it does not rebuild the published
@@ -564,14 +525,6 @@ service's retired port-3443 entry, without reading or transmitting either creden
 other origins remain isolated. Use Settings to revoke
 server access too. A failed or cancelled pairing must be revoked before retrying.
 
-`bun --no-env-file scripts/testWindowsDesktop.ts` builds native isolated fixtures and checks
-argument quoting, private pairing input, fixed-origin startup with absent or stale
-preferences, graceful stop,
-unresponsive children, nested process ownership, manager death and malformed
-output. CI also checks the actual extracted desktop executable and its
-missing-sibling refusal. These checks do not capture or control a real desktop;
-interactive Windows acceptance and private Meshnet routing remain required.
-
 ## Per-user Windows installer
 
 Stable releases also attach `mira-computer-<version>-windows-x64-setup.exe`, built
@@ -596,7 +549,7 @@ preferences and the OS-vault pairing. Use Forget pairing and Settings > Computer
 > Revoke when retiring a computer.
 
 The compiler version, official release URL, SHA-256 and Authenticode publisher are
-pinned in `deploy/computer/inno.json`. `scripts/setupInno.ps1` verifies the download
+pinned in `package.json` → `config.windows.inno`. `scripts/setupInno.ps1` verifies the download
 and extracts it in portable mode into a new caller-owned directory. Compiler
 updates require a reviewed pin change and the same Windows qualification; Inno is
 a build dependency, not an installed Mira runtime dependency.
@@ -766,22 +719,6 @@ Microsoft API references: [CreateForWindow](https://learn.microsoft.com/en-us/wi
 and [CreateFreeThreaded](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.direct3d11captureframepool.createfreethreaded).
 
 ## Hosted Windows consent interruption acceptance
-
-`bun --no-env-file scripts/testWindowsConsentAcceptance.ts` refuses developer PCs and runs only on
-a disposable GitHub-hosted Windows runner. It builds the actual consent binary
-and a separate, non-distributed acceptance harness. GitHub's hosted Windows account
-is elevated with UAC disabled, so the harness creates one random local standard test
-account and verifies its non-elevated token before starting any acceptance. Its
-random password stays only in memory and is never passed to children or logs. The
-account receives read/execute access only to the owned test package, a writable
-scratch directory and temporary GUI access on the disposable runner. Both original
-desktop DACLs are restored and the account is removed after the child exits. The
-harness does not load a user profile or change UAC policy. The production
-administrator-window refusal remains intact.
-Windows UI Automation selects
-only the harness-owned fixture in the consent window, verifies that foreground
-control needs the unchecked checkbox, and checks the selected process/window
-identity against the fixture's independent pipe. It does not capture pixels.
 
 The test proves local Stop, parent pipe loss and target exit each produce one
 terminal stop receipt followed by native process exit. Its final case invokes

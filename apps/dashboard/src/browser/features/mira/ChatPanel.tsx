@@ -16,11 +16,8 @@ import { useNavigate } from "@tanstack/react-router";
 import {
     Archive,
     Brain,
-    Cloud,
     Files,
-    GitPullRequest,
     Globe,
-    Mail,
     MessageSquare,
     Monitor,
     Pencil,
@@ -54,16 +51,7 @@ export function ChatPanel({
     onLibrary,
 }: {
     readonly id: string;
-    readonly onLibrary: (
-        library:
-            | "files"
-            | "memory"
-            | "mail"
-            | "publications"
-            | "social"
-            | "daytona"
-            | "code"
-    ) => void;
+    readonly onLibrary: (library: "files" | "memory") => void;
     readonly onChooseConversation: () => void;
 }) {
     const [text, setText] = useState("");
@@ -212,36 +200,6 @@ export function ChatPanel({
                                     label: "Computer access",
                                     icon: Monitor,
                                     onSelect: () => setDialog("computer"),
-                                },
-                                {
-                                    id: "code",
-                                    label: "Code changes",
-                                    icon: GitPullRequest,
-                                    onSelect: () => onLibrary("code"),
-                                },
-                                {
-                                    id: "daytona",
-                                    label: "Code jobs",
-                                    icon: Cloud,
-                                    onSelect: () => onLibrary("daytona"),
-                                },
-                                {
-                                    id: "social",
-                                    label: "Moltbook drafts",
-                                    icon: MessageSquare,
-                                    onSelect: () => onLibrary("social"),
-                                },
-                                {
-                                    id: "publications",
-                                    label: "Publications",
-                                    icon: Globe,
-                                    onSelect: () => onLibrary("publications"),
-                                },
-                                {
-                                    id: "mail",
-                                    label: "Email drafts",
-                                    icon: Mail,
-                                    onSelect: () => onLibrary("mail"),
                                 },
                                 {
                                     id: "files",

@@ -1,27 +1,14 @@
 import { Button, Modal, PageHeader } from "@homelab/ui";
 import { useParams } from "@tanstack/react-router";
-import {
-    Brain,
-    Cloud,
-    Files,
-    GitPullRequest,
-    Globe,
-    Mail,
-    MessageSquare,
-} from "lucide-react";
+import { Brain, Files } from "lucide-react";
 import { useState } from "react";
 import * as v from "valibot";
 
 import { ChatPanel } from "../features/mira/ChatPanel";
 import { ChatWelcome } from "../features/mira/ChatWelcome";
-import { CodeLibrary } from "../features/mira/CodeLibrary";
 import { ConversationList } from "../features/mira/ConversationList";
-import { DaytonaJobs } from "../features/mira/DaytonaJobs";
 import { FileLibrary } from "../features/mira/FileLibrary";
-import { MailLibrary } from "../features/mira/MailLibrary";
 import { MemoryLibrary } from "../features/mira/MemoryLibrary";
-import { PublicationLibrary } from "../features/mira/PublicationLibrary";
-import { SocialLibrary } from "../features/mira/SocialLibrary";
 
 /**
  * Present persistent Mira chat within the existing Homelab shell and shared design.
@@ -29,9 +16,7 @@ import { SocialLibrary } from "../features/mira/SocialLibrary";
  */
 export function Mira() {
     const [choosingConversation, setChoosingConversation] = useState(false);
-    const [library, setLibrary] = useState<
-        "files" | "memory" | "mail" | "publications" | "social" | "daytona" | "code"
-    >();
+    const [library, setLibrary] = useState<"files" | "memory">();
     const parsed = v.safeParse(
         v.object({ conversationId: v.optional(v.pipe(v.string(), v.uuid())) }),
         useParams({ strict: false })
@@ -47,41 +32,6 @@ export function Mira() {
                     description="Chat, plan work and keep your tasks and context together."
                     actions={
                         <>
-                            <Button
-                                variant="secondary"
-                                onClick={() => setLibrary("code")}
-                            >
-                                <GitPullRequest size={16} />
-                                Code changes
-                            </Button>
-                            <Button
-                                variant="secondary"
-                                onClick={() => setLibrary("daytona")}
-                            >
-                                <Cloud size={16} />
-                                Cloud jobs
-                            </Button>
-                            <Button
-                                variant="secondary"
-                                onClick={() => setLibrary("social")}
-                            >
-                                <MessageSquare size={16} aria-hidden="true" />
-                                Moltbook drafts
-                            </Button>
-                            <Button
-                                variant="secondary"
-                                onClick={() => setLibrary("publications")}
-                            >
-                                <Globe size={16} aria-hidden="true" />
-                                Publications
-                            </Button>
-                            <Button
-                                variant="secondary"
-                                onClick={() => setLibrary("mail")}
-                            >
-                                <Mail size={16} aria-hidden="true" />
-                                Email drafts
-                            </Button>
                             <Button
                                 variant="secondary"
                                 onClick={() => setLibrary("memory")}
@@ -130,36 +80,6 @@ export function Mira() {
                         onSelect={() => setChoosingConversation(false)}
                     />
                 </Modal>
-            )}
-            {library === "code" && (
-                <CodeLibrary
-                    conversationId={conversationId}
-                    onClose={() => setLibrary(undefined)}
-                />
-            )}
-            {library === "daytona" && (
-                <DaytonaJobs
-                    conversationId={conversationId}
-                    onClose={() => setLibrary(undefined)}
-                />
-            )}
-            {library === "social" && (
-                <SocialLibrary
-                    conversationId={conversationId}
-                    onClose={() => setLibrary(undefined)}
-                />
-            )}
-            {library === "publications" && (
-                <PublicationLibrary
-                    conversationId={conversationId}
-                    onClose={() => setLibrary(undefined)}
-                />
-            )}
-            {library === "mail" && (
-                <MailLibrary
-                    conversationId={conversationId}
-                    onClose={() => setLibrary(undefined)}
-                />
             )}
             {library === "files" && <FileLibrary onClose={() => setLibrary(undefined)} />}
             {library === "memory" && (

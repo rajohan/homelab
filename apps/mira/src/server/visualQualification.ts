@@ -2,12 +2,12 @@ import { Effect } from "effect";
 import * as v from "valibot";
 
 import { runtimeEnvironment } from "./config/environment";
+import { createVisualChallenge } from "./development/visualChallenge";
 import { CodexRuntime } from "./runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "./runtime/configuration";
 import type { RuntimeTool } from "./runtime/protocol";
 import type { RuntimeToolResult } from "./runtime/toolResult";
 import { createMiraToolRouter } from "./runtime/toolRouter";
-import { createVisualChallenge } from "./testing/visualChallenge";
 
 /**
  * Qualify actual image tool output using only fresh synthetic pixels and the dedicated login.

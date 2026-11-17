@@ -35,7 +35,3 @@ either direct PostgreSQL or a separately qualified PgBouncer configuration. See
 [operations](identity-operations.md).
 
 ## Native tests
-
-`bun run test` discovers unit and Happy DOM tests automatically. Real HTTP/database
-tests run separately with `bun run test:integration`, without DOM emulation. See
-[testing](testing.md) for coverage and platform qualification.

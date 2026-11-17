@@ -101,14 +101,12 @@ The job runs the immutable snapshot's `/opt/homelab/daytona-check.js`; a generic
 Bun image is insufficient. Arbitrary Cloud commands remain a separate existing
 operator-reviewed capability.
 
-The harness uses the pinned Bun Canary revision, a frozen install without lifecycle scripts, and native
-PostgreSQL 18 bound to loopback. Its fixed steps are `check`, both migration
-checks, `test`, `test:integration`, `build`, and `test:smoke`. Source is fetched by
+The harness uses the pinned Bun Canary revision, a frozen install without lifecycle scripts, and no database. Its fixed steps are `check`, both migration metadata checks and `build`. Source is fetched by
 exact SHA from the public repository without credentials, Git hooks, recursive
 submodules or redirects. A selected patch is bounded to 1 MiB, hashed against the
 reviewed input and applied with Git's indexed path checks. No host directory,
 GitHub token, provider key or production database is available inside the image.
-The fixed check command retains its ten-minute test timeout. The executor renews
+The fixed check command retains its ten-minute execution limit. The executor renews
 provider activity while it runs; the sandbox has no universal fifteen-minute limit.
 Before a write, the toolbox requires at least thirty seconds of idle headroom and
 rechecks that window after authorization. Ordinary subprocess groups are terminated on interruption; provider
@@ -118,13 +116,13 @@ Each attempt uses fresh directories and refuses replay. It returns
 `check-result.json`, `check-log.txt` and `changes.txt` (the normalized selected
 patch, not a newly generated change). Logs and files are bounded. Preparation and
 check failures return a nonzero exit status; when preparation has created the
-output directory, the report records incomplete steps and local database cleanup.
+output directory, the report records incomplete steps.
 An image/profile mismatch can fail before artifacts exist. Repository code can
 alter its own sandbox, so reports remain explicitly **untrusted sandbox results**,
 never evidence that authorizes automatic GitHub writes, merge or deployment.
 The profile does not run image builds or provider qualification inside itself.
 
-`deploy/daytona/Dockerfile` is the versioned snapshot recipe. The **Daytona check
+`deploy/Dockerfile` is the versioned snapshot recipe. The **Daytona check
 image** workflow builds and tests the actual non-root image with no host mounts,
 then publishes the same tested image on stable releases. `daytona-image.json`
 records the immutable registry reference separately from the three service
@@ -139,7 +137,7 @@ operation. Do not mark an image or binding qualified solely because CI passed.
 Local image qualification (Linux AMD64, Docker, public network access):
 
 ```sh
-docker build -f deploy/daytona/Dockerfile -t homelab-daytona-harness:tested .
+docker build -f deploy/Dockerfile -t homelab-daytona-harness:tested .
 bun --no-env-file apps/mira/src/server/testing/daytonaSmoke.ts <exact-public-commit-sha>
 ```
 

@@ -6,7 +6,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
       args:
-        APP: dashboard
+        APP: homelab
     image: homelab/dashboard:identity-preview
     environment:
       NODE_ENV: production

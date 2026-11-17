@@ -1,6 +1,6 @@
 param([Parameter(Mandatory=$true)][string]$Destination)
 $ErrorActionPreference = 'Stop'
-$config = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../deploy/computer/webview2.json') -Raw | ConvertFrom-Json
+$config = (Get-Content -LiteralPath (Join-Path $PSScriptRoot '../package.json') -Raw | ConvertFrom-Json).config.windows.webview2
 if ($config.version -notmatch '^1\.0\.\d+\.\d+$') { throw 'Invalid WebView2 SDK version.' }
 $target = [IO.Path]::GetFullPath($Destination)
 New-Item -ItemType Directory -Path $target -Force | Out-Null

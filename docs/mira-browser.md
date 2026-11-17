@@ -48,7 +48,7 @@ Create intent commits before Docker dispatch; the returned ID commits before sta
 
 ## Fixed runtime boundary
 
-the pinned Bun Canary revision and the unmodified official CUA CLI 0.38.0 are pinned. `driverRelease.json` records the upstream release URL, exact archive size and SHA-256; image builds verify these before extracting the executable. `deploy/browser/Dockerfile` packages Chromium, Xvfb/Openbox and the CLI beside the bundled fixed worker. The Windows SDK is independently pinned to 0.48.0. It contains no host profiles, model credentials, test sites or repository source.
+the pinned Bun Canary revision and the unmodified official CUA CLI 0.38.0 are pinned. `package.json` records the upstream release URL, exact archive size and SHA-256; image builds verify these before extracting the executable. `deploy/Dockerfile` packages Chromium, Xvfb/Openbox and the CLI beside the bundled fixed worker. The Windows SDK is independently pinned to 0.48.0. It contains no host profiles, model credentials, test sites or repository source.
 
 The fixed container runs as UID/GID 1000 with a read-only root, no host mounts or published ports, no capabilities, no-new-privileges, bounded temporary filesystems, 1536 MiB RAM, two CPUs and 256 PIDs. Docker init, automatic removal and `/usr/bin/timeout --signal=KILL 305s` bound descendants independently of native cleanup. The upstream browser no-sandbox setting is confined to this outer container boundary; do not run the worker outside it.
 
@@ -109,10 +109,6 @@ The host reads only explicitly provisioned settings:
 - `HOMELAB_MIRA_BROWSER_HEALTH_PORT`: loopback-only health port, default 3441.
 
 Build with `bun run build mira`; the host entry point is `bun --no-env-file apps/mira/dist/hostCli.js`. This documents the package, not authorization to activate it in production. The host uses no model login or provider credential. Deployment must give only the trusted host its required engine/database access and preserve the host UUID across upgrades.
-
-`bash scripts/testBrowser.sh` qualifies native capture, literal trusted typing/clicking, one-use refs, origin refusal, frozen-driver cleanup and the private worker protocol in offline containers. `bun --no-env-file apps/mira/src/server/testing/browserImageSmoke.ts <local-image>` verifies the unchanged release image and real worker behavior; a qualification-only Docker exec supplies its synthetic loopback site without changing image layers.
-
-`bash scripts/testBrowserService.sh` requires the fixture image built by `bash scripts/testBrowser.sh`. It builds and starts the actual host CLI against a disposable PostgreSQL allocation, invokes the real Chat tools, verifies native PNG delivery and independent trusted DOM events, then sends SIGTERM and proves container removal, closed grants and erased transient results. The Isolated browser CI job runs these qualifications plus the public-egress qualification before release images can be published. PRs never publish images.
 
 Real-database integration tests additionally cover competing hosts, stale controller/run identities, one-time result consumption, view-only scope, human stop, uncertain input, atomic startup rollback and cleanup failures. Shared-component tests and the disposable Chat preview cover explicit origin submission, stale/paused/text-only refusal, direct stop and viewport-bounded responsive dialogs.
 

@@ -26,6 +26,9 @@ export function MailReview({
     readonly draft: MiraMailDraft;
     readonly onClose: () => void;
 }) {
+    const cancel = useOperation(() =>
+        api.mira.mail.cancel.mutate({ id: draft.id, version: draft.version })
+    );
     const approve = useOperation(() =>
         api.mira.mail.approve.mutate({
             id: draft.id,
@@ -137,10 +140,32 @@ export function MailReview({
                     </p>
                 )}
                 {approve.error && <ErrorNotice error={approve.error} />}
+                {cancel.error && <ErrorNotice error={cancel.error} />}
                 <ActionGroup>
+                    {[
+                        "draft",
+                        "queued",
+                        "verification_required",
+                        "queued_verification",
+                    ].includes(draft.state) && (
+                        <Button
+                            variant="secondary"
+                            busy={cancel.isPending}
+                            disabled={approve.isPending}
+                            onClick={() =>
+                                void cancel
+                                    .mutateAsync(undefined)
+                                    .then(onClose)
+                                    .catch(() => {})
+                            }
+                        >
+                            Cancel action
+                        </Button>
+                    )}
                     {draft.state === "draft" && (
                         <Button
                             busy={approve.isPending}
+                            disabled={cancel.isPending}
                             onClick={() =>
                                 void approve
                                     .mutateAsync(undefined)

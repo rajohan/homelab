@@ -6,34 +6,23 @@ import { migrate } from "drizzle-orm/bun-sql/migrator";
 import { parseAuthConfiguration } from "../apps/auth/src/server/config/configuration";
 import { connectAuthDatabase } from "../apps/auth/src/server/database/connection";
 import { factors, users } from "../apps/auth/src/server/database/schema";
+import {
+    developmentTotpCode,
+    developmentTotpSecret,
+} from "../apps/auth/src/server/development/developmentTotp";
 import { startAuthServer } from "../apps/auth/src/server/index";
 import {
     encryptValue,
     hashPassword,
     randomToken,
 } from "../apps/auth/src/server/security/crypto";
-import {
-    developmentTotpCode,
-    developmentTotpSecret,
-} from "../apps/auth/src/server/testing/developmentTotp";
 import { parseDashboardAuthConfiguration } from "../apps/dashboard/src/server/config/auth";
 import { parseOperationsConfiguration } from "../apps/dashboard/src/server/config/operations";
 import { connectDashboardDatabase } from "../apps/dashboard/src/server/database/connection";
 import { migrateDashboard } from "../apps/dashboard/src/server/database/migrations";
 import { startDashboardServer } from "../apps/dashboard/src/server/index";
-import { createJobRegistry } from "../apps/dashboard/src/server/jobs/registry";
 import { publishNotification } from "../apps/dashboard/src/server/notifications/publish";
 import { createOperationsRuntime } from "../apps/dashboard/src/server/operations/runtime";
-import { createApplicationFixture } from "../apps/dashboard/src/server/testing/applications";
-import {
-    createMonitoringFixture,
-    previewUpdateSources,
-    seedMonitoringPreview,
-} from "../apps/dashboard/src/server/testing/monitoring";
-import {
-    previewUpdateJobs,
-    previewUpdateTargets,
-} from "../apps/dashboard/src/server/testing/updates";
 import { runWorker } from "../apps/dashboard/src/worker/runtime";
 
 async function docker(...arguments_: string[]): Promise<string> {
@@ -82,8 +71,6 @@ export async function main(): Promise<void> {
     let dashboard: ReturnType<typeof startDashboardServer> | undefined;
     let worker: Promise<void> | undefined;
     let operations: ReturnType<typeof createOperationsRuntime> | undefined;
-    let applications: ReturnType<typeof createApplicationFixture> | undefined;
-    let monitoring: ReturnType<typeof createMonitoringFixture> | undefined;
     const lifecycle = new AbortController();
     let stopRequested = false;
     let serverShutdownFailed: boolean;
@@ -174,45 +161,15 @@ export async function main(): Promise<void> {
         await prepareDatabase(databaseUrl);
         const dashboardUrl = new URL(databaseUrl);
         dashboardUrl.pathname = "/homelab_dashboard_dev";
-        applications = createApplicationFixture({
-            actionDelayMs: 2000,
-            healthDelayMs: 4000,
-            includeFailure: true,
-        });
-        monitoring = createMonitoringFixture();
         const operationConfiguration = parseOperationsConfiguration({
             NODE_ENV: "development",
-            HOMELAB_DASHBOARD_APPLICATION_TARGETS: JSON.stringify([
-                {
-                    ...applications.target,
-                    updateSources: [
-                        ...new Set(
-                            previewUpdateTargets
-                                .filter((target) => target.driver.kind === "docker")
-                                .map((target) => target.source)
-                        ),
-                    ],
-                },
-            ]),
-            HOMELAB_DASHBOARD_LOGS_URL: applications.url,
-            HOMELAB_DASHBOARD_ALERTMANAGER_URL: monitoring.url,
-            HOMELAB_DASHBOARD_RULES_URL: monitoring.url,
-            HOMELAB_DASHBOARD_PBS_URL: monitoring.url,
-            HOMELAB_DASHBOARD_PBS_TOKEN: "demo@pbs!reader:synthetic-only",
-            HOMELAB_DASHBOARD_PBS_STORES: JSON.stringify([{ datastore: "demo-backups" }]),
-            HOMELAB_DASHBOARD_UPDATE_SOURCES: JSON.stringify(previewUpdateSources),
-            HOMELAB_DASHBOARD_UPDATE_TARGETS: JSON.stringify(previewUpdateTargets),
             HOMELAB_DASHBOARD_DATABASE_URL: dashboardUrl.href,
-            // Optional read-only telemetry; identity and operational state remain disposable.
-            HOMELAB_DASHBOARD_METRICS_URL:
-                process.env.HOMELAB_PREVIEW_METRICS_URL ?? monitoring.url,
         });
         if (!operationConfiguration)
             throw new Error("Invalid isolated dashboard configuration");
         const dashboardConnection = connectDashboardDatabase(dashboardUrl.href);
         try {
             await migrateDashboard(dashboardConnection);
-            await seedMonitoringPreview(dashboardConnection.client, monitoring.url);
             await dashboardConnection.client.begin(async (transaction) => {
                 for (const [index, severity] of (
                     ["success", "warning", "info", "error"] as const
@@ -303,9 +260,7 @@ export async function main(): Promise<void> {
             operations = createOperationsRuntime(operationConfiguration);
             worker = runWorker({
                 client: operations.client,
-                registry: createJobRegistry(
-                    previewUpdateJobs(operations.registry, operations.client)
-                ),
+                registry: operations.registry,
                 concurrency: operationConfiguration.concurrency,
                 signal: lifecycle.signal,
                 version: "development",
@@ -337,12 +292,7 @@ export async function main(): Promise<void> {
             try {
                 await operations?.client.close();
             } finally {
-                try {
-                    if (created) await docker("stop", "--time", "5", container);
-                } finally {
-                    await applications?.close();
-                    await monitoring?.close();
-                }
+                if (created) await docker("stop", "--time", "5", container);
             }
         }
     }

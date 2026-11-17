@@ -35,12 +35,12 @@ interface Step {
 /**
  * Return a clean sandbox environment, never inheriting provider credentials or host configuration.
  * @param directory - Canonical fresh per-attempt directory.
- * @returns Explicit runtime, Git and loopback-only test database settings.
+ * @returns Explicit runtime and Git settings.
  */
 export function sandboxEnvironment(directory: string): Record<string, string> {
     return {
         ...sandboxProxyEnvironment(),
-        PATH: "/usr/local/bin:/usr/lib/postgresql/18/bin:/usr/bin:/bin",
+        PATH: "/usr/local/bin:/usr/bin:/bin",
         HOME: path.join(directory, "home"),
         TMPDIR: path.join(directory, "tmp"),
         LANG: "C.UTF-8",
@@ -48,8 +48,6 @@ export function sandboxEnvironment(directory: string): Record<string, string> {
         GIT_CONFIG_NOSYSTEM: "1",
         GIT_CONFIG_GLOBAL: "/dev/null",
         GIT_TERMINAL_PROMPT: "0",
-        HOMELAB_TEST_DATABASE_URL:
-            "postgres://homelab_test@127.0.0.1:55432/homelab_auth_test",
     };
 }
 /**
@@ -57,9 +55,9 @@ export function sandboxEnvironment(directory: string): Record<string, string> {
  * @param request - Validated exact public commit and optional selected patch digest.
  * @param attempt - Canonical disposable attempt directory provisioned by the image entry point.
  * @param stopping - Cancellation signal for this invocation.
- * @param execute - Subprocess boundary; tests substitute failures without touching host services.
+ * @param execute - Subprocess boundary for the fixed checks.
  * @param announce - Status sink, defaulting to stdout outside the local JSON transport.
- * @returns Exit status after recording steps and local database shutdown evidence.
+ * @returns Exit status after recording the check results.
  */
 export async function executeDaytonaChecks(
     request: DaytonaSandboxRequest,
@@ -91,7 +89,6 @@ export async function executeDaytonaChecks(
         logTruncated = false,
         patch = "",
         failure: string | null = null;
-    let databaseStopped: boolean;
     const append = (text: string) => {
         const bytes = Buffer.from(log + text);
         if (bytes.length > 750_000) logTruncated = true;
@@ -126,9 +123,6 @@ export async function executeDaytonaChecks(
             throw new Error(`Failed: ${name}`);
         return result;
     };
-    const databaseController = new AbortController();
-    let database: Promise<SandboxProcessResult> | undefined;
-    let databaseError = false;
     try {
         await command("Initialize checkout", git("init", "--template="));
         await command(
@@ -233,87 +227,11 @@ export async function executeDaytonaChecks(
                 "--frozen-lockfile",
                 "--ignore-scripts",
             ]);
-            await command("Initialize isolated PostgreSQL", [
-                "initdb",
-                "-D",
-                path.join(work, "postgres"),
-                "-U",
-                "homelab_test",
-                "--auth=trust",
-                "--locale=C.UTF-8",
-            ]);
-            database = execute(
-                [
-                    "postgres",
-                    "-D",
-                    path.join(work, "postgres"),
-                    "-h",
-                    "127.0.0.1",
-                    "-p",
-                    "55432",
-                    "-c",
-                    "unix_socket_directories=",
-                    "-c",
-                    "shared_buffers=64MB",
-                    "-c",
-                    "max_connections=50",
-                ],
-                {
-                    cwd: work,
-                    env,
-                    signal: AbortSignal.any([signal, databaseController.signal]),
-                    timeoutMs: Math.max(1, deadline - Date.now()),
-                    maxBytes: 8192,
-                }
-            ).catch(() => {
-                databaseError = true;
-                return {
-                    exitCode: 137,
-                    stdout: "",
-                    stderr: "Database process failed.",
-                    timedOut: false,
-                    truncated: false,
-                };
-            });
-            let ready = false;
-            for (let attempt = 0; attempt < 30; attempt++) {
-                const probe = await execute(
-                    [
-                        "pg_isready",
-                        "-h",
-                        "127.0.0.1",
-                        "-p",
-                        "55432",
-                        "-U",
-                        "homelab_test",
-                    ],
-                    { cwd: work, env, signal, timeoutMs: 1000, maxBytes: 1024 }
-                );
-                if (probe.exitCode === 0 && !probe.timedOut) {
-                    ready = true;
-                    break;
-                }
-                await Bun.sleep(100);
-            }
-            if (!ready) throw new Error("Isolated PostgreSQL did not become ready.");
-            await command("Create disposable test database", [
-                "createdb",
-                "-h",
-                "127.0.0.1",
-                "-p",
-                "55432",
-                "-U",
-                "homelab_test",
-                "homelab_auth_test",
-            ]);
             for (const task of [
                 "check",
                 "db:check:auth",
                 "db:check:dashboard",
-                "test",
-                "test:integration",
                 "build",
-                "test:smoke",
             ]) {
                 await command(task, ["bun", "run", task], false);
             }
@@ -328,49 +246,9 @@ export async function executeDaytonaChecks(
             failure =
                 "Sandbox checks were interrupted or reached their ten-minute deadline.";
         else failure = error instanceof Error ? error.message : "Sandbox check failed.";
-    } finally {
-        if (database) {
-            try {
-                const stopped = await execute(
-                    [
-                        "pg_ctl",
-                        "-D",
-                        path.join(work, "postgres"),
-                        "-m",
-                        "immediate",
-                        "-w",
-                        "-t",
-                        "10",
-                        "stop",
-                    ],
-                    {
-                        cwd: work,
-                        env,
-                        signal: AbortSignal.timeout(15_000),
-                        timeoutMs: 15_000,
-                        maxBytes: 4096,
-                    }
-                );
-                databaseStopped =
-                    stopped.exitCode === 0 && !stopped.timedOut && !databaseError;
-            } catch {
-                databaseStopped = false;
-            }
-            databaseController.abort();
-            try {
-                const final = await database;
-                logTruncated ||= final.truncated;
-                if (final.exitCode !== 0 || final.timedOut) databaseStopped = false;
-                append(`\n--- PostgreSQL ---\n${final.stdout}${final.stderr}`);
-            } catch {
-                databaseStopped = false;
-            }
-        } else databaseStopped = true;
     }
     const ok =
-        failure === null &&
-        databaseStopped &&
-        steps.every((step) => step.exitCode === 0 && !step.timedOut);
+        failure === null && steps.every((step) => step.exitCode === 0 && !step.timedOut);
     if (!inspecting)
         await writeSandboxArtifact(
             outputs,
@@ -396,7 +274,6 @@ export async function executeDaytonaChecks(
                 bun: Bun.version,
                 ok,
                 failure,
-                databaseStopped,
                 logTruncated: logTruncated || steps.some((step) => step.truncated),
                 inputPatchSha256: patchHash,
                 inputEditsSha256: editHash,

@@ -58,6 +58,7 @@ import {
     miraSocialVerifySchema,
 } from "@homelab/contracts/miraSocial";
 import { idSchema, versionedIdSchema } from "@homelab/contracts/operations";
+import { listMiraActionRequests } from "@homelab/mira/data/actionRequests";
 import {
     deleteMiraAutomation,
     installMiraPresets,
@@ -404,6 +405,11 @@ export const miraRouter = trpc.router({
             ),
     }),
     proposals: trpc.router({
+        actions: trpc.procedure
+            .input(record)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => listMiraActionRequests(mira, input.id))
+            ),
         answer: trpc.procedure
             .input(miraQuestionAnswerSchema)
             .mutation(({ ctx, input }) =>

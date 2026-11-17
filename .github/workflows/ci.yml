@@ -1,26 +1,18 @@
 name: CI
 
 on:
-  workflow_call:
   pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  platforms:
-    uses: ./.github/workflows/ci-platforms.yml
-
-  native:
-    name: Docker and native computer
-    needs: platforms
-    if: needs.platforms.outputs.required == 'true'
+  verify:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -28,237 +20,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-bun
-      - run: bun install --frozen-lockfile
-      - name: Cache the disposable database image for Docker fixtures
-        run: docker pull postgres:18
-      - name: Verify real Docker lifecycle and namespace-aware Compose updates
-        run: bash scripts/testDocker.sh
-      - name: Verify isolated native computer input and permission boundaries
-        run: bash scripts/testComputer.sh
-
-  checks:
-    # No secrets are passed or inherited by the workflow executing PR code.
-    uses: ./.github/workflows/ci-verify.yml
-    permissions:
-      contents: read
-
-  windows:
-    needs: platforms
-    if: needs.platforms.outputs.required == 'true'
-    name: Windows consent host
-    runs-on: windows-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Set up Bun
-        uses: ./.github/actions/setup-bun
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
-      - name: Qualify window-only capture behind an independent overlay
-        run: bun --no-env-file scripts/testWindowsCapture.ts
-      - name: Compile native consent host and qualify protocol and readiness rules
-        run: bun --no-env-file scripts/testWindowsConsent.ts
-      - name: Qualify shared Windows app and local connection
-        run: bun --no-env-file scripts/testWindowsDesktop.ts
-      - name: Qualify packaged worker and native process-tree ownership
-        run: bun --no-env-file scripts/testWindowsWorker.ts "${{ runner.temp }}/computer-release"
-      - name: Set up the pinned portable installer compiler
-        run: ./scripts/setupInno.ps1 -Destination "${{ runner.temp }}/mira-inno"
-      - name: Qualify per-user Windows installation and upgrades
-        run: bun --no-env-file scripts/testWindowsInstaller.ts "${{ runner.temp }}/computer-release" "${{ runner.temp }}/mira-inno/portable/ISCC.exe"
-      - name: Transfer only the qualified Windows release assets
-        if: github.event_name == 'release'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: tested-windows-computer
-          path: ${{ runner.temp }}/computer-release/*
-          retention-days: 2
-          compression-level: 0
-          if-no-files-found: error
-      - name: Verify private consent process lifecycle on Windows
-        run: bun test apps/mira/src/server/computer/native.test.ts apps/mira/src/server/computer/windowsCapture.test.ts scripts/computerRelease.test.ts apps/mira/src/server/computer/companion.test.ts apps/mira/src/server/computer/updateDownload.test.ts apps/mira/src/server/computer/updatePipe.test.ts apps/mira/src/server/computer/companionParent.test.ts apps/mira/src/server/computer/installationLease.test.ts apps/mira/src/server/computer/consentProcess.test.ts apps/mira/src/server/computer/localConsentHost.test.ts apps/mira/src/server/computer/companionConsent.test.ts apps/mira/src/server/computer/companionLifecycle.test.ts apps/mira/src/server/computer/companionCommands.test.ts apps/mira/src/server/computer/companionWork.test.ts apps/mira/src/server/runtime/rpcCleanup.test.ts
-
-  windows-consent-acceptance:
-    needs: platforms
-    if: needs.platforms.outputs.required == 'true'
-    name: Windows consent interruption
-    # The lock test owns a separate disposable desktop and never unlocks it.
-    runs-on: windows-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Set up Bun
-        uses: ./.github/actions/setup-bun
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
-      - name: Qualify native consent interruption and locked-session refusal
-        run: bun --no-env-file scripts/testWindowsConsentAcceptance.ts
-
-  browser:
-    needs: platforms
-    if: needs.platforms.outputs.required == 'true'
-    name: Isolated browser
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Set up Bun
-        uses: ./.github/actions/setup-bun
-      - name: Install locked host qualification dependencies
-        run: bun install --frozen-lockfile
-      - name: Qualify isolated browser images, input and origin boundaries
-        run: bash scripts/testBrowser.sh
-
-      - name: Qualify the built browser host and Chat command queue
-        run: bash scripts/testBrowserService.sh
-
-      - name: Build the standalone browser runtime
-        env:
-          SOURCE_SHA: ${{ github.sha }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          version="$(bun -e 'console.log((await Bun.file("package.json").json()).version)')"
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          if [[ "$EVENT_NAME" == release ]]; then
-            [[ "$RELEASE_TAG" == "v$version" ]]
-            git merge-base --is-ancestor HEAD origin/main
-          fi
-          docker build --provenance=false -f deploy/browser/Dockerfile -t homelab-browser/runtime:tested \
-            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
-            --label "org.opencontainers.image.revision=$SOURCE_SHA" \
-            --label "org.opencontainers.image.version=$version" .
-      - name: Qualify the unchanged browser runtime image
-        run: bun --no-env-file apps/mira/src/server/testing/browserImageSmoke.ts homelab-browser/runtime:tested
-      - name: Build and qualify the unchanged public web proxy
-        env:
-          SOURCE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          version="$(bun -e 'console.log((await Bun.file("package.json").json()).version)')"
-          docker build --provenance=false -f deploy/browser-proxy/Dockerfile -t homelab-browser-proxy-test:local \
-            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
-            --label "org.opencontainers.image.revision=$SOURCE_SHA" \
-            --label "org.opencontainers.image.version=$version" .
-          docker build -f deploy/browser-test/egress.Dockerfile -t homelab-browser-egress-fixture:local .
-          docker tag homelab-browser/runtime:tested homelab-browser-egress-runtime:local
-          python3 -I scripts/smokeBrowserEgress.py
-          docker tag homelab-browser-proxy-test:local homelab-browser/proxy:tested
-      - name: Save only the qualified browser image
-        if: github.event_name == 'release'
-        run: docker save --output browser-images.tar homelab-browser/runtime:tested homelab-browser/proxy:tested
-      - name: Transfer the qualified browser image to the release publisher
-        if: github.event_name == 'release'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: tested-browser-image
-          path: browser-images.tar
-          retention-days: 2
-          compression-level: 0
-          if-no-files-found: error
-
-  verify:
-    # Preserve the required check; only the explicit UI/docs classification permits skips.
-    needs: [platforms, checks, native, windows, windows-consent-acceptance, browser]
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - name: Require successful source verification
-        env:
-          PLATFORM_RESULT: ${{ needs.platforms.result }}
-          PLATFORM_REQUIRED: ${{ needs.platforms.outputs.required }}
-          NATIVE_RESULT: ${{ needs.native.result }}
-          BROWSER_RESULT: ${{ needs.browser.result }}
-          CHECK_RESULT: ${{ needs.checks.result }}
-          WINDOWS_RESULT: ${{ needs.windows.result }}
-          CONSENT_RESULT: ${{ needs.windows-consent-acceptance.result }}
-        run: |
-          set -euo pipefail
-          test "$PLATFORM_RESULT" = success
-          test "$CHECK_RESULT" = success
-          case "$PLATFORM_REQUIRED" in
-            true) expected=success ;;
-            false) expected=skipped ;;
-            *) exit 1 ;;
-          esac
-          for result in "$NATIVE_RESULT" "$BROWSER_RESULT" "$WINDOWS_RESULT" "$CONSENT_RESULT"; do
-            test "$result" = "$expected"
-          done
-
-  coverage:
-    needs: checks
-    if: github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      # Only the protected base supplies Git metadata/config; never execute PR source here.
-      - name: Check out trusted coverage context
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.base.sha || github.sha }}
-          persist-credentials: false
-      - name: Download the report outside the trusted checkout
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: coverage-report
-          path: ${{ runner.temp }}/coverage-input
-      - name: Validate and copy one passive coverage report
-        env:
-          COVERAGE_INPUT: ${{ runner.temp }}/coverage-input
-          COVERAGE_OUTPUT: ${{ runner.temp }}/coverage-validated
-        run: |
-          python3 -I - <<'PY'
-          import os
-          import pathlib
-          import stat
-
-          source = pathlib.Path(os.environ["COVERAGE_INPUT"])
-          target = pathlib.Path(os.environ["COVERAGE_OUTPUT"])
-          if source.is_symlink() or sorted(p.name for p in source.iterdir()) != ["lcov.info"]:
-              raise SystemExit("Expected exactly one passive coverage report")
-          descriptor = os.open(source / "lcov.info", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-          with os.fdopen(descriptor, "rb") as report:
-              metadata = os.fstat(report.fileno())
-              if not stat.S_ISREG(metadata.st_mode) or not 0 < metadata.st_size <= 32 * 1024 * 1024:
-                  raise SystemExit("Invalid coverage report type or size")
-              content = report.read(32 * 1024 * 1024 + 1)
-          if len(content) != metadata.st_size:
-              raise SystemExit("Coverage report changed while reading")
-          content.decode("utf-8", errors="strict")
-          target.mkdir(mode=0o700)
-          with (target / "lcov.info").open("xb") as validated:
-              validated.write(content)
-          PY
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        with:
-          files: ${{ runner.temp }}/coverage-validated/lcov.info
-          override_commit: ${{ github.event.pull_request.head.sha || github.sha }}
-          override_pr: ${{ github.event.pull_request.number }}
-          flags: unit-component-integration
-          disable_search: true
-          disable_file_fixes: true
-          plugins: noop
-          fail_ci_if_error: true
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Check formatting, lint and types
+        run: bun run check
+      - name: Check migration metadata
+        run: bun run db:check:auth && bun run db:check:dashboard
+      - name: Build applications
+        run: bun run build

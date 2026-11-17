@@ -10,12 +10,11 @@ import {
     SectionHeader,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Cloud, Plus, Server, Terminal } from "lucide-react";
+import { Cloud, Server, Terminal } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { api } from "../../api/client";
 import { DaytonaDetails } from "./DaytonaDetails";
-import { DaytonaEditor } from "./DaytonaEditor";
 import { daytonaCleanupDescriptions, daytonaTones } from "./daytonaPresentation";
 
 /**
@@ -30,7 +29,6 @@ export function DaytonaJobs({
     readonly conversationId?: string | undefined;
 }) {
     const scrollRoot = useRef<HTMLDivElement>(null);
-    const [editing, setEditing] = useState<MiraDaytonaJob | "new">();
     const [selected, setSelected] = useState<MiraDaytonaJob>();
     const query = useInfiniteQuery({
         queryKey: ["operations", "mira", "daytona", conversationId],
@@ -50,18 +48,11 @@ export function DaytonaJobs({
                 title={onClose ? "Commands and results" : "Code jobs"}
                 icon={Terminal}
                 description="Main and Daytona commands, logs and results."
-                actions={
-                    <Button onClick={() => setEditing("new")}>
-                        <Plus size={16} />
-                        New job
-                    </Button>
-                }
             />
             {query.isPending && <LoadingState label="Loading code jobs…" />}
             {!query.isPending && !query.error && rows.length === 0 && (
                 <p className="text-sm text-primary-400">
-                    No code jobs yet. Save a draft, then review the command and selected
-                    files before starting.
+                    No code jobs yet. Ask Mira to prepare a command in Chat.
                 </p>
             )}
             <div ref={scrollRoot} className="max-h-128 space-y-3 overflow-y-auto">
@@ -84,14 +75,6 @@ export function DaytonaJobs({
                                     >
                                         {job.state === "draft" ? "Review" : "View job"}
                                     </Button>
-                                    {job.state === "draft" && (
-                                        <Button
-                                            variant="secondary"
-                                            onClick={() => setEditing(job)}
-                                        >
-                                            Edit
-                                        </Button>
-                                    )}
                                 </ActionGroup>
                             }
                         />
@@ -116,14 +99,6 @@ export function DaytonaJobs({
             </div>
         </div>
     );
-    if (editing)
-        return (
-            <DaytonaEditor
-                job={editing === "new" ? undefined : editing}
-                conversationId={conversationId}
-                onClose={() => setEditing(undefined)}
-            />
-        );
     if (selected)
         return <DaytonaDetails job={selected} onClose={() => setSelected(undefined)} />;
     return onClose ? (

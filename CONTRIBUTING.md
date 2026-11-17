@@ -1,78 +1,44 @@
 # Contributing to Homelab
 
-Read [AGENTS.md](AGENTS.md), the [architecture](docs/architecture.md), the [Code of Conduct](CODE_OF_CONDUCT.md), and the [security policy](SECURITY.md) before making changes. All code, comments, documentation, and application text must be in English.
+Follow [AGENTS.md](AGENTS.md) and the [README](README.md) setup. Code, comments,
+documentation and UI are English. Use the pinned Bun runtime and root lockfile.
 
-## Local setup
+## Keep it small
 
-Use the exact Bun package and revision in `.bun-version` / `.bun-revision`. Follow the
-[repository-scoped bootstrap](README.md#start-developing), then work inside this repository:
+- Reuse the real app, shared UI and existing workflows. Do not create a second demo app.
+- Keep dependencies in the root manifest. Source folders do not need their own manifests.
+- Auth remains independently deployable on Edge. Main services share one built image.
+- Use the existing Chat approval controls instead of adding another draft workspace.
+- Keep shared UI/contracts browser-safe, and preserve existing formatting and lint rules.
+- Use synthetic development data; never commit credentials or production records.
 
-```sh
-bun install --frozen-lockfile
-bun run setup
-bun run dev
-```
+Exported functions and public methods need meaningful JSDoc. TypeScript owns types;
+document behavior, parameters and return semantics. Each React component has its
+own file. Effect, Valibot and private tRPC/SuperJSON retain their existing roles.
 
-The dashboard listens on `http://127.0.0.1:3100`; the independent auth foundation listens on `http://127.0.0.1:3101`. This milestone needs no production secrets, database, Docker daemon, Doppler login, or OpenClaw process. See the [README](README.md) for private SSH port forwarding when developing on a remote host.
-
-Setup installs repository Git hooks; it does not configure the host, deploy an application, or turn a parent workspace folder into a Git repository. Install and update dependencies with Bun, and commit `bun.lock` with dependency changes. Do not add another package manager or a parallel build framework.
-
-## Development boundaries
-
-- Keep auth and dashboard independently buildable and deployable. Dashboard work must not require restarting auth.
-- Keep `packages/ui` and `packages/contracts` browser-safe. Do not import server-only code into them.
-- Use Effect for server workflows, Valibot for validation, and SuperJSON for the private tRPC API. Protocol responses such as OIDC/JWT are not SuperJSON payloads.
-- Add small modules within the relevant application before introducing another shared package or service.
-- Use synthetic data. Do not copy credentials, production identity records, or runtime data into the repository.
-- Do not make the foundation grant authentication or authorization merely to make a test pass. Authelia remains authoritative until a separately approved migration.
-
-## API documentation
-
-Exported functions (including arrow functions and indirect exports), public class methods,
-function-valued public fields, accessors and interface methods require JSDoc. Describe
-the operation and its contract; preserve the existing parameter, return, throw and yield
-description checks. TypeScript already owns parameter and return types, so do not repeat
-them in JSDoc. Private and protected implementation methods do not require a block.
-
-Bun lint runs the upstream `eslint-plugin-jsdoc` presence rule in two configurations:
-exported functions and public methods. The small registration module in
-`scripts/lint/documentation.ts` reuses the upstream rules without implementing a custom
-parser or validator. Empty blocks and ordinary `//` comments cannot satisfy the policy,
-and the automatic empty-block fixer is disabled. A fixture test checks these boundaries
-through the actual lint command.
-
-## Verify a change
+## Verify
 
 ```sh
 bun run check
-bun run test
-bun run test:integration
+bun run db:check:auth
+bun run db:check:dashboard
 bun run build
-bun run test:smoke
 ```
 
-`check` runs formatting, lint, and TypeScript checks. Use `bun run test --coverage` in place of `bun run test` when checking the unit/component coverage report; CI does this without repeating the same tests.
+There is deliberately no automated test suite. Run relevant manual checks for the
+changed behavior and state what was actually verified. Do not add test frameworks,
+coverage jobs or repeated full verification runs to a small change.
 
-Name unit tests `*.test.ts`, component tests `*.test.tsx`, and real HTTP integration tests `*.integration.test.ts`. Use the repository test scripts so Happy DOM stays isolated from native networking tests. Do not add Vitest, Playwright, or Storybook.
+## Review and release
 
-A bug fix should include a focused regression test and relevant failure cases. Keep tests deterministic and independent of live homelab services. UI checks in Happy DOM do not replace targeted manual browser and authenticator acceptance tests when identity features are implemented.
+Use a focused branch and a Conventional Commit PR title. Describe the behavior,
+validation and relevant rollout implications. Resolve CI and review findings;
+never bypass branch protection. CodeQL runs weekly and can be started manually.
 
-See [testing and coverage](docs/testing.md) for report locations and limitations. After building, the smoke check starts both built services on temporary loopback ports and verifies their behavior without deploying them.
+Release Please owns version/changelog changes. The release workflow builds the
+publishable artifacts directly, without rerunning PR checks or transferring large
+images through workflow artifacts. Publication is separate from deployment.
+See [releases](docs/releases.md) and [deployment](docs/release-deployment.md).
 
-## Pull requests and review
-
-Use a focused feature branch, the issue forms when helpful, and the pull request template. State what changed, why, the checks you ran, and any remaining risks. Disclose material AI assistance and verify its output; generated code is held to the same review standards as other code.
-
-PR titles follow `type(scope): description`, for example `feat(dashboard): add service inventory` or `fix(auth): reject an invalid return URL`. Supported types are `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, and `test`. Use a descriptive scope such as `auth`, `dashboard`, `ui`, or `ci`. Mark breaking changes with `!` and explain them in the PR.
-
-The `conventional-pr-title` check reads PR metadata only. It uses the workflow from the default branch, so adding or changing that workflow in a PR does not activate the new version until it is merged. The ordinary `verify` job checks code and builds; CodeQL performs a separate scan. Resolve failures instead of bypassing hooks or checks.
-
-Codecov's upload step and its GitHub status notifications are separate integrations. A successful upload is not proof that Codecov has permission to post checks. See [testing and coverage](docs/testing.md) for setup and troubleshooting.
-
-## Releases and deployments
-
-Use reviewed squash merges with a Conventional Commit title. Release Please proposes version and changelog changes in a separate PR. Follow the [release workflow](docs/releases.md); do not manually rewrite release bookkeeping or reuse published tags.
-
-A release is not a deployment. Auth and dashboard are deployed separately using the [deployment instructions](deploy/README.md). Changes to production authentication, data, network access, or secrets require their own explicit review and authorization.
-
-Document migration and rollback steps when a change affects existing deployments. Never include real credentials or private production details in an issue, PR, or test artifact.
+Windows package changes also compile the installer on a Windows runner. UI-only
+changes skip that workflow; it runs no acceptance or test suite.

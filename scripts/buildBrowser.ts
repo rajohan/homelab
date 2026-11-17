@@ -2,18 +2,14 @@ import { mkdir, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { fetchBrowserDriver } from "./fetchBrowserDriver";
+import { copyDriverRuntime } from "./copyDriverRuntime";
 
 /**
- * Bundle the Linux browser worker and its hash-pinned official CLI.
+ * Bundle the Linux browser worker with the same locked native SDK as Windows.
  * @param outputRoot - Absolute empty package directory owned by the build.
- * @param installDriver - Hash-verifying release installer; synthetic replacement is for offline tests only.
- * @returns The package directory with the verified upstream executable; no SDK patches.
+ * @returns The package directory with managed native dependencies.
  */
-export async function buildBrowser(
-    outputRoot: string,
-    installDriver = fetchBrowserDriver
-) {
+export async function buildBrowser(outputRoot: string) {
     if (
         process.platform !== "linux" ||
         process.arch !== "x64" ||
@@ -24,12 +20,13 @@ export async function buildBrowser(
     await mkdir(outputRoot, { recursive: true });
     const entries = await readdir(outputRoot);
     if (entries.length > 0) throw new Error("Browser package output must be empty.");
-    await installDriver(path.join(outputRoot, "cua-driver"));
+    await copyDriverRuntime(outputRoot);
     const result = await Bun.build({
         entrypoints: [path.join(root, "apps/mira/src/server/browsing/workerCli.ts")],
         outdir: outputRoot,
         naming: "worker.js",
         target: "bun",
+        external: ["@trycua/cua-driver"],
         sourcemap: "none",
         env: "disable",
         minify: { whitespace: true, identifiers: false, syntax: false, keepNames: true },

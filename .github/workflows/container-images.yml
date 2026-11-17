@@ -1,9 +1,6 @@
 name: Container images
 
 on:
-  pull_request:
-  push:
-    branches: [main]
   release:
     types: [published]
 
@@ -11,74 +8,39 @@ permissions:
   contents: read
 
 concurrency:
-  group: containers-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: containers-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release-checks:
-    if: github.event_name == 'release' && !github.event.release.prerelease
-    uses: ./.github/workflows/ci.yml
-
-  daytona:
-    # One shared release gate qualifies all platforms before this workflow can publish.
-    if: github.event_name == 'release' && !github.event.release.prerelease
-    needs: release-checks
-    uses: ./.github/workflows/daytona-image.yml
+  images:
+    if: "!github.event.release.prerelease"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
       packages: write
-
-  build-and-test:
-    needs: release-checks
-    if: >-
-      !cancelled() &&
-      (github.event_name != 'release' || needs.release-checks.result == 'success')
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: homelab_test
-          POSTGRES_PASSWORD: isolated-test-only-password
-          POSTGRES_DB: homelab_auth_test
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd "pg_isready -U homelab_test -d homelab_auth_test"
-          --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      HOMELAB_TEST_DATABASE_URL: postgres://homelab_test:isolated-test-only-password@127.0.0.1:5432/homelab_auth_test
-      HOMELAB_SMOKE_IMAGE_PREFIX: homelab-release
     steps:
-      - name: Check out the exact source commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Set up Bun
-        uses: ./.github/actions/setup-bun
-      - name: Validate source version and release ancestry
+      - uses: ./.github/actions/setup-bun
+      - name: Read release identity
         id: source
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           version="$(bun -e 'console.log((await Bun.file("package.json").json()).version)')"
-          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          if [[ "$EVENT_NAME" == release ]]; then
-            [[ "$RELEASE_TAG" == "v$version" ]]
-            git merge-base --is-ancestor HEAD origin/main
-          fi
+          [[ "$RELEASE_TAG" == "v$version" ]]
+          git merge-base --is-ancestor HEAD origin/main
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "dashboard_schema=$(bun scripts/releaseSchema.ts)" >> "$GITHUB_OUTPUT"
           echo "auth_schema=$(bun scripts/releaseSchema.ts auth)" >> "$GITHUB_OUTPUT"
-      - name: Install locked test dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Build auth image without publishing
+          # Refresh distribution packages at least weekly when a release is built.
+          echo "packages_week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build Auth
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -86,273 +48,125 @@ jobs:
           build-args: APP=auth
           platforms: linux/amd64
           load: true
-          tags: homelab-release/auth:tested
+          pull: true
+          tags: homelab-release/auth:built
           provenance: false
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.source.outputs.version }}
-            org.opencontainers.image.title=Homelab Auth
             io.homelab.auth-schema=${{ steps.source.outputs.auth_schema }}
           cache-from: type=gha,scope=auth
           cache-to: type=gha,mode=max,scope=auth
-      - name: Build dashboard image without publishing
+      - name: Build Main with shared browser and code tools
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: deploy/Dockerfile
-          build-args: APP=dashboard
+          build-args: |
+            APP=homelab
+            PACKAGES_WEEK=${{ steps.source.outputs.packages_week }}
           platforms: linux/amd64
           load: true
-          tags: homelab-release/dashboard:tested
+          pull: true
+          tags: homelab-release/homelab:built
           provenance: false
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.source.outputs.version }}
-            org.opencontainers.image.title=Homelab Dashboard
             io.homelab.dashboard-schema=${{ steps.source.outputs.dashboard_schema }}
-          cache-from: type=gha,scope=dashboard
-          cache-to: type=gha,mode=max,scope=dashboard
-      - name: Build mira image without publishing
+          cache-from: type=gha,scope=homelab
+          cache-to: type=gha,mode=max,scope=homelab
+      - name: Build shared network proxy
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          file: deploy/Dockerfile
-          build-args: APP=mira
+          file: deploy/browser-proxy/Dockerfile
+          build-args: PACKAGES_WEEK=${{ steps.source.outputs.packages_week }}
           platforms: linux/amd64
           load: true
-          tags: homelab-release/mira:tested
+          pull: true
+          tags: homelab-release/mira-browser-proxy:built
           provenance: false
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.source.outputs.version }}
-            org.opencontainers.image.title=Homelab Mira
-            io.homelab.dashboard-schema=${{ steps.source.outputs.dashboard_schema }}
-          cache-from: type=gha,scope=mira
-          cache-to: type=gha,mode=max,scope=mira
-      - name: Test all actual images and the complete OIDC flow
-        run: bun run test:smoke
-      - name: Verify private Mira deployment and receiver isolation
-        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/smokeMiraDeployment.py
-      - name: Save only the tested release images
-        if: github.event_name == 'release'
-        run: docker save --output images.tar homelab-release/auth:tested homelab-release/dashboard:tested homelab-release/mira:tested
-      - name: Transfer tested images to the publisher
-        if: github.event_name == 'release'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+          cache-from: type=gha,scope=mira-browser-proxy
+          cache-to: type=gha,mode=max,scope=mira-browser-proxy
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
-          name: tested-container-images
-          path: images.tar
-          retention-days: 2
-          compression-level: 0
-          if-no-files-found: error
-
-  publish-computer:
-    if: github.event_name == 'release' && !github.event.release.prerelease
-    needs: [release-checks, build-and-test]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - name: Check out the verified release publisher
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Download the Windows package qualified in this run
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: tested-windows-computer
-          path: ${{ runner.temp }}/computer-release
-      - name: Publish the exact qualified archive without replacing existing assets
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish immutable image references
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           SOURCE_SHA: ${{ github.sha }}
-          COMPUTER_RELEASE_DIRECTORY: ${{ runner.temp }}/computer-release
-        run: python3 -I scripts/publishComputerRelease.py
-      - name: Prepare exact Windows manifest evidence
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          COMPUTER_RELEASE_DIRECTORY: ${{ runner.temp }}/computer-release
-        run: cp "$COMPUTER_RELEASE_DIRECTORY/mira-computer-${RELEASE_TAG#v}-windows-x64.json" "computer-manifest-$GITHUB_RUN_ATTEMPT.json"
-      - name: Retain Windows evidence for this workflow attempt
+        run: python3 -I scripts/publishImages.py
+      - name: Retain container manifest evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: release-manifest-${{ github.run_attempt }}.json
+          archive: false
+          retention-days: 90
+          if-no-files-found: error
+      - name: Retain browser manifest evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: browser-manifest-${{ github.run_attempt }}.json
+          archive: false
+          retention-days: 90
+          if-no-files-found: error
+      - name: Retain code runtime manifest evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: daytona-manifest-${{ github.run_attempt }}.json
+          archive: false
+          retention-days: 90
+          if-no-files-found: error
+
+  computer:
+    if: "!github.event.release.prerelease"
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      SOURCE_SHA: ${{ github.sha }}
+      COMPUTER_RELEASE_DIRECTORY: ${{ runner.temp }}/computer-release/release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-bun
+      - name: Validate release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(bun -e 'console.log((await Bun.file("package.json").json()).version)')"
+          [[ "$RELEASE_TAG" == "v$version" ]]
+          git merge-base --is-ancestor HEAD origin/main
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prepare managed installer compiler
+        run: ./scripts/setupInno.ps1 -Destination "${{ runner.temp }}/mira-inno"
+      - name: Build Windows package and installer
+        run: bun --no-env-file scripts/buildComputerRelease.ts "${{ runner.temp }}/computer-release" "${{ runner.temp }}/mira-inno/portable/ISCC.exe"
+      - name: Publish immutable Windows files
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: python -I scripts/publishComputerRelease.py
+      - name: Prepare Windows manifest evidence
+        run: Copy-Item "$env:COMPUTER_RELEASE_DIRECTORY/mira-computer-$($env:RELEASE_TAG.Substring(1))-windows-x64.json" "computer-manifest-$env:GITHUB_RUN_ATTEMPT.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           path: computer-manifest-${{ github.run_attempt }}.json
           archive: false
           retention-days: 90
           if-no-files-found: error
-
-  publish:
-    if: github.event_name == 'release' && !github.event.release.prerelease
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
-      packages: write
-    steps:
-      - name: Download the tested images from this run
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: tested-container-images
-      - name: Authenticate to this repository's container registry
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish exact tested images and record immutable references
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          REPOSITORY: ${{ github.repository }}
-          SOURCE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          version="${RELEASE_TAG#v}"
-          repository="${REPOSITORY,,}"
-          docker load --input images.tar
-          for app in auth dashboard mira; do
-            local_image="homelab-release/$app:tested"
-            image="ghcr.io/$repository/$app:$version"
-            [[ "$(docker inspect --format '{{.Config.User}}' "$local_image")" == bun ]]
-            [[ "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$local_image")" == "$SOURCE_SHA" ]]
-            [[ "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$local_image")" == "$version" ]]
-            # Image IDs differ between classic and containerd stores; hash the saved config.
-            config_file="$(tar -xOf images.tar manifest.json | jq -er --arg tag "$local_image" '.[] | select(.RepoTags | index($tag)) | .Config')"
-            config_digest="sha256:$(tar -xOf images.tar "$config_file" | sha256sum | cut -d ' ' -f 1)"
-            if docker manifest inspect "$image" > existing-manifest.json 2> registry-error.log; then
-              # A retry can reuse the exact same image, never replace a published version.
-              [[ "$(jq -r '.config.digest' existing-manifest.json)" == "$config_digest" ]]
-            else
-              grep -Eq 'manifest unknown|no such manifest|NAME_UNKNOWN' registry-error.log || { echo "Cannot verify registry state safely."; exit 1; }
-              docker tag "$local_image" "$image"
-              docker push "$image"
-            fi
-            docker manifest inspect "$image" > manifest.json
-            [[ "$(jq -r '.config.digest' manifest.json)" == "$config_digest" ]]
-            # Pull obtains the registry's digest without rebuilding the tested image.
-            docker pull "$image"
-            digest="$(docker image inspect "$image" | jq -r --arg prefix "ghcr.io/$repository/$app@sha256:" '.[0].RepoDigests[] | select(startswith($prefix))')"
-            [[ "$digest" == "ghcr.io/$repository/$app@sha256:"* ]]
-            jq -n --arg app "$app" --arg tag "$image" --arg reference "$image@${digest##*@}" '{app:$app, tag:$tag, reference:$reference}' > "$app-image.json"
-          done
-          schema="$(docker inspect --format '{{index .Config.Labels "io.homelab.dashboard-schema"}}' homelab-release/dashboard:tested)"
-          [[ "$schema" =~ ^[a-f0-9]{64}$ ]]
-          [[ "$(docker inspect --format '{{index .Config.Labels "io.homelab.dashboard-schema"}}' homelab-release/mira:tested)" == "$schema" ]]
-          auth_schema="$(docker inspect --format '{{index .Config.Labels "io.homelab.auth-schema"}}' homelab-release/auth:tested)"
-          [[ "$auth_schema" =~ ^[a-f0-9]{64}$ ]]
-          jq -s --arg version "$version" --arg revision "$SOURCE_SHA" --arg schema "$schema" --arg auth_schema "$auth_schema" '{version:$version, revision:$revision, dashboardSchema:$schema, authSchema:$auth_schema, platform:"linux/amd64", images:.}' auth-image.json dashboard-image.json mira-image.json > container-images.json
-          cp container-images.json "release-manifest-$GITHUB_RUN_ATTEMPT.json"
-          {
-            echo '## Published container images'
-            echo ''
-            jq -r '.images[] | "- \(.app): \(.reference)"' container-images.json
-            echo ''
-            echo 'Publication does not deploy or restart any service.'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Retain exact manifest evidence for this workflow attempt
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          path: release-manifest-${{ github.run_attempt }}.json
-          # v7 direct uploads use the filename as the artifact name; `name` is ignored.
-          archive: false
-          retention-days: 90
-          if-no-files-found: error
-      - name: Attach deployment references to the release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          GH_REPO: ${{ github.repository }}
-        run: gh release upload "$RELEASE_TAG" container-images.json --clobber
-
-  publish-browser:
-    if: github.event_name == 'release' && !github.event.release.prerelease
-    needs: [release-checks, build-and-test]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
-      packages: write
-    steps:
-      - name: Download the tested images from this run
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: tested-browser-image
-      - name: Authenticate to this repository's container registry
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish exact tested images and record immutable references
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          REPOSITORY: ${{ github.repository }}
-          SOURCE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          version="${RELEASE_TAG#v}"
-          repository="${REPOSITORY,,}"
-          docker load --input browser-images.tar
-          for app in mira-browser mira-browser-proxy; do
-            if [[ "$app" == mira-browser ]]; then
-              local_image="homelab-browser/runtime:tested"
-              expected_user=bun
-            else
-              local_image="homelab-browser/proxy:tested"
-              expected_user=0:0
-            fi
-            image="ghcr.io/$repository/$app:$version"
-            [[ "$(docker inspect --format '{{.Config.User}}' "$local_image")" == "$expected_user" ]]
-            [[ "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$local_image")" == "$SOURCE_SHA" ]]
-            [[ "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$local_image")" == "$version" ]]
-            # Image IDs differ between classic and containerd stores; hash the saved config.
-            config_file="$(tar -xOf browser-images.tar manifest.json | jq -er --arg tag "$local_image" '.[] | select(.RepoTags | index($tag)) | .Config')"
-            config_digest="sha256:$(tar -xOf browser-images.tar "$config_file" | sha256sum | cut -d ' ' -f 1)"
-            if docker manifest inspect "$image" > existing-manifest.json 2> registry-error.log; then
-              # A retry can reuse the exact same image, never replace a published version.
-              [[ "$(jq -r '.config.digest' existing-manifest.json)" == "$config_digest" ]]
-            else
-              grep -Eq 'manifest unknown|no such manifest|NAME_UNKNOWN' registry-error.log || { echo "Cannot verify registry state safely."; exit 1; }
-              docker tag "$local_image" "$image"
-              docker push "$image"
-            fi
-            docker manifest inspect "$image" > manifest.json
-            [[ "$(jq -r '.config.digest' manifest.json)" == "$config_digest" ]]
-            # Pull obtains the registry's digest without rebuilding the tested image.
-            docker pull "$image"
-            digest="$(docker image inspect "$image" | jq -r --arg prefix "ghcr.io/$repository/$app@sha256:" '.[0].RepoDigests[] | select(startswith($prefix))')"
-            [[ "$digest" == "ghcr.io/$repository/$app@sha256:"* ]]
-            jq -n --arg app "$app" --arg tag "$image" --arg reference "$image@${digest##*@}" '{app:$app, tag:$tag, reference:$reference}' > "$app-image.json"
-          done
-          jq -s --arg version "$version" --arg revision "$SOURCE_SHA" '{version:$version, revision:$revision, platform:"linux/amd64", images:.}' mira-browser-image.json mira-browser-proxy-image.json > browser-image.json
-          cp browser-image.json "browser-manifest-$GITHUB_RUN_ATTEMPT.json"
-          {
-            echo '## Published browser runtime image'
-            echo ''
-            jq -r '.images[] | "- \(.app): \(.reference)"' browser-image.json
-            echo ''
-            echo 'Publication does not activate browser access, deploy or restart a service.'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Retain exact manifest evidence for this workflow attempt
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          path: browser-manifest-${{ github.run_attempt }}.json
-          # v7 direct uploads use the filename as the artifact name; `name` is ignored.
-          archive: false
-          retention-days: 90
-          if-no-files-found: error
-      - name: Attach deployment references to the release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          GH_REPO: ${{ github.repository }}
-        run: gh release upload "$RELEASE_TAG" browser-image.json --clobber

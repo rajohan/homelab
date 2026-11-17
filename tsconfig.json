@@ -20,7 +20,73 @@
         "exactOptionalPropertyTypes": true,
         "noFallthroughCasesInSwitch": true,
         "noImplicitOverride": true,
-        "erasableSyntaxOnly": true
+        "erasableSyntaxOnly": true,
+        "paths": {
+            "@homelab/mira/data/*": ["./apps/mira/src/server/data/*.ts"],
+            "@homelab/mira/operations/*": ["./apps/mira/src/server/operations/*.ts"],
+            "@homelab/mira/files/*": ["./apps/mira/src/server/files/*.ts"],
+            "@homelab/mira/runtime/*": ["./apps/mira/src/server/runtime/*.ts"],
+            "@homelab/mira/integrations/*": ["./apps/mira/src/server/integrations/*.ts"],
+            "@homelab/mira/improvement/*": ["./apps/mira/src/server/improvement/*.ts"],
+            "@homelab/mira/sandbox/*": ["./apps/mira/src/server/sandbox/*.ts"],
+            "@homelab/mira/skills/*": ["./apps/mira/src/server/skills/*.ts"],
+            "@homelab/contracts": ["./packages/contracts/src/index.ts"],
+            "@homelab/contracts/files": ["./packages/contracts/src/files.ts"],
+            "@homelab/contracts/operations": ["./packages/contracts/src/operations.ts"],
+            "@homelab/contracts/notifications": [
+                "./packages/contracts/src/notifications.ts"
+            ],
+            "@homelab/contracts/applications": [
+                "./packages/contracts/src/applications.ts"
+            ],
+            "@homelab/contracts/logs": ["./packages/contracts/src/logs.ts"],
+            "@homelab/contracts/alerts": ["./packages/contracts/src/alerts.ts"],
+            "@homelab/contracts/backups": ["./packages/contracts/src/backups.ts"],
+            "@homelab/contracts/updates": ["./packages/contracts/src/updates.ts"],
+            "@homelab/contracts/tableSort": ["./packages/contracts/src/tableSort.ts"],
+            "@homelab/contracts/infrastructure": [
+                "./packages/contracts/src/infrastructure.ts"
+            ],
+            "@homelab/contracts/maintenance": ["./packages/contracts/src/maintenance.ts"],
+            "@homelab/contracts/mira": ["./packages/contracts/src/mira.ts"],
+            "@homelab/contracts/miraOperations": [
+                "./packages/contracts/src/miraOperations.ts"
+            ],
+            "@homelab/contracts/miraMail": ["./packages/contracts/src/miraMail.ts"],
+            "@homelab/contracts/miraPublication": [
+                "./packages/contracts/src/miraPublication.ts"
+            ],
+            "@homelab/contracts/miraSocial": ["./packages/contracts/src/miraSocial.ts"],
+            "@homelab/contracts/miraDaytona": ["./packages/contracts/src/miraDaytona.ts"],
+            "@homelab/contracts/miraCode": ["./packages/contracts/src/miraCode.ts"],
+            "@homelab/contracts/miraImprovement": [
+                "./packages/contracts/src/miraImprovement.ts"
+            ],
+            "@homelab/contracts/miraSkills": ["./packages/contracts/src/miraSkills.ts"],
+            "@homelab/contracts/miraComputers": [
+                "./packages/contracts/src/miraComputers.ts"
+            ],
+            "@homelab/contracts/miraComputerCommands": [
+                "./packages/contracts/src/miraComputerCommands.ts"
+            ],
+            "@homelab/contracts/miraComputerUpdates": [
+                "./packages/contracts/src/miraComputerUpdates.ts"
+            ],
+            "@homelab/contracts/miraBrowser": ["./packages/contracts/src/miraBrowser.ts"],
+            "@homelab/contracts/deployment": ["./packages/contracts/src/deployment.ts"],
+            "@homelab/notifications": ["./packages/notifications/src/index.ts"],
+            "@homelab/scheduling": ["./packages/scheduling/src/index.ts"],
+            "@homelab/ui": ["./packages/ui/src/index.ts"],
+            "@homelab/ui/styles": ["./packages/ui/src/styles/index.css"],
+            "@homelab/ui/classNames": ["./packages/ui/src/lib/classNames.ts"],
+            "@homelab/ui/identity": ["./packages/ui/src/features/identity/index.ts"],
+            "@homelab/ui/identity/client": [
+                "./packages/ui/src/features/identity/client.ts"
+            ],
+            "@homelab/mira/data/actionRequests": [
+                "./apps/mira/src/server/data/actionRequests.ts"
+            ]
+        }
     },
     "files": [],
     "references": [
@@ -29,9 +95,6 @@
         },
         {
             "path": "./tsconfig.bun.json"
-        },
-        {
-            "path": "./tsconfig.test.json"
         }
     ]
 }

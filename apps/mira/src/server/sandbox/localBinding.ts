@@ -93,11 +93,25 @@ export function isLocalCodeBinding(binding: CodeJobBinding): binding is LocalCod
 }
 
 /**
- * Bind consent to the owner, original host, immutable image and dedicated network.
+ * Bind consent to the owner, host and dedicated network across managed image updates.
  * @param binding - Nonsecret local deployment selection, without a Docker socket path.
  * @returns Fingerprint of the fixed local execution policy and validated selection.
  */
 export function localCodeBindingHash(binding: LocalCodeBinding): string {
+    const target = v.parse(localCodeBindingSchema, binding);
+    return new Bun.CryptoHasher("sha256")
+        .update(
+            JSON.stringify([
+                "local-code-v2",
+                target.owner,
+                target.hostId,
+                target.egress.networkId,
+            ])
+        )
+        .digest("hex");
+}
+
+function legacyLocalCodeBindingHash(binding: LocalCodeBinding): string {
     const { releasePreviousBinding: _previous, ...target } = v.parse(
         localCodeBindingSchema,
         binding
@@ -138,12 +152,12 @@ export async function publishLocalCodeBinding(
     const checked = v.parse(localCodeBindingSchema, binding);
     const previous = checked.releasePreviousBinding;
     const hash = localCodeBindingHash(checked);
-    if (previous && localCodeBindingHash(previous) !== hash) {
-        // Preserve pauses and never enable an integration. The exact predecessor CAS
-        // cannot transfer consent from another target or revive an old queued job.
-        await query`UPDATE mira_switches SET binding_hash=${hash},version=version+1,changed_at=clock_timestamp()
-            WHERE owner=${checked.owner} AND key='code:main' AND binding_hash=${localCodeBindingHash(previous)}`;
-    }
+    // Migrate only consent for this exact target or its deployment-recorded predecessor.
+    // Keep intentional pauses; subsequent image and proxy replacement needs no consent migration.
+    await query`UPDATE mira_switches SET binding_hash=${hash},version=version+1,changed_at=clock_timestamp()
+        WHERE owner=${checked.owner} AND key='code:main'
+        AND (binding_hash=${legacyLocalCodeBindingHash(checked)}
+            OR binding_hash=${previous ? legacyLocalCodeBindingHash(previous) : null})`;
     const [row] = await query<
         { stamp: string }[]
     >`INSERT INTO mira_integration_receivers(key,binding_hash,heartbeat_at) VALUES('code:main',${localCodeBindingHash(binding)},clock_timestamp()) ON CONFLICT(key) DO UPDATE SET binding_hash=EXCLUDED.binding_hash,heartbeat_at=EXCLUDED.heartbeat_at RETURNING heartbeat_at::text AS stamp`;

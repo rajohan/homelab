@@ -6,13 +6,13 @@ GitHub Actions are checked at 06:30, with at most four open version-update PRs, 
 
 Bun application updates are checked at 06:00, with up to five open version-update PRs, the `type: dependencies` label and the `chore(deps)` prefix. Version updates are enabled again: GitHub announced hosted Bun 1.4 support on 2026-10-20, and Dependabot's merged parser/updater change supports text lockfile versions 2 and 3. This repository uses the immutable Bun Canary package `1.4.4-canary.20261108.1`, source revision `2596ac5d391d47804c93a42bdbe615804aa62387`, and retains `bun.lock` version 2. Do not downgrade the lockfile or switch package managers. `.bun-version` and `packageManager` name the published npm package; `.bun-revision` identifies the executable. `Bun.version` still reports `1.4.4`, so `engines.bun` describes that compatibility version while setup, checks, Windows packaging and sandbox qualification verify the full revision. `@types/bun` remains pinned to the published 1.4.4 types.
 
-CI and Docker use stable 1.4.4 only to bootstrap the immutable native package with `scripts/installBun.ts`; application builds, tests and final runtime images use Canary. The shared GitHub action replaces all workflow-specific setup steps. No moving `canary` tag is downloaded. Update both pin files, `packageManager`, and the sandbox profile together, qualify both operating systems, and publish a new check image before changing the Main/Daytona image binding. The new harness refuses older snapshots. Daytona's policy fingerprint includes the exact runtime revision and requires fresh operator qualification; older policy fingerprints remain valid only for observing and cleaning up existing attempts.
+CI and Docker use stable 1.4.4 only to bootstrap the immutable native package with `scripts/installBun.ts`; application builds and final runtime images use Canary. The shared GitHub action replaces all workflow-specific setup steps. No moving `canary` tag is downloaded. Update both pin files, `packageManager`, and the sandbox profile together, qualify both operating systems, and publish a new check image before changing the Main/Daytona image binding. The new harness refuses older snapshots. Daytona's policy fingerprint includes the exact runtime revision and requires fresh operator qualification; older policy fingerprints remain valid only for observing and cleaning up existing attempts.
 
 The separate `oxfmt`, `oxlint` and `oxlint-tsgolint` engines and the unused preset package have been removed. Bun supplies formatting, type-aware linting and TypeScript diagnostics, configured in `bunfig.toml`. The reviewed preset rules are now explicit in that file; the existing `oxlint-tailwindcss` and ESLint JSDoc/React plugins remain pinned. JSDoc parameter selectors preserve the previous native rule's typed-function exemptions. The resolved native lint policy and intentional diagnostics were compared with the original setup. Formatting preserves the existing printing style and Tailwind ordering while adopting Bun's named-import sorting and import merging, as approved for this migration.
 
 Dependabot version updates, security updates and alerts remain separate features. Continue running `bun audit` and reviewing security findings. The first hosted Bun update after this configuration reaches the default branch must preserve lockfile version 2, install with the pinned Bun version and pass CI.
 
-For application dependencies, run `bun outdated --recursive` in this checkout so all workspaces are included. Preview a full update with `bun update --recursive --latest --exact --ignore-scripts --dry-run`, then remove `--dry-run` to update the manifests and lockfile on a feature branch. Inspect prerelease channels separately: `--latest` intentionally does not downgrade an installed release candidate to an older stable release. Keep coupled packages, such as the tRPC client/server or React/type packages, aligned. Verify `bun install --frozen-lockfile --ignore-scripts`, run `bun audit` and all documented checks before opening a PR.
+For application dependencies, run `bun outdated` in this checkout against the single root manifest. Preview a full update with `bun update --latest --exact --ignore-scripts --dry-run`, then remove `--dry-run` to update the manifests and lockfile on a feature branch. Inspect prerelease channels separately: `--latest` intentionally does not downgrade an installed release candidate to an older stable release. Keep coupled packages, such as the tRPC client/server or React/type packages, aligned. Verify `bun install --frozen-lockfile --ignore-scripts`, run `bun audit` and all documented checks before opening a PR.
 
 Dependabot reads its configuration from the default branch, so re-enabling version updates takes effect after this change is merged. The weekly schedules, labels and separate major/minor groups are unchanged. Bun application/build dependency updates keep `chore(deps)`. Release Please includes exactly that type and scope in the Dependencies changelog section, so their squash merges propose a patch release. Ordinary `chore` commits remain hidden and do not trigger a release alone. GitHub Actions retain `ci(deps)` and do not trigger a release by themselves.
 
@@ -32,21 +32,24 @@ Dependabot reads its configuration from the default branch, so re-enabling versi
 The root override pins `postcss-selector-parser` to 7.1.7 while
 `@tailwindcss/typography` still requests vulnerable 6.0.10. This addresses
 [GHSA-rj75-hqrm-r3gf](https://github.com/advisories/GHSA-rj75-hqrm-r3gf);
-remove the override when typography accepts a fixed parser. The build and smoke
-checks qualify the override against our actual typography stylesheet.
-
-`braces@3.0.3` remains a transitive development dependency of
-`lcov-result-merger > fast-glob > micromatch`.
-[GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)
-has no patched version as of 2026-10-22. Its consumer here is CI coverage merging
-with repository-defined patterns, not an application request path. Keep the
-audit finding visible and update the coverage dependency when an upstream fix
-is available; no local package patch or audit suppression is used.
+remove the override when typography accepts a fixed parser. The application build checks the override against our actual typography stylesheet.
 
 ## Prerelease channels
 
 Audit packages already on alpha, beta or RC channels separately from `latest`. Compare the maintained upstream channel, release notes and publication dates; a commit-suffixed prerelease can sort above a newer official RC in SemVer. Do not move stable dependencies onto experimental channels just to maximize version numbers.
 
-Drizzle ORM and Kit are kept together at the official `1.0.0-rc.5` release published on 2026-10-21, replacing the older `1.0.0-rc.5-5935859` development build. Its `latest` npm tag still points to the older 0.x stable line, so updating only `latest` misses this RC. Validate both migration metadata and isolated database integration tests when changing these pins. The RC5 upgrade uses the official `drizzle-kit up` conversion for the six checked-in snapshots; existing SQL migrations are unchanged, and schema generation reports no new migrations.
+Drizzle ORM and Kit are kept together at the official `1.0.0-rc.5` release published on 2026-10-21, replacing the older `1.0.0-rc.5-5935859` development build. Its `latest` npm tag still points to the older 0.x stable line, so updating only `latest` misses this RC. Validate migration metadata and review migration behavior when changing these pins. The RC5 upgrade uses the official `drizzle-kit up` conversion for the six checked-in snapshots; existing SQL migrations are unchanged, and schema generation reports no new migrations.
 
 - [Official Drizzle RC5 release](https://github.com/drizzle-team/drizzle-orm/releases/tag/v1.0.0-rc.5)
+
+## Native and system dependencies
+
+Browser and Windows input use `@trycua/cua-driver` from the root lockfile, including
+its platform libraries. There is no separate browser CLI download or version pin.
+Chromium and Linux utilities come from Debian packages in the Main Dockerfile;
+the release build refreshes that package layer weekly. Dependabot monitors both
+application and proxy base images. Installed images update through Homelab releases.
+Windows build-tool pins are centralized in `package.json` under `config.windows`,
+including their checksum and publisher. These non-npm pins require review when updated;
+Dependabot updates the npm dependencies, not custom metadata. The installed companion
+continues to use the standard Homelab release updater; no locally installed helper is introduced.

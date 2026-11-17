@@ -1,7 +1,6 @@
 import type { MiraCodePublication } from "@homelab/contracts/miraCode";
 import {
     Badge,
-    Button,
     Card,
     ConfirmDialog,
     DropdownMenu,
@@ -12,12 +11,11 @@ import {
     SectionHeader,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Eye, GitPullRequest, Pencil, Plus, Trash2 } from "lucide-react";
+import { Eye, GitPullRequest, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
-import { CodeEditor } from "./CodeEditor";
 import { CodeReview } from "./CodeReview";
 import { miraStatusTone } from "./statusTone";
 
@@ -33,7 +31,6 @@ export function CodeLibrary({
     readonly conversationId?: string | undefined;
 }) {
     const scrollRoot = useRef<HTMLDivElement>(null);
-    const [editing, setEditing] = useState<MiraCodePublication | "new">();
     const [reviewing, setReviewing] = useState<MiraCodePublication>();
     const [cancelling, setCancelling] = useState<MiraCodePublication>();
     const query = useInfiniteQuery({
@@ -50,14 +47,6 @@ export function CodeLibrary({
     const cancel = useOperation((draft: MiraCodePublication) =>
         api.mira.code.cancel.mutate({ id: draft.id, version: draft.version })
     );
-    if (editing)
-        return (
-            <CodeEditor
-                draft={editing === "new" ? undefined : editing}
-                conversationId={conversationId}
-                onClose={() => setEditing(undefined)}
-            />
-        );
     if (reviewing)
         return <CodeReview draft={reviewing} onClose={() => setReviewing(undefined)} />;
     if (cancelling)
@@ -79,18 +68,12 @@ export function CodeLibrary({
             <SectionHeader
                 title={conversationId ? "Conversation proposals" : "Code changes"}
                 icon={GitPullRequest}
-                actions={
-                    <Button onClick={() => setEditing("new")}>
-                        <Plus size={16} aria-hidden="true" />
-                        New proposal
-                    </Button>
-                }
             />
             {query.isPending && <LoadingState label="Loading code proposals…" />}
             {!query.isPending && !query.error && rows.length === 0 && (
                 <p className="text-sm text-primary-400">
                     No code proposals yet. Complete a structured-edit check, then create a
-                    proposal here or ask Mira to prepare one.
+                    proposal by asking Mira in Chat.
                 </p>
             )}
             <div ref={scrollRoot} className="max-h-128 space-y-3 overflow-y-auto">
@@ -118,16 +101,6 @@ export function CodeLibrary({
                                             icon: Eye,
                                             onSelect: () => setReviewing(draft),
                                         },
-                                        ...(draft.state === "draft"
-                                            ? [
-                                                  {
-                                                      id: "edit",
-                                                      label: "Edit",
-                                                      icon: Pencil,
-                                                      onSelect: () => setEditing(draft),
-                                                  },
-                                              ]
-                                            : []),
                                         ...(["draft", "queued"].includes(draft.state)
                                             ? [
                                                   {

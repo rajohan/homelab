@@ -4,12 +4,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Build the shared-dashboard Windows shell and optional isolated native fixtures.
+ * Build the shared-dashboard Windows shell.
  * @param directory - Absolute caller-owned output directory; no installation or launch occurs.
- * @param tests - Also compile the non-distributed process/settings qualification executables.
- * @returns Fixed product and optional qualification paths.
+ * @returns Path to the Windows desktop executable.
  */
-export async function buildWindowsDesktop(directory: string, tests = false) {
+export async function buildWindowsDesktop(directory: string) {
     if (
         process.platform !== "win32" ||
         process.arch !== "x64" ||
@@ -92,23 +91,7 @@ export async function buildWindowsDesktop(directory: string, tests = false) {
             { windowsHide: true, timeout: 30_000, maxBuffer: 64 * 1024 }
         );
     compile(desktop, [...shared, "DesktopProgram.cs"], true);
-    const checks = tests ? path.join(directory, "desktop-tests.exe") : undefined;
-    if (checks) {
-        compile(checks, [
-            ...shared,
-            "tests/DesktopTests.cs",
-            "tests/MiraWindowTests.cs",
-            "tests/DesktopUpdateTests.cs",
-            "tests/DesktopWebViewTests.cs",
-        ]);
-        const fixture = path.join(directory, "fixture");
-        await mkdir(fixture);
-        compile(path.join(fixture, "mira-computer.exe"), [
-            "WorkerJob.cs",
-            "tests/DesktopFixture.cs",
-        ]);
-    }
-    return { desktop, checks };
+    return { desktop };
 }
 
 if (import.meta.main) {

@@ -47,6 +47,9 @@ export function CodeReview({
         queryFn: () => api.mira.code.source.query({ id: draft.id }),
         enabled: draft.state === "draft",
     });
+    const cancel = useOperation(() =>
+        api.mira.code.cancel.mutate({ id: draft.id, version: draft.version })
+    );
     const approve = useOperation(() =>
         api.mira.code.approve.mutate({
             id: draft.id,
@@ -114,7 +117,28 @@ export function CodeReview({
                 )}
                 {approve.error && <ErrorNotice error={approve.error} />}
                 {inspect.error && <ErrorNotice error={inspect.error} />}
+                {cancel.error && <ErrorNotice error={cancel.error} />}
                 <ActionGroup>
+                    {[
+                        "draft",
+                        "queued",
+                        "verification_required",
+                        "queued_verification",
+                    ].includes(draft.state) && (
+                        <Button
+                            variant="secondary"
+                            busy={cancel.isPending}
+                            disabled={approve.isPending}
+                            onClick={() =>
+                                void cancel
+                                    .mutateAsync(undefined)
+                                    .then(onClose)
+                                    .catch(() => {})
+                            }
+                        >
+                            Cancel action
+                        </Button>
+                    )}
                     {draft.state === "draft" && (
                         <Button
                             busy={approve.isPending}
