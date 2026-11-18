@@ -1,6 +1,7 @@
 # Homelab development
 
 - Write code, comments, application labels and documentation in English.
+- Start repository work from an up-to-date development checkout. Inspect its branch, status and worktrees before fetching `main`; fast-forward only a clean checkout with no divergent local commits. Preserve existing work, create a task branch for edits, and refresh the clean checkout after merge. Never reset or discard work to synchronize it. Run source analysis and design tools from this checkout, not the production image.
 - Use the pinned Bun version and the committed lockfile. Do not add another package manager, Vite, Vitest, Playwright or Storybook.
 - `apps/auth` and `apps/dashboard` are independently built and deployed. Authentication, OIDC, ForwardAuth and security APIs must work without the dashboard, OpenClaw or administrative host access. By product requirement, the self-service account UI lives only in dashboard Settings; auth `/account` redirects there. A dashboard outage pauses self-service, not existing sign-in/SSO.
 - Document exported functions and public methods/accessors with meaningful JSDoc. Include parameter and return semantics where applicable; ordinary comments or empty blocks do not satisfy the lint rules. Keep private/protected implementation helpers out of the mandatory surface.
