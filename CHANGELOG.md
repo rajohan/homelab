@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.6](https://github.com/rajohan/homelab/compare/v0.19.5...v0.19.6) (2026-11-18)
+
+
+### Bug Fixes
+
+* **mira:** honor resolved follow-up in automatic reviews ([#231](https://github.com/rajohan/homelab/issues/231)) ([d6e58a5](https://github.com/rajohan/homelab/commit/d6e58a5bc1e7435e9ae1f24a97342b71680910e5))
+
 ## [0.19.5](https://github.com/rajohan/homelab/compare/v0.19.4...v0.19.5) (2026-11-17)
 
 
