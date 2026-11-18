@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.2](https://github.com/rajohan/homelab/compare/v0.20.1...v0.20.2) (2026-11-18)
+
+
+### Bug Fixes
+
+* **release:** handle publication delays without false failures ([#237](https://github.com/rajohan/homelab/issues/237)) ([8e58489](https://github.com/rajohan/homelab/commit/8e5848970e2902718ccbd8b41f4330b2bfbf2445))
+
 ## [0.20.1](https://github.com/rajohan/homelab/compare/v0.20.0...v0.20.1) (2026-11-18)
 
 
