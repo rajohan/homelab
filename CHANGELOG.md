@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/rajohan/homelab/compare/v0.20.0...v0.20.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **mira:** simplify access and preserve conversation continuity ([#235](https://github.com/rajohan/homelab/issues/235)) ([2a4c4b1](https://github.com/rajohan/homelab/commit/2a4c4b1db8ab371098aec31b5de466521a0bcb41))
+
 ## [0.20.0](https://github.com/rajohan/homelab/compare/v0.19.6...v0.20.0) (2026-11-18)
 
 
