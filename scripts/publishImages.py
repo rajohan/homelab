@@ -8,10 +8,26 @@ import re
 import subprocess
 import tarfile
 import tempfile
+import time
 
 
 def run(*args):
     return subprocess.check_output(args, text=True).strip()
+
+
+def inspect_manifest(tag, *, wait_for_publication=False):
+    """Read the registry, briefly tolerating a missing manifest after a confirmed push."""
+    attempts = 6 if wait_for_publication else 1
+    for attempt in range(attempts):
+        result = subprocess.run(["docker", "manifest", "inspect", tag], capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            return json.loads(result.stdout)
+        if not any(reason in result.stderr for reason in ["manifest unknown", "no such manifest", "NAME_UNKNOWN"]):
+            raise ValueError("Cannot verify registry state")
+        if attempt + 1 < attempts:
+            print("Published manifest is not visible yet; retrying the registry read.", flush=True)
+            time.sleep(2 ** attempt)
+    return None
 
 
 def publish(local, package, roles, repository, version, revision):
@@ -32,16 +48,17 @@ def publish(local, package, roles, repository, version, revision):
             config = next(entry["Config"] for entry in manifest if local in entry["RepoTags"])
             digest = "sha256:" + hashlib.sha256(image.extractfile(config).read()).hexdigest()
     tag = f"ghcr.io/{repository}/{package}:{version}"
-    existing = subprocess.run(["docker", "manifest", "inspect", tag], capture_output=True, text=True)
-    if existing.returncode == 0:
-        if json.loads(existing.stdout).get("config", {}).get("digest") != digest:
+    existing = inspect_manifest(tag)
+    if existing is not None:
+        if existing.get("config", {}).get("digest") != digest:
             raise ValueError("Published release image differs; refusing replacement")
+        remote = existing
     else:
-        if not any(reason in existing.stderr for reason in ["manifest unknown", "no such manifest", "NAME_UNKNOWN"]):
-            raise ValueError("Cannot verify registry state")
         subprocess.run(["docker", "tag", local, tag], check=True)
         subprocess.run(["docker", "push", tag], check=True)
-    remote = json.loads(run("docker", "manifest", "inspect", tag))
+        remote = inspect_manifest(tag, wait_for_publication=True)
+        if remote is None:
+            raise ValueError("Published manifest did not become visible; inspect the registry before retrying publication")
     if remote.get("config", {}).get("digest") != digest:
         raise ValueError("Published image config differs")
     subprocess.run(["docker", "pull", tag], check=True)
