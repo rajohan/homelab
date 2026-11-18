@@ -36,3 +36,8 @@ reasoning effort (or that model's default when low is unsupported). This bounded
 classification does not inherit an extended work-turn reasoning setting and time
 out merely because the operator selected deeper reasoning for the main task.
 Review uncertainty still asks; timeouts never imply approval.
+
+Requested implementation includes publishing the tested task branch and opening a
+normal PR for review. This is the existing direct code workflow, not mail/social/
+website publication. Merge still requires the authorized scope and current required
+reviews; releases and deployment remain separate decisions.
