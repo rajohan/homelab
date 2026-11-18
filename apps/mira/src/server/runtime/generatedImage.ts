@@ -39,9 +39,18 @@ export async function readGeneratedImage(home: string, image: GeneratedImage) {
         const root = await realpath(path.join(home, "generated_images"));
         const file = await realpath(image.savedPath);
         const relative = path.relative(root, file);
-        if (!relative || path.isAbsolute(relative) || relative === ".." || relative.startsWith(`..${path.sep}`) || file !== image.savedPath)
+        if (
+            !relative ||
+            path.isAbsolute(relative) ||
+            relative === ".." ||
+            relative.startsWith(`..${path.sep}`) ||
+            file !== image.savedPath
+        )
             throw new Error("Native image is outside generated image storage.");
-        const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+        const handle = await open(
+            file,
+            constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
+        );
         try {
             const stat = await handle.stat();
             if (!stat.isFile() || stat.size === 0 || stat.size > miraFileLimit)
@@ -49,11 +58,17 @@ export async function readGeneratedImage(home: string, image: GeneratedImage) {
             const buffer = Buffer.alloc(stat.size + 1);
             let length = 0;
             while (length < buffer.length) {
-                const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length);
+                const { bytesRead } = await handle.read(
+                    buffer,
+                    length,
+                    buffer.length - length,
+                    length
+                );
                 if (!bytesRead) break;
                 length += bytesRead;
             }
-            if (length !== stat.size) throw new Error("Native image changed while reading.");
+            if (length !== stat.size)
+                throw new Error("Native image changed while reading.");
             bytes = buffer.subarray(0, length);
         } finally {
             await handle.close();
@@ -62,11 +77,16 @@ export async function readGeneratedImage(home: string, image: GeneratedImage) {
     if (bytes.length === 0 || bytes.length > miraFileLimit)
         throw new Error("Native image exceeds its file limit.");
     const type = miraFileType(bytes);
-    const extension = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" }[type];
+    const extension = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" }[
+        type
+    ];
     if (!extension) throw new Error("Native output is not a supported image.");
     const size = imageSize(bytes);
     if (!size.width || !size.height || size.width * size.height > 40_000_000)
         throw new Error("Native image dimensions exceed their limit.");
-    const digest = new Bun.CryptoHasher("sha256").update(image.id).digest("hex").slice(0, 16);
+    const digest = new Bun.CryptoHasher("sha256")
+        .update(image.id)
+        .digest("hex")
+        .slice(0, 16);
     return { name: `generated-${digest}.${extension}`, bytes };
 }

@@ -3,7 +3,7 @@ import type { MiraSkillId } from "@homelab/contracts/miraSkills";
 import * as v from "valibot";
 
 import { assertRuntimeIsolation } from "./configuration";
-import { imageGenerationEventSchema, type GeneratedImage } from "./generatedImage";
+import { type GeneratedImage, imageGenerationEventSchema } from "./generatedImage";
 import {
     nativeSkillGuidance,
     nativeSkillInputs,
@@ -110,7 +110,13 @@ export class CodexRuntime {
         await assertNoCustomSkills(options.env.CODEX_HOME);
         const systemSkills = await readSystemSkills(options.command);
         const nativeSkills = await readNativeSkills(options.command, enabledSkills);
-        const runtime = new CodexRuntime(options, webSearch, nativeSkills, enabledSkills, imageGeneration);
+        const runtime = new CodexRuntime(
+            options,
+            webSearch,
+            nativeSkills,
+            enabledSkills,
+            imageGeneration
+        );
         try {
             const initialized = v.parse(
                 initializeSchema,
@@ -545,18 +551,32 @@ export class CodexRuntime {
                         options.onActivity?.({ phase: "working", tool: "clock.sleep" });
                 }
             } else if (event.method === "item/completed") {
-                const parsed = v.safeParse(v.object({
-                    threadId: v.string(), turnId: v.string(),
-                    item: v.object({ type: v.string() }),
-                }), event.params);
-                if (!parsed.success || parsed.output.threadId !== threadId ||
-                    (active.id && parsed.output.turnId !== active.id)) return;
+                const parsed = v.safeParse(
+                    v.object({
+                        threadId: v.string(),
+                        turnId: v.string(),
+                        item: v.object({ type: v.string() }),
+                    }),
+                    event.params
+                );
+                if (
+                    !parsed.success ||
+                    parsed.output.threadId !== threadId ||
+                    (active.id && parsed.output.turnId !== active.id)
+                )
+                    return;
                 if (parsed.output.item.type !== "imageGeneration") return;
                 const image = v.parse(imageGenerationEventSchema, event.params).item;
-                if (image.status !== "completed" || image.failure || generatedImages.has(image.id)) return;
+                if (
+                    image.status !== "completed" ||
+                    image.failure ||
+                    generatedImages.has(image.id)
+                )
+                    return;
                 if (!this.imageGeneration || !options.onImage)
                     throw new Error("Image generation is unavailable for this run.");
-                if (generatedImages.size >= 8) throw new Error("Image generation limit reached.");
+                if (generatedImages.size >= 8)
+                    throw new Error("Image generation limit reached.");
                 generatedImages.add(image.id);
                 imageSaves = imageSaves.then(() => options.onImage!(image));
                 void imageSaves.catch((error: unknown) => {
