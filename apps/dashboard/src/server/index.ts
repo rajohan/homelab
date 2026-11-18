@@ -35,6 +35,14 @@ import { createOperationsRuntime } from "./operations/runtime";
  */
 export function startDashboardServer(options: DashboardServerOptions = {}) {
     const bindOptions = dashboardBindOptions();
+    const development = options.development ?? dashboardDevelopment();
+    const hostname = options.hostname ?? bindOptions.hostname;
+    if (
+        options.impeccableLive &&
+        (!development || !["127.0.0.1", "localhost", "::1"].includes(hostname))
+    )
+        throw new Error("Impeccable Live requires a loopback development server.");
+    const liveSource = options.impeccableLive ? " http://localhost:8400" : "";
     const computerBinding =
         options.computerBinding === undefined
             ? dashboardComputerBinding()
@@ -200,16 +208,15 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
     }
     for (const asset of index.files ?? [])
         Object.assign(asset.headers, {
-            "content-security-policy":
-                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'",
+            "content-security-policy": `default-src 'self'; script-src 'self'${liveSource}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${liveSource}; media-src 'self' blob:; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'`,
             "x-content-type-options": "nosniff",
             "referrer-policy": "no-referrer",
             ...(asset.loader === "html" ? { "cache-control": "no-store" } : {}),
         });
     const server = Bun.serve({
-        hostname: options.hostname ?? bindOptions.hostname,
+        hostname,
         port: options.port ?? bindOptions.port,
-        development: options.development ?? dashboardDevelopment(),
+        development,
         maxRequestBodySize: dashboardTransportBodyLimit,
         routes: {
             "/app-icon.svg": dashboardAppIcon,

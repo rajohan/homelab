@@ -11,3 +11,7 @@ coverage/
 .cache/
 .DS_Store
 Thumbs.db
+
+# Keep only reviewed Impeccable project configuration, never live tokens or sessions.
+.impeccable/live/*
+!.impeccable/live/config.json

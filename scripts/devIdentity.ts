@@ -255,6 +255,7 @@ export async function main(): Promise<void> {
                 port: dashboardPort,
                 authentication,
                 development: true,
+                impeccableLive: Bun.argv.includes("--live"),
                 operations: operationConfiguration,
             });
             operations = createOperationsRuntime(operationConfiguration);

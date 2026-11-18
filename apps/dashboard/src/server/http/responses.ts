@@ -9,6 +9,8 @@ export interface DashboardServerOptions {
     readonly hostname?: string;
     readonly port?: number;
     readonly development?: boolean;
+    /** Explicit loopback-only Impeccable helper for the disposable development server. */
+    readonly impeccableLive?: boolean;
     readonly computerBinding?: { hostname: string; port: number } | null;
     readonly authentication?: DashboardAuthConfiguration | null;
     readonly operations?: OperationsConfiguration | null;

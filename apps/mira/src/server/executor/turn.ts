@@ -43,6 +43,7 @@ import {
 import { inspectChatgpt } from "../runtime/chatgptConnection";
 import { CodexRuntime } from "../runtime/codexRuntime";
 import { pilotArguments, type PilotConfig } from "../runtime/configuration";
+import { readGeneratedImage } from "../runtime/generatedImage";
 import { providerFailureMessage, ProviderRequestError } from "../runtime/providerFailure";
 import { RuntimeResponseError } from "../runtime/responseError";
 import { createMiraToolRouter } from "../runtime/toolRouter";
@@ -51,6 +52,7 @@ import { miraSkillCatalogHash } from "../skills/catalog";
 import { prepareMiraAttachments } from "./attachments";
 import { readMiraTurnInput } from "./context";
 import { maintainMiraContext } from "./contextMaintenance";
+import { saveGeneratedMiraAttachment } from "./generatedFiles";
 import { waitForLiveAssistance } from "./liveAssistance";
 import { createMiraTools } from "./tools";
 
@@ -211,6 +213,7 @@ export async function executeMiraTurn(
         let record = await readMiraTurnInput(client, run, false);
         const automaticModel = config.model;
         const chatSearch = run.manual && !run.automationId && !run.taskId;
+        const nativeImages = chatSearch && Boolean(filesDirectory);
         const skillContext = {
             client,
             owner: run.owner,
@@ -232,7 +235,8 @@ export async function executeMiraTurn(
                 signal: transport.signal,
             },
             chatSearch,
-            nativeSkills
+            nativeSkills,
+            nativeImages
         );
         const verified = await inspectChatgpt(runtime, false);
         if (verified.status.state !== "connected") {
@@ -280,6 +284,7 @@ export async function executeMiraTurn(
             .update(permissionPolicyHash)
             .update(miraSkillCatalogHash)
             .update(JSON.stringify(nativeSkills))
+            .update(`native-images:${nativeImages}:sleep:${chatSearch}`)
             .digest("hex");
 
         record = await readMiraTurnInput(
@@ -314,7 +319,14 @@ export async function executeMiraTurn(
                     github,
                     localCode,
                     operations,
-                    createMiraActionReviewer(client, run, config, settings)
+                    createMiraActionReviewer(client, run, config, {
+                        ...settings,
+                        effort: selectedModel.supportedReasoningEfforts.some(
+                            (entry) => entry.reasoningEffort === "low"
+                        )
+                            ? "low"
+                            : selectedModel.defaultReasoningEffort,
+                    })
                 ),
                 ...(assistance
                     ? [
@@ -476,6 +488,20 @@ export async function executeMiraTurn(
                                 "Guidance acknowledgement lost its run lease."
                             );
                         providerTurn = turnId;
+                    },
+                    onImage: async (image) => {
+                        signal.throwIfAborted();
+                        const generated = await readGeneratedImage(
+                            config.codexHome,
+                            image
+                        );
+                        await saveGeneratedMiraAttachment(
+                            client,
+                            run,
+                            filesDirectory,
+                            generated,
+                            signal
+                        );
                     },
                     onActivity: (next) => {
                         const thinking = next.thinking ?? activity.thinking;

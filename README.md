@@ -29,6 +29,9 @@ When developing on Main, forward both application ports:
 ssh -N -L localhost:3100:127.0.0.1:3100 -L localhost:3101:127.0.0.1:3101 main
 ```
 
+For Impeccable Live, use `bun run dev --live` and the original helper from the
+normal Mira build. See [the Live workflow](docs/mira-skills.md#impeccable-live-in-development).
+
 For an already configured development database, `bun run dev:services`
 starts Auth and Dashboard with Bun server hot reload. Pass `auth`, `dashboard`,
 `mira` or `worker` to select services. Configuration is described in
