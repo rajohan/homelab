@@ -16,7 +16,7 @@ export const imageGenerationEventSchema = v.object({
         status: v.string(),
         failure: v.nullish(v.unknown()),
         result: v.optional(v.pipe(v.string(), v.maxLength(35 * 1024 * 1024))),
-        savedPath: v.optional(v.pipe(v.string(), v.maxLength(4096))),
+        savedPath: v.nullish(v.pipe(v.string(), v.maxLength(4096))),
     }),
 });
 export type GeneratedImage = v.InferOutput<typeof imageGenerationEventSchema>["item"];

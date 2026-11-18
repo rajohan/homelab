@@ -208,7 +208,7 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
     }
     for (const asset of index.files ?? [])
         Object.assign(asset.headers, {
-            "content-security-policy": `default-src 'self'; script-src 'self'${liveSource}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${liveSource}; media-src 'self' blob:; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'`,
+            "content-security-policy": `default-src 'self'; script-src 'self'${liveSource}; style-src 'self' 'unsafe-inline'; img-src 'self' data:${options.impeccableLive ? " blob:" : ""}; connect-src 'self'${liveSource}; media-src 'self' blob:; frame-ancestors 'none'; form-action 'self'; base-uri 'none'; object-src 'none'`,
             "x-content-type-options": "nosniff",
             "referrer-policy": "no-referrer",
             ...(asset.loader === "html" ? { "cache-control": "no-store" } : {}),

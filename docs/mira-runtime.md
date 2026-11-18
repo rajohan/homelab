@@ -347,6 +347,10 @@ per turn and 25 MiB each, validated as PNG, JPEG or WebP, and subject to the nor
 file quotas, message limits, cancellation and lease checks. Provider file references
 are confined to the private `generated_images` directory; arbitrary host paths are
 rejected. Failed or interrupted image calls are never automatically replayed.
+Native base64 image results count toward the existing visual-history budget.
+History records allow the bounded image frame plus its envelope; recovery expires
+the copied pixels into an explicit text marker before importing context, preserving
+the original provider file and any saved attachment.
 
 Other native capabilities remain intentionally disabled: shell/exec, browser,
 computer, remote control, connectors/plugins, hooks, workspace installation,
