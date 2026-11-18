@@ -1141,7 +1141,7 @@ export const miraBrowserAccess = pgTable(
         ),
         check(
             "mira_browser_access_duration",
-            sql`${t.expiresAt}>${t.createdAt} AND ${t.expiresAt}<=${t.createdAt}+interval '5 minutes'`
+            sql`${t.expiresAt}>${t.createdAt} AND ${t.expiresAt}<=${t.createdAt}+interval '24 hours'`
         ),
         check(
             "mira_browser_access_policy_size",
