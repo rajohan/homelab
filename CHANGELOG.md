@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/rajohan/homelab/compare/v0.19.6...v0.20.0) (2026-11-18)
+
+
+### Features
+
+* **mira:** enable native images and Impeccable Live ([#233](https://github.com/rajohan/homelab/issues/233)) ([a3d906e](https://github.com/rajohan/homelab/commit/a3d906e679809716e30ca81568c4ca6dda02ab66))
+
 ## [0.19.6](https://github.com/rajohan/homelab/compare/v0.19.5...v0.19.6) (2026-11-18)
 
 
