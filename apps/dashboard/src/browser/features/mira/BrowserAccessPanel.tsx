@@ -1,5 +1,5 @@
 import type { MiraRun } from "@homelab/contracts/mira";
-import { Badge, Button, ErrorNotice, SectionHeader } from "@homelab/ui";
+import { Badge, Button, ErrorNotice } from "@homelab/ui";
 import { Globe, Square } from "lucide-react";
 import { useState } from "react";
 
@@ -9,81 +9,52 @@ import { BrowserConsoleDialog } from "./BrowserConsoleDialog";
 import { accessStatusTone } from "./statusTone";
 import { browserAccessLabel, useBrowserAccess } from "./useBrowserAccess";
 
-/**
- * Keep pending/active browser authority and its direct stop visible outside the dialog.
- * @returns A shared responsive header while Mira waits or a request still needs attention.
+/** Show the running browser with direct observation, takeover and stop controls.
+ * @returns A compact session row only while a browser exists or cleanup is pending.
  */
-export function BrowserAccessPanel({
-    run,
-    waiting,
-    onManage,
-}: {
-    readonly run: MiraRun | null;
-    readonly waiting: boolean;
-    readonly onManage: () => void;
-}) {
+export function BrowserAccessPanel({ run }: { readonly run: MiraRun | null }) {
     const [showBrowser, setShowBrowser] = useState(false);
     const query = useBrowserAccess(run);
     const access = query.data?.[0];
     const stop = useOperation((id: string, signal) =>
         api.mira.browser.stop.mutate({ id }, { signal })
     );
-    const stoppable = access && !["closed"].includes(access.state);
-    if (!waiting && !stoppable) return null;
-    const fresh = query.fresh;
+    if (!access || access.state === "closed") return null;
+    const label = browserAccessLabel(access, run, query.fresh);
     return (
         <section
-            className="@container/browser-access shrink-0 space-y-3 border-t border-primary-700 px-4 py-3"
-            aria-label="Browser access status"
+            className="shrink-0 border-t border-primary-700 px-4 py-2"
+            aria-label="Browser session"
         >
-            <div className="grid gap-3 @min-[36rem]/browser-access:grid-cols-[minmax(0,1fr)_auto] @min-[36rem]/browser-access:items-center">
-                <SectionHeader
-                    title="Browser access"
-                    icon={Globe}
-                    badge={
-                        <Badge
-                            tone={accessStatusTone(
-                                browserAccessLabel(access, run, fresh)
-                            )}
-                        >
-                            {browserAccessLabel(access, run, fresh)}
-                        </Badge>
-                    }
-                    {...(waiting && !access
-                        ? {
-                              description:
-                                  "Choose which websites Mira may use while this run waits.",
-                          }
-                        : {})}
-                />
-                <div className="flex flex-col gap-2 @min-[36rem]/browser-access:flex-row">
-                    {access?.state === "active" && (
+            <div className="flex flex-wrap items-center gap-2">
+                <Globe size={16} aria-hidden="true" />
+                <span className="text-sm font-medium">Browser</span>
+                <Badge tone={accessStatusTone(label)}>{label}</Badge>
+                <div className="ml-auto flex flex-wrap gap-2">
+                    {access.state === "active" && (
                         <Button
                             variant="secondary"
                             size="sm"
                             onClick={() => setShowBrowser(true)}
                         >
-                            Open browser
+                            View browser
                         </Button>
                     )}
-                    <Button variant="secondary" size="sm" onClick={onManage}>
-                        Manage access
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        busy={stop.isPending}
+                        disabled={access.state === "stopping"}
+                        onClick={() => stop.mutate(access.id)}
+                    >
+                        <Square size={14} aria-hidden="true" />
+                        Stop browser
                     </Button>
-                    {stoppable && (
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            busy={stop.isPending}
-                            onClick={() => stop.mutate(access.id)}
-                        >
-                            <Square size={14} aria-hidden="true" />
-                            Stop access
-                        </Button>
-                    )}
                 </div>
             </div>
+            {query.error && <ErrorNotice error={query.error} />}
             {stop.error && <ErrorNotice error={stop.error} />}
-            {showBrowser && access?.state === "active" && (
+            {showBrowser && access.state === "active" && (
                 <BrowserConsoleDialog
                     key={access.id}
                     access={access}

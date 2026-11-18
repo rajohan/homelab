@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 
 import {
     connectedBrowserScope,
@@ -18,6 +18,7 @@ import * as v from "valibot";
 import { publicBrowserNetwork } from "../config/environment";
 import type { openNativeBrowser } from "./native";
 import { type BrowserGrant, browserUrl } from "./policy";
+import { browserProfileDirectory } from "./profile";
 import { publicDocument, publicInput, publicOutline } from "./publicPage";
 import { browserActionSchema } from "./wire";
 
@@ -42,12 +43,11 @@ export async function openPublicBrowser(
     if (
         !publicBrowserNetwork(browserNetworkMode(grant.origins[0])) ||
         !unrestrictedBrowserSites(grant.origins) ||
-        grant.savedProfile ||
         grant.uploads ||
         grant.downloads
     )
         throw new Error(
-            "Public browsing requires the isolated online container and a fresh profile."
+            "Broad browsing requires the isolated online container without file transfers."
         );
     const sites = grant.origins;
     const policyFile = "/etc/chromium/policies/managed/mira-public.json";
@@ -61,7 +61,10 @@ export async function openPublicBrowser(
             PasswordManagerEnabled: false,
         })
     );
+    const savedDirectory = `${browserProfileDirectory}/saved`;
+    if (grant.savedProfile) await mkdir(savedDirectory, { recursive: true, mode: 0o700 });
     const browser = await launch({
+        ...(grant.savedProfile ? { userDataDir: savedDirectory } : {}),
         executablePath: grant.executable,
         headless: true,
         pipe: true,
@@ -95,9 +98,21 @@ export async function openPublicBrowser(
           }
         | undefined;
     try {
-        const context = await browser.createBrowserContext({
-            downloadBehavior: { policy: "deny" },
-        });
+        const context = grant.savedProfile
+            ? browser.defaultBrowserContext()
+            : await browser.createBrowserContext({
+                  downloadBehavior: { policy: "deny" },
+              });
+        if (grant.savedProfile) {
+            const control = await browser.target().createCDPSession();
+            try {
+                await control.send("Browser.setDownloadBehavior", { behavior: "deny" });
+            } finally {
+                await control.detach();
+            }
+        }
+        // Saved profiles retain site data, never previous tabs or an active page.
+        for (const page of await context.pages()) await page.close();
         let opening: Set<Target> | undefined;
         context.on("targetcreated", (target) => {
             if (target.type() !== TargetType.PAGE) return;
@@ -140,8 +155,7 @@ export async function openPublicBrowser(
             const { outline, refs, handles } = await publicOutline(
                 cdp,
                 doc.id,
-                grant.mode === "control",
-                operator
+                grant.mode === "control"
             );
             const data = await page.screenshot({ type: "png", encoding: "base64" });
             const items = await Promise.all(
@@ -241,7 +255,7 @@ export async function openPublicBrowser(
                         ?.actions.includes(action.action)
                 )
                     throw new Error("Request a fresh observation with control access.");
-                await publicInput(cdp, doc.id, node, action, seen.operator);
+                await publicInput(cdp, doc.id, node, action);
                 operation.throwIfAborted();
                 return { effect: "unverified" as const };
             },

@@ -1,1 +1,0 @@
-ALTER TABLE "mira_browser_access" DROP CONSTRAINT "mira_browser_access_duration", ADD CONSTRAINT "mira_browser_access_duration" CHECK ("expires_at">"created_at" AND "expires_at"<="created_at"+interval '24 hours');

@@ -1,6 +1,6 @@
 import type { MiraAttachment } from "@homelab/contracts/mira";
 import { Button, IconButton, Textarea } from "@homelab/ui";
-import { Globe, Monitor, Send, Settings2, Square } from "lucide-react";
+import { Monitor, Send, Settings2, Square } from "lucide-react";
 
 import { AttachmentPicker } from "./AttachmentPicker";
 import { MiraVoice } from "./MiraVoice";
@@ -29,7 +29,6 @@ export function ChatComposer({
     onBrowse,
     onSettings,
     onComputer,
-    onBrowser,
 }: {
     readonly voice: MiraVoiceConnection;
     readonly text: string;
@@ -46,7 +45,6 @@ export function ChatComposer({
     readonly onStop: () => void;
     readonly onSend: () => void;
     readonly onBrowse: () => void;
-    readonly onBrowser?: (() => void) | undefined;
     readonly onComputer?: (() => void) | undefined;
     readonly onSettings?: (() => void) | undefined;
 }) {
@@ -74,13 +72,6 @@ export function ChatComposer({
                     controls={
                         <>
                             <MiraVoice voice={voice} />
-                            {onBrowser && (
-                                <IconButton
-                                    icon={Globe}
-                                    label="Browser access"
-                                    onClick={onBrowser}
-                                />
-                            )}
                             {onComputer && (
                                 <IconButton
                                     icon={Monitor}

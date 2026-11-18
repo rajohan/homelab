@@ -20,15 +20,9 @@ export async function publicDocument(cdp: CDPSession, origins: readonly string[]
  * @param cdp - Private connection to the selected tab.
  * @param frameId - Current top-level frame only.
  * @param control - Whether input references can be created.
- * @param operator - Trusted human observation; permits password entry without exposing its value.
  * @returns Human-readable content and server-owned handles for supported controls.
  */
-export async function publicOutline(
-    cdp: CDPSession,
-    frameId: string,
-    control: boolean,
-    operator = false
-) {
+export async function publicOutline(cdp: CDPSession, frameId: string, control: boolean) {
     const { nodes } = await cdp.send("Accessibility.getFullAXTree", {
         frameId,
         depth: 18,
@@ -65,7 +59,7 @@ export async function publicOutline(
                         ? "text"
                         : attributes[index + 1]?.toLowerCase() || "text";
                 password = type === "password";
-                if (!(password ? operator : textInputTypes.includes(type))) return;
+                if (!password && !textInputTypes.includes(type)) return;
             }
             if (
                 field.properties?.some((p) => p.name === "editable" && p.value.value) &&
@@ -139,14 +133,12 @@ export async function publicOutline(
  * @param frameId - Revalidated document frame.
  * @param node - Chromium identity captured in the latest observation.
  * @param action - Validated click or text input, passed only as values to a fixed function.
- * @param operator - Authority retained from the unused host-verified human observation.
  */
 export async function publicInput(
     cdp: CDPSession,
     frameId: string,
     node: number,
-    action: { action: "click" } | { action: "type"; text: string; replace: boolean },
-    operator = false
+    action: { action: "click" } | { action: "type"; text: string; replace: boolean }
 ) {
     const { executionContextId } = await cdp.send("Page.createIsolatedWorld", {
         frameId,
@@ -162,11 +154,11 @@ export async function publicInput(
             objectId: object.objectId,
             userGesture: true,
             returnByValue: true,
-            arguments: [{ value: action }, { value: operator }],
-            functionDeclaration: `function(action, operator) {
-                if (!(this instanceof HTMLElement) || !this.isConnected || !this.checkVisibility() || this.matches(":disabled,input[type=file]") || !operator && this.matches("input[type=password]")) return false;
+            arguments: [{ value: action }],
+            functionDeclaration: `function(action) {
+                if (!(this instanceof HTMLElement) || !this.isConnected || !this.checkVisibility() || this.matches(":disabled,input[type=file]")) return false;
                 if (action.action === "click") { this.click(); return true; }
-                const nativeField = this instanceof HTMLTextAreaElement || this instanceof HTMLInputElement && (${JSON.stringify(textInputTypes)}.includes(this.type) || operator && this.type === "password");
+                const nativeField = this instanceof HTMLTextAreaElement || this instanceof HTMLInputElement && (${JSON.stringify(textInputTypes)}.includes(this.type) || this.type === "password");
                 if (!(nativeField || this.isContentEditable) || this.readOnly || this.matches("[aria-readonly=true],[aria-disabled=true]")) return false;
                 this.focus();
                 if (document.activeElement !== this) return false;

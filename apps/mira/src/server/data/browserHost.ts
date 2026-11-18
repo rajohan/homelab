@@ -211,7 +211,11 @@ export async function openMiraBrowserSession(
             const profile = await prepareMiraBrowserProfile(host.client, claim);
             signal.throwIfAborted();
             return (dependencies.open ?? openBrowserWorker)(
-                { ...fixed, ...(profile ? { profile: { id: profile.id } } : {}) },
+                {
+                    ...fixed,
+                    runBound: unrestrictedBrowserSites(access.policy.origins),
+                    ...(profile ? { profile: { id: profile.id } } : {}),
+                },
                 {
                     origins: access.policy.origins,
                     initialUrl: access.policy.initialUrl,

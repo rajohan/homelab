@@ -17,7 +17,6 @@ import {
     Archive,
     Brain,
     Files,
-    Globe,
     MessageSquare,
     Monitor,
     Pencil,
@@ -27,7 +26,6 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
-import { BrowserAccessDialog } from "./BrowserAccessDialog";
 import { BrowserAccessPanel } from "./BrowserAccessPanel";
 import { ChatComposer } from "./ChatComposer";
 import { readChatDisplay, saveChatDisplay } from "./chatDisplay";
@@ -61,9 +59,7 @@ export function ChatPanel({
     const [attachments, setAttachments] = useState<MiraAttachment[]>([]);
     const [uploading, setUploading] = useState(false);
     const [selectingFile, setSelectingFile] = useState(false);
-    const [dialog, setDialog] = useState<
-        "rename" | "delete" | "settings" | "computer" | "browser"
-    >();
+    const [dialog, setDialog] = useState<"rename" | "delete" | "settings" | "computer">();
     const request = useRef<{ text: string; id: string } | null>(null);
     const navigate = useNavigate();
     const client = useQueryClient();
@@ -211,12 +207,6 @@ export function ChatPanel({
                             disabled={change.isPending || rename.isPending}
                             actions={[
                                 {
-                                    id: "browser",
-                                    label: "Browser access",
-                                    icon: Globe,
-                                    onSelect: () => setDialog("browser"),
-                                },
-                                {
                                     id: "computer",
                                     label: "Computer access",
                                     icon: Monitor,
@@ -322,18 +312,7 @@ export function ChatPanel({
                     {run.message}
                 </p>
             )}
-            <BrowserAccessPanel
-                run={run}
-                waiting={
-                    run?.state === "running" &&
-                    !run.cancelRequested &&
-                    (latest.tools ?? []).some(
-                        (tool) =>
-                            tool.tool === "mira_browser_wait" && tool.state === "running"
-                    )
-                }
-                onManage={() => setDialog("browser")}
-            />
+            <BrowserAccessPanel run={run} />
             <ComputerAccessPanel
                 run={run}
                 waiting={
@@ -368,7 +347,6 @@ export function ChatPanel({
                     onBrowse={() => setSelectingFile(true)}
                     onSettings={() => setDialog("settings")}
                     onComputer={() => setDialog("computer")}
-                    onBrowser={() => setDialog("browser")}
                 />
             )}
             {selectingFile && (
@@ -383,14 +361,6 @@ export function ChatPanel({
                         );
                         setSelectingFile(false);
                     }}
-                />
-            )}
-            {dialog === "browser" && (
-                <BrowserAccessDialog
-                    key={run?.id ?? "no-run"}
-                    run={run}
-                    supportsImages={supportsImages}
-                    onClose={() => setDialog(undefined)}
                 />
             )}
             {dialog === "computer" && (

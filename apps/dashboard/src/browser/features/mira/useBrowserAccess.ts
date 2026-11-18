@@ -55,9 +55,9 @@ export function browserAccessLabel(
     if (access?.state === "closed") return "Stopped";
     if (access?.state === "stopping") return "Stopping";
     if (!fresh) return "Status unavailable";
-    if (!access) return "Not allowed";
+    if (!access) return "Not running";
     if (access.state === "unavailable" || run?.state !== "running" || run.cancelRequested)
         return "Unavailable";
-    if (access.state === "pending") return "Ready to start";
-    return access.mode === "view" ? "View only" : "Control";
+    if (access.state === "pending") return "Starting";
+    return access.mode === "view" ? "View only" : "Active";
 }
