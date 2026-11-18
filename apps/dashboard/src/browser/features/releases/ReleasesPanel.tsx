@@ -1,3 +1,4 @@
+import { releasePublicationState } from "@homelab/contracts/deployment";
 import {
     Badge,
     Button,
@@ -33,15 +34,14 @@ export function ReleasesPanel() {
     );
     const data = query.data;
     const release = data?.release;
-    const publishing = [
-        "queued",
-        "in_progress",
-        "waiting",
-        "pending",
-        "requested",
-    ].includes(release?.value.tests ?? "");
-    const unverifiedLabel = publishing ? "Publishing" : "Not verified";
-    const verification = release?.value.verified ? "Verified release" : unverifiedLabel;
+    const publication = release ? releasePublicationState(release.value) : "unverified";
+    const publishing = publication === "publishing";
+    const verification = {
+        verified: "Verified release",
+        publishing: "Publishing",
+        failed: "Publication failed",
+        unverified: "Not verified",
+    }[publication];
     const unverifiedTone = release?.fresh && publishing ? "info" : "warning";
     return (
         <Card id="homelab-release" className="@container space-y-4">
@@ -116,7 +116,7 @@ export function ReleasesPanel() {
                     {release ? (
                         <div className="space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm">
                             <SectionHeader
-                                title={`Published ${release.value.version}`}
+                                title={`Release ${release.value.version}`}
                                 icon={Tag}
                                 badge={
                                     <Badge
