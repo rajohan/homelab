@@ -15,6 +15,7 @@ import * as v from "valibot";
 import { browserWorkerGrant } from "../browsing/wire";
 import { browserNetworkForOwner } from "../config/environment";
 import { miraManualRunAllowed } from "./approvalPolicy";
+import { reserveDefaultBrowserProfile } from "./browserDefaultProfile";
 import { retireBrowserCommands } from "./browserRetirement";
 import {
     auditMira,
@@ -57,7 +58,7 @@ interface AccessRow {
     state: "pending" | "active" | "stopping" | "closed";
     hostToken: string | null;
     policy: Policy | null;
-    expiresAt: Date;
+    expiresAt: Date | null;
     available: boolean;
     controller: "mira" | "human";
     validForMs: number;
@@ -87,7 +88,7 @@ function summary(row: AccessRow): MiraBrowserAccessSummary {
             (row.state === "pending" || row.state === "active") && !row.available
                 ? "unavailable"
                 : row.state,
-        expiresAt: row.expiresAt.toISOString(),
+        expiresAt: row.expiresAt?.toISOString() ?? null,
         origins: row.policy?.origins ?? [],
         initialUrl: row.policy?.initialUrl ?? null,
     };
@@ -106,7 +107,7 @@ export async function readBrowserAccess(
 ): Promise<AccessRow | undefined> {
     const [row] = await query<AccessRow[]>`
         SELECT g.id,g.run_id AS "runId",g.run_lease AS "runLease",g.mode,g.state,g.host_token AS "hostToken",(g.policy - 'delegated') AS policy,g.expires_at AS "expiresAt",coalesce(console.controller,'mira') AS controller,
-            (g.state IN ('pending','active') AND g.expires_at>clock_timestamp() AND r.manual
+            (g.state IN ('pending','active') AND (g.expires_at IS NULL OR g.expires_at>clock_timestamp()) AND r.manual
                 AND (NOT (g.policy ? 'connected') OR (g.policy->>'networkVersion'='2' AND r.automation_id IS NULL AND ${browserNetworkForOwner(owner)}))
                 AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease
                 AND r.lease_expires_at>clock_timestamp() AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
@@ -152,13 +153,13 @@ export async function requestMiraBrowserAccess(
 /** Start the configured browser for requested manual work without a separate website grant.
  * @param context - Fenced tool actor. The database supplies all permission and ownership decisions.
  * @param initialUrl - Requested document.
- * @param network - Legacy network hint; configured manual browsing uses the combined network.
+ * @param profile - Use Mira's dedicated saved profile or a fresh temporary session.
  * @returns Browser status, with operator stop and account pauses enforced.
  */
 export async function requestPublicBrowser(
     context: MiraContext,
     initialUrl: string,
-    network?: "public" | "home"
+    profile: "saved" | "temporary" = "saved"
 ) {
     if (!context.run || context.actor !== `mira:${context.run.id}`)
         throw new MiraFailure("FORBIDDEN", "A running chat is required.");
@@ -168,17 +169,18 @@ export async function requestPublicBrowser(
             runId: context.run.id,
             initialUrl,
             origins: [publicBrowserScope],
-            network,
             mode: "control",
         },
-        true
+        true,
+        profile === "saved"
     );
 }
 
 async function reserveBrowserAccess(
     context: MiraContext,
     request: v.InferOutput<typeof miraBrowserAccessRequestSchema>,
-    delegated: boolean
+    delegated: boolean,
+    savedProfile = false
 ): Promise<MiraBrowserAccessSummary> {
     let policy: Policy;
     try {
@@ -284,9 +286,9 @@ async function reserveBrowserAccess(
                 "Stop and finish browser cleanup before requesting another session, or wait for the request limit."
             );
         const [run] = await query<
-            { lease: string; expiresAt: Date; controls: unknown }[]
+            { lease: string; expiresAt: Date | null; controls: unknown }[]
         >`
-            SELECT r.lease_token AS lease,least(clock_timestamp()+${unrestrictedBrowserSites(policy.origins) ? 86_400 : 300}*interval '1 second',r.started_at+nullif(r.budget_seconds,0)*interval '1 second') AS "expiresAt",
+            SELECT r.lease_token AS lease,CASE WHEN ${unrestrictedBrowserSites(policy.origins)} THEN NULL ELSE least(clock_timestamp()+interval '5 minutes',r.started_at+nullif(r.budget_seconds,0)*interval '1 second') END AS "expiresAt",
                 jsonb_build_array(coalesce(u.version,1),b.version,a.version,s.version,CASE WHEN a.schedule->>'event'='agentmail' THEN i.version END) AS controls
             FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner
             LEFT JOIN mira_switches u ON u.owner=r.owner AND u.key='autonomy'
@@ -306,12 +308,20 @@ async function reserveBrowserAccess(
                 "PRECONDITION_FAILED",
                 "Enable browser access and choose a running owned manual job."
             );
+        const profileId = savedProfile
+            ? await reserveDefaultBrowserProfile(
+                  query,
+                  context,
+                  policy.origins,
+                  Boolean(policy.connected)
+              )
+            : request.profileId;
         const id = Bun.randomUUIDv7();
         const [inserted] = await query<{ id: string }[]>`
             WITH timing AS MATERIALIZED(SELECT clock_timestamp() AS at)
             INSERT INTO mira_browser_access(id,owner,run_id,run_lease,controls,mode,policy,profile_id,expires_at,created_at)
-            SELECT ${id},${context.owner},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${policy.mode},${JSON.stringify({ ...policy, ...(delegated ? { delegated: true } : {}) })}::text::jsonb,${request.profileId ?? null},
-                least(${run.expiresAt}::timestamptz,timing.at+${unrestrictedBrowserSites(policy.origins) ? 86_400 : 300}*interval '1 second'),timing.at FROM timing WHERE ${run.expiresAt}::timestamptz>timing.at RETURNING id`;
+            SELECT ${id},${context.owner},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${policy.mode},${JSON.stringify({ ...policy, ...(delegated ? { delegated: true } : {}) })}::text::jsonb,${profileId ?? null},
+                ${run.expiresAt}::timestamptz,timing.at FROM timing WHERE (${run.expiresAt}::timestamptz IS NULL OR ${run.expiresAt}::timestamptz>timing.at) RETURNING id`;
         if (!inserted)
             throw new MiraFailure(
                 "PRECONDITION_FAILED",
@@ -356,10 +366,22 @@ export async function stopMiraBrowserAccess(
     context: MiraContext,
     input: unknown
 ): Promise<void> {
-    human(context);
+    if (!context.run) human(context);
     const { id } = v.parse(miraBrowserAccessStopSchema, input);
     await context.client.begin(async (query) => {
         await lockBrowserOwner(query, context.owner);
+        if (context.run) {
+            const access = await readBrowserAccess(query, context.owner, id);
+            if (
+                !(await miraManualRunAllowed(query, context)) ||
+                access?.runId !== context.run.id ||
+                access.runLease !== context.run.leaseToken
+            )
+                throw new MiraFailure(
+                    "FORBIDDEN",
+                    "Only this active run's browser can be closed."
+                );
+        }
         const [row] = await query<
             { id: string }[]
         >`UPDATE mira_browser_access SET state=CASE WHEN state='pending' THEN 'closed' ELSE 'stopping' END,
@@ -403,7 +425,7 @@ export async function claimMiraBrowserAccess(context: MiraContext, id: string) {
             id,
             hostToken,
             policy: row.policy,
-            expiresAt: row.expiresAt.toISOString(),
+            expiresAt: row.expiresAt?.toISOString() ?? null,
         };
     });
 }
@@ -493,4 +515,19 @@ export async function closeMiraBrowserAccess(
                 input.id
             );
     });
+}
+
+/** Close this manual run's browser and let the trusted host finish profile saving and cleanup.
+ * @param context - Current fenced manual tool actor.
+ * @returns Whether an owned session was found; cleanup completion is reported separately.
+ */
+export async function closeRunBrowser(context: MiraContext) {
+    if (!context.run) throw new MiraFailure("FORBIDDEN", "A running chat is required.");
+    const [access] = await context.client<
+        { id: string }[]
+    >`SELECT id FROM mira_browser_access WHERE owner=${context.owner} AND run_id=${context.run.id} AND run_lease=${context.run.leaseToken} ORDER BY created_at DESC LIMIT 1`;
+    if (!access) return { state: "closed" };
+    await stopMiraBrowserAccess(context, access);
+    const current = await readBrowserAccess(context.client, context.owner, access.id);
+    return { state: current?.state ?? "closed" };
 }

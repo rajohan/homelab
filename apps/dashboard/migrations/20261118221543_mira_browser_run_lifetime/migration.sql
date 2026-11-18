@@ -1,0 +1,2 @@
+ALTER TABLE "mira_browser_access" ALTER COLUMN "expires_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "mira_browser_access" DROP CONSTRAINT "mira_browser_access_duration", ADD CONSTRAINT "mira_browser_access_duration" CHECK ("expires_at" IS NULL OR "expires_at">"created_at");

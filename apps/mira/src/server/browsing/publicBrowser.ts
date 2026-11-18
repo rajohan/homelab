@@ -1,4 +1,6 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import {
     connectedBrowserScope,
@@ -18,7 +20,10 @@ import * as v from "valibot";
 import { publicBrowserNetwork } from "../config/environment";
 import type { openNativeBrowser } from "./native";
 import { type BrowserGrant, browserUrl } from "./policy";
+import { browserProfileDirectory } from "./profile";
 import { publicDocument, publicInput, publicOutline } from "./publicPage";
+import { publicDownload, publicUpload } from "./publicTransfers";
+import { browserUploadActionSchema, createBrowserUploads } from "./upload";
 import { browserActionSchema } from "./wire";
 
 const width = 800,
@@ -41,14 +46,9 @@ export async function openPublicBrowser(
     signal.throwIfAborted();
     if (
         !publicBrowserNetwork(browserNetworkMode(grant.origins[0])) ||
-        !unrestrictedBrowserSites(grant.origins) ||
-        grant.savedProfile ||
-        grant.uploads ||
-        grant.downloads
+        !unrestrictedBrowserSites(grant.origins)
     )
-        throw new Error(
-            "Public browsing requires the isolated online container and a fresh profile."
-        );
+        throw new Error("Broad browsing requires the isolated online container.");
     const sites = grant.origins;
     const policyFile = "/etc/chromium/policies/managed/mira-public.json";
     await writeFile(
@@ -61,7 +61,10 @@ export async function openPublicBrowser(
             PasswordManagerEnabled: false,
         })
     );
+    const savedDirectory = `${browserProfileDirectory}/saved`;
+    if (grant.savedProfile) await mkdir(savedDirectory, { recursive: true, mode: 0o700 });
     const browser = await launch({
+        ...(grant.savedProfile ? { userDataDir: savedDirectory } : {}),
         executablePath: grant.executable,
         headless: true,
         pipe: true,
@@ -77,7 +80,13 @@ export async function openPublicBrowser(
         signal,
     });
     let closing: Promise<void> | undefined;
-    const close = () => (closing ??= browser.close());
+    let directory: string | undefined;
+    let uploads: Awaited<ReturnType<typeof createBrowserUploads>> | undefined;
+    const close = () =>
+        (closing ??= (async () => {
+            await browser.close();
+            if (directory) await rm(directory, { recursive: true, force: true });
+        })());
     const retire = () => {
         void close().catch(() => {});
     };
@@ -95,9 +104,25 @@ export async function openPublicBrowser(
           }
         | undefined;
     try {
-        const context = await browser.createBrowserContext({
-            downloadBehavior: { policy: "deny" },
-        });
+        if (grant.uploads) {
+            directory = await mkdtemp(path.join(os.tmpdir(), "mira-public-transfer-"));
+            uploads = await createBrowserUploads(directory);
+        }
+        const context = grant.savedProfile
+            ? browser.defaultBrowserContext()
+            : await browser.createBrowserContext({
+                  downloadBehavior: { policy: "deny" },
+              });
+        if (grant.savedProfile) {
+            const control = await browser.target().createCDPSession();
+            try {
+                await control.send("Browser.setDownloadBehavior", { behavior: "deny" });
+            } finally {
+                await control.detach();
+            }
+        }
+        // Saved profiles retain site data, never previous tabs or an active page.
+        for (const page of await context.pages()) await page.close();
         let opening: Set<Target> | undefined;
         context.on("targetcreated", (target) => {
             if (target.type() !== TargetType.PAGE) return;
@@ -141,7 +166,7 @@ export async function openPublicBrowser(
                 cdp,
                 doc.id,
                 grant.mode === "control",
-                operator
+                operator && Boolean(grant.uploads)
             );
             const data = await page.screenshot({ type: "png", encoding: "base64" });
             const items = await Promise.all(
@@ -184,6 +209,37 @@ export async function openPublicBrowser(
                     ],
                 },
             };
+        };
+        const transferTarget = async (
+            input: unknown,
+            kind: "upload" | "download",
+            operation: AbortSignal
+        ) => {
+            operation.throwIfAborted();
+            const action = v.parse(browserUploadActionSchema, input);
+            const seen = observation;
+            observation = undefined;
+            const { cdp } = current();
+            const doc = await publicDocument(cdp, sites);
+            const node = seen?.nodes.get(action.ref);
+            const ref = seen?.refs.find((item) => item.ref === action.ref);
+            if (
+                grant.mode !== "control" ||
+                !grant[kind === "upload" ? "uploads" : "downloads"] ||
+                !seen?.operator ||
+                !node ||
+                seen.id !== action.observationId ||
+                performance.now() >= seen.until ||
+                doc.loader !== seen.loader ||
+                doc.url !== seen.url ||
+                (kind === "upload"
+                    ? !ref?.actions.includes("upload")
+                    : ref?.role !== "link" || !ref.actions.includes("click"))
+            )
+                throw new Error(
+                    "File transfer requires a fresh operator observation of this website."
+                );
+            return { cdp, doc, node, until: seen.until };
         };
         await add(grant.initialUrl);
         return {
@@ -241,14 +297,46 @@ export async function openPublicBrowser(
                         ?.actions.includes(action.action)
                 )
                     throw new Error("Request a fresh observation with control access.");
-                await publicInput(cdp, doc.id, node, action, seen.operator);
+                await publicInput(cdp, doc.id, node, action);
                 operation.throwIfAborted();
                 return { effect: "unverified" as const };
             },
-            upload: () =>
-                Promise.reject(new Error("Use a specific website for uploads.")),
-            download: () =>
-                Promise.reject(new Error("Use a specific website for downloads.")),
+            upload: async (input, file, operation) => {
+                const target = await transferTarget(input, "upload", operation);
+                if (!uploads) throw new Error("Uploads are unavailable.");
+                const staged = await uploads.stage(file, operation);
+                const currentDocument = await publicDocument(target.cdp, sites);
+                operation.throwIfAborted();
+                if (
+                    performance.now() >= target.until ||
+                    currentDocument.loader !== target.doc.loader ||
+                    currentDocument.url !== target.doc.url
+                )
+                    throw new Error("The upload observation changed while staging.");
+                await publicUpload(
+                    target.cdp,
+                    target.doc.id,
+                    target.node,
+                    staged,
+                    new URL(target.doc.url).origin
+                );
+                operation.throwIfAborted();
+                return { effect: "unverified" as const };
+            },
+            download: async (input, operation) => {
+                const { cdp, doc, node } = await transferTarget(
+                    input,
+                    "download",
+                    operation
+                );
+                return publicDownload(
+                    cdp,
+                    doc.id,
+                    node,
+                    new URL(doc.url).origin,
+                    operation
+                );
+            },
         };
     } catch (error) {
         await close();

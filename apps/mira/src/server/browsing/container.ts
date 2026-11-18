@@ -55,13 +55,15 @@ export class BrowserContainerCleanupError extends Error {
  * @param owner - Unpredictable host-generated lifetime identifier.
  * @param egress - Optional trusted preprovisioned private slot; omitted means fully offline.
  * @param profile - Optional trusted registry identity for the one reserved bounded profile snapshot.
- * @returns Fixed resource limits and a hard deadline around the packaged worker entrypoint.
+ * @param runBound - The host supervises this manual session through its renewable run lease.
+ * @returns Fixed resource limits; legacy scoped sessions retain their native deadline.
  */
 export function browserContainerSpec(
     image: string,
     owner: string,
     egress?: BrowserSlot,
-    profile?: BrowserProfile
+    profile?: BrowserProfile,
+    runBound = false
 ) {
     if (egress) v.parse(browserSlotSchema, egress);
     v.parse(imageId, image);
@@ -69,8 +71,8 @@ export function browserContainerSpec(
     return {
         Image: image,
         User: "1000:1000",
-        Entrypoint: ["/usr/bin/timeout"],
-        Cmd: ["--signal=KILL", "305s", "/usr/local/bin/mira-browser"],
+        Entrypoint: runBound ? ["/usr/local/bin/mira-browser"] : ["/usr/bin/timeout"],
+        Cmd: runBound ? [] : ["--signal=KILL", "305s", "/usr/local/bin/mira-browser"],
         Labels: { [ownerLabel]: owner },
         OpenStdin: true,
         StdinOnce: true,
@@ -246,7 +248,13 @@ export async function prepareBrowserContainer(
         const response = await call(
             "POST",
             `/containers/create?name=${name}`,
-            browserContainerSpec(config.imageId, owner, config.egress, config.profile)
+            browserContainerSpec(
+                config.imageId,
+                owner,
+                config.egress,
+                config.profile,
+                config.runBound
+            )
         );
         // Even a non-201 reply is not proof that no container was created. Inspect
         // the generated name on failure; only a completed valid response settles it.

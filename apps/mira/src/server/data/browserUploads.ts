@@ -52,12 +52,11 @@ export async function listMiraBrowserUploads(
             access.state !== "active" ||
             access.controller !== "human" ||
             access.mode !== "control" ||
-            access.policy?.origins.length !== 1 ||
-            unrestrictedBrowserSites(access.policy.origins)
+            access.policy?.origins.length !== 1
         )
             throw new MiraFailure(
                 "PRECONDITION_FAILED",
-                "Take control of a browser with access to one website before selecting a file."
+                "Take control of the browser before selecting a file."
             );
         return choices(query, context.owner, access.runId);
     });
@@ -85,8 +84,8 @@ export async function requireBrowserUpload(
         access.controller !== "human" ||
         access.mode !== "control" ||
         access.policy?.origins.length !== 1 ||
-        unrestrictedBrowserSites(access.policy.origins) ||
-        access.policy.origins[0] !== operation.origin
+        (!unrestrictedBrowserSites(access.policy.origins) &&
+            access.policy.origins[0] !== operation.origin)
     )
         throw new MiraFailure(
             "FORBIDDEN",

@@ -1126,7 +1126,7 @@ export const miraBrowserAccess = pgTable(
         profileId: uuid("profile_id").references(() => miraBrowserProfiles.id),
         claimedAt: time("claimed_at"),
         closedAt: time("closed_at"),
-        expiresAt: time("expires_at").notNull(),
+        expiresAt: time("expires_at"),
         createdAt: time("created_at").notNull().defaultNow(),
     },
     (t) => [
@@ -1141,7 +1141,7 @@ export const miraBrowserAccess = pgTable(
         ),
         check(
             "mira_browser_access_duration",
-            sql`${t.expiresAt}>${t.createdAt} AND ${t.expiresAt}<=${t.createdAt}+interval '5 minutes'`
+            sql`${t.expiresAt} IS NULL OR ${t.expiresAt}>${t.createdAt}`
         ),
         check(
             "mira_browser_access_policy_size",

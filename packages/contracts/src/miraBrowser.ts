@@ -70,7 +70,7 @@ export interface MiraBrowserAccessSummary {
     runId: string;
     mode: "view" | "control";
     state: "pending" | "active" | "stopping" | "closed" | "unavailable";
-    expiresAt: string;
+    expiresAt: string | null;
     origins: string[];
     initialUrl: string | null;
 }

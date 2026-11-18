@@ -1,4 +1,3 @@
-import { unrestrictedBrowserSites } from "@homelab/contracts/miraBrowser";
 import type {
     MiraBrowserAccessSummary,
     miraBrowserHumanCommandSchema,
@@ -237,29 +236,22 @@ export function BrowserConsoleDialog({
                                 onCommand={send}
                             />
                         )}
-                        {access.mode === "control" &&
-                            (access.origins.length === 1 &&
-                            !unrestrictedBrowserSites(access.origins) ? (
-                                <>
-                                    <BrowserUploadControls
-                                        now={now}
-                                        accessId={access.id}
-                                        preview={preview ?? null}
-                                        disabled={Boolean(busy) || !inputFresh}
-                                        onCommand={send}
-                                    />
-                                    <BrowserDownloadControls
-                                        preview={preview ?? null}
-                                        disabled={Boolean(busy) || !inputFresh}
-                                        onCommand={send}
-                                    />
-                                </>
-                            ) : (
-                                <p className="text-sm text-primary-400">
-                                    To transfer attachments, start browser access for one
-                                    website.
-                                </p>
-                            ))}
+                        {access.mode === "control" && access.origins.length === 1 && (
+                            <>
+                                <BrowserUploadControls
+                                    now={now}
+                                    accessId={access.id}
+                                    preview={preview ?? null}
+                                    disabled={Boolean(busy) || !inputFresh}
+                                    onCommand={send}
+                                />
+                                <BrowserDownloadControls
+                                    preview={preview ?? null}
+                                    disabled={Boolean(busy) || !inputFresh}
+                                    onCommand={send}
+                                />
+                            </>
+                        )}
                         {preview && !inputFresh && (
                             <p className="text-sm text-primary-400">
                                 Refresh the view before the next click or text entry.

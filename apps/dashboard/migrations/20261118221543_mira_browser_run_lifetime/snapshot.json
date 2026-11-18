@@ -1,0 +1,50 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "e953b233-4682-4907-a706-9ae3cbc7382d",
+    "prevIds": ["538fa17b-4b8e-4b4e-ac73-fa56070ea7c1"],
+    "footprints": [
+        {
+            "statementType": "alter_column",
+            "statementTarget": ["column", "public", "mira_browser_access", "expires_at"],
+            "writes": ["s|colprop|public.mira_browser_access.expires_at.notNull"],
+            "reads": [
+                "n|tbl|public.mira_browser_access",
+                "n|sch|public",
+                "n|col|public.mira_browser_access.expires_at"
+            ],
+            "sqlHash": "85020f724d5a5cbf"
+        },
+        {
+            "statementType": "alter_check",
+            "statementTarget": ["table", "public", "mira_browser_access"],
+            "writes": ["s|ck|public.mira_browser_access.mira_browser_access_duration"],
+            "reads": [
+                "n|tbl|public.mira_browser_access",
+                "n|sch|public",
+                "n|col|public.mira_browser_access.expires_at",
+                "n|col|public.mira_browser_access.created_at",
+                "e|col|public.mira_browser_access.expires_at",
+                "e|col|public.mira_browser_access.created_at"
+            ],
+            "sqlHash": "2e560133f5f78439"
+        }
+    ],
+    "deltas": [
+        {
+            "op": "alter",
+            "key": "columns\u0000[\"public\",\"mira_browser_access\",\"expires_at\"]",
+            "set": {
+                "notNull": false
+            }
+        },
+        {
+            "op": "alter",
+            "key": "checks\u0000[\"public\",\"mira_browser_access\",\"mira_browser_access_duration\"]",
+            "set": {
+                "value": "\"expires_at\" IS NULL OR \"expires_at\">\"created_at\""
+            }
+        }
+    ]
+}

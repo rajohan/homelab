@@ -14,11 +14,12 @@ import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { BrowserProfileControls } from "./BrowserProfileControls";
 import { MiraDisableDialog } from "./MiraDisableDialog";
 
 /**
  * Expose the existing account-level browser pause without granting access to a site.
- * @returns A shared control card; each browser session still requires a separate Chat grant.
+ * @returns Account pause and saved-data controls; Mira starts task sessions directly.
  */
 export function MiraBrowserControl() {
     const [paused, setPaused] = useState<MiraSwitch>();
@@ -43,7 +44,7 @@ export function MiraBrowserControl() {
             <SectionHeader
                 title="Browser"
                 icon={Globe}
-                description="Use an isolated browser on the server. Choose websites and access for each run in Chat."
+                description="Mira opens the server browser for your requests and closes it when finished."
                 badge={
                     control && (
                         <Badge tone={control.enabled ? "positive" : "neutral"}>
@@ -77,11 +78,12 @@ export function MiraBrowserControl() {
                     {control.until ? ` · Resumes ${formatDateTime(control.until)}` : ""}
                 </p>
             )}
+            <BrowserProfileControls />
             {paused && (
                 <MiraDisableDialog
                     control={paused}
                     title="Browser"
-                    description="Stops browser access and prevents new sessions. Choose websites and access again in Chat when you resume."
+                    description="Stops the browser and prevents new sessions until Browser is enabled again."
                     onClose={() => setPaused(undefined)}
                 />
             )}

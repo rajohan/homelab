@@ -343,7 +343,7 @@ export async function finishMiraBrowserCommand(
         const updated = await query<
             { id: string }[]
         >`UPDATE mira_browser_commands SET state='completed',result=${JSON.stringify(parsed)}::text::jsonb,finished_at=clock_timestamp() WHERE id=${id} AND state='claimed' AND expires_at>clock_timestamp() AND EXISTS(SELECT 1 FROM mira_browser_access g JOIN mira_runs r ON r.id=g.run_id JOIN mira_browser_processes p ON p.access_id=g.id
-                WHERE g.id=mira_browser_commands.access_id AND g.state='active' AND g.expires_at>clock_timestamp()
+                WHERE g.id=mira_browser_commands.access_id AND g.state='active' AND (g.expires_at IS NULL OR g.expires_at>clock_timestamp())
                 AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease AND r.lease_expires_at>clock_timestamp()
                 AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
                 AND p.id=mira_browser_commands.process_id AND p.lease_token=mira_browser_commands.process_token AND p.state='active' AND p.lease_expires_at>clock_timestamp()) RETURNING id`;
@@ -399,7 +399,7 @@ export async function takeMiraBrowserCommand(
         const updated = await query<
             { id: string }[]
         >`UPDATE mira_browser_commands SET state='consumed',result=NULL,finished_at=clock_timestamp() WHERE id=${id} AND state='completed' AND expires_at>clock_timestamp() AND EXISTS(SELECT 1 FROM mira_browser_access g JOIN mira_runs r ON r.id=g.run_id JOIN mira_browser_processes p ON p.access_id=g.id
-                WHERE g.id=mira_browser_commands.access_id AND g.state='active' AND g.expires_at>clock_timestamp()
+                WHERE g.id=mira_browser_commands.access_id AND g.state='active' AND (g.expires_at IS NULL OR g.expires_at>clock_timestamp())
                 AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease AND r.lease_expires_at>clock_timestamp()
                 AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
                 AND p.id=mira_browser_commands.process_id AND p.lease_token=mira_browser_commands.process_token AND p.state='active' AND p.lease_expires_at>clock_timestamp()) RETURNING id`;
@@ -466,7 +466,7 @@ export async function finalizeMiraBrowserCommand(
         const updated = await query<
             { id: string }[]
         >`UPDATE mira_tool_receipts SET state='succeeded',finished_at=clock_timestamp() WHERE id=${id} AND run_id=${context.run!.id} AND state='running' AND EXISTS(SELECT 1 FROM mira_browser_commands WHERE id=${id} AND state='consumed' AND expires_at>clock_timestamp() AND EXISTS(SELECT 1 FROM mira_browser_access g JOIN mira_runs r ON r.id=g.run_id JOIN mira_browser_processes p ON p.access_id=g.id
-                WHERE g.id=mira_browser_commands.access_id AND g.state='active' AND g.expires_at>clock_timestamp()
+                WHERE g.id=mira_browser_commands.access_id AND g.state='active' AND (g.expires_at IS NULL OR g.expires_at>clock_timestamp())
                 AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease AND r.lease_expires_at>clock_timestamp()
                 AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
                 AND p.id=mira_browser_commands.process_id AND p.lease_token=mira_browser_commands.process_token AND p.state='active' AND p.lease_expires_at>clock_timestamp())) RETURNING id`;
