@@ -1,10 +1,20 @@
-import type { MiraBrowserProfile } from "@homelab/contracts/miraBrowser";
+import {
+    type MiraBrowserProfile,
+    unrestrictedBrowserSites,
+} from "@homelab/contracts/miraBrowser";
 import { Button, ConfirmDialog, ErrorNotice } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+
+function profileDescription(profile: MiraBrowserProfile) {
+    const sites = unrestrictedBrowserSites(profile.origins)
+        ? "All websites"
+        : profile.origins.join(", ");
+    return `${profile.homeNetwork ? "Internet and home network" : "Internet"} · ${sites} · Created ${new Date(profile.createdAt).toLocaleString()} · ${profile.id.slice(-8)}`;
+}
 
 /** Let the operator remove saved sign-ins; session/profile selection belongs to Mira.
  * @returns Existing owned profiles and explicit deletion, without a startup form.
@@ -35,10 +45,13 @@ export function BrowserProfileControls() {
                     key={profile.id}
                     className="flex flex-wrap items-center justify-between gap-2"
                 >
-                    <span className="text-sm">
-                        {profile.name}
-                        {profile.busy ? " · In use" : ""}
-                    </span>
+                    <div className="min-w-0 text-sm wrap-anywhere">
+                        <p>
+                            {profile.name}
+                            {profile.busy ? " · In use" : ""}
+                        </p>
+                        <p className="text-primary-400">{profileDescription(profile)}</p>
+                    </div>
                     <Button
                         variant="secondary"
                         size="sm"
@@ -58,7 +71,7 @@ export function BrowserProfileControls() {
             {deleting && (
                 <ConfirmDialog
                     title="Delete saved sign-ins"
-                    description={`Delete ${deleting.name} and its saved website sign-ins? This cannot be undone.`}
+                    description={`Delete ${deleting.name} (${profileDescription(deleting)}) and its saved website sign-ins? This cannot be undone.`}
                     confirmLabel="Delete saved sign-ins"
                     onConfirm={() => remove.mutateAsync(deleting.id)}
                     onClose={() => setDeleting(undefined)}

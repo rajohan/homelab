@@ -221,8 +221,7 @@ export async function openMiraBrowserSession(
                     initialUrl: access.policy.initialUrl,
                     mode: access.policy.mode,
                     ...(access.policy.mode === "control" &&
-                    access.policy.origins.length === 1 &&
-                    !unrestrictedBrowserSites(access.policy.origins)
+                    access.policy.origins.length === 1
                         ? { uploads: true, downloads: true }
                         : {}),
                 },

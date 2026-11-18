@@ -11,12 +11,12 @@ import { MiraFailure } from "./context";
 type Operation = v.InferOutput<typeof miraBrowserHumanOperationSchema>;
 
 /**
- * Recheck the human's confirmed download source without granting model or multi-origin authority.
+ * Recheck the human's confirmed download source without granting model file-transfer authority.
  * @param query - Transaction holding the owning account's control lock.
  * @param owner - Account bound by the endpoint or trusted host claim.
  * @param id - Exact active browser grant.
  * @param operation - Parsed operator command with the confirmed display filename and origin.
- * @returns Completion only while the same single-origin control grant is available.
+ * @returns Completion only while the same control grant is available.
  */
 export async function requireBrowserDownload(
     query: TransactionSQL,
@@ -33,8 +33,8 @@ export async function requireBrowserDownload(
         access.controller !== "human" ||
         access.mode !== "control" ||
         access.policy?.origins.length !== 1 ||
-        unrestrictedBrowserSites(access.policy.origins) ||
-        access.policy.origins[0] !== operation.origin
+        (!unrestrictedBrowserSites(access.policy.origins) &&
+            access.policy.origins[0] !== operation.origin)
     )
         throw new MiraFailure(
             "FORBIDDEN",

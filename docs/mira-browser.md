@@ -63,7 +63,7 @@ The origin ceiling limits observation and input, not subresource requests or pag
 
 ## Confirmed attachment uploads
 
-The native adapter now has a private, opt-in upload operation for a trusted host that has already authorized exact attachment bytes. It requires Control with **one exact origin**, an unused observed main-document file-input ref, and a verified filename, size and SHA-256 digest. The signed-in operator takes control in Chat, selects an existing attachment from this conversation and a freshly observed file input, then confirms its name, size and exact destination origin. View-only or multi-origin sessions cannot upload. Confirmation is tied to the current controller generation and observation, immutable file ID and SHA-256 digest. Admission and claim recheck ownership, conversation membership and all metadata. The model input schema still rejects uploads and never selects file paths or confirms disclosure.
+Browser uploads are private, operator-only operations for a trusted host that has already authorized exact attachment bytes. They require Control, an unused observed main-document file-input ref, and a verified filename, size and SHA-256 digest. In the unified browser, each confirmation binds the transfer to the observed page origin; a separate one-site session is unnecessary. The signed-in operator takes control in Chat, selects an existing attachment from this conversation and a freshly observed file input, then confirms its name, size and exact destination origin. View-only sessions cannot upload. The selected page and file input are rechecked after staging, including the form destination origin. Confirmation is tied to the current controller generation and observation, immutable file ID and SHA-256 digest. Admission and claim recheck ownership, conversation membership and all metadata. The model input schema still rejects uploads and never selects file paths or confirms disclosure.
 
 The browser host alone receives the shared attachment volume with read/write access (`HOMELAB_MIRA_FILES_DIR`), with a 512 MiB memory ceiling for two bounded transfers. Chromium never mounts this store. The host reopens and verifies the selected file, copies it into contiguous 24 KiB binary chunks and sends only bounded private messages. The worker rejects gaps, duplicate offsets, invalid encoding, interleaved commands, incomplete files and digest changes before native assignment. A transfer consumes the existing 25-second operator deadline and observation lifetime; interruption permanently retires the session without replay. Database commands contain only approved metadata, never bytes, and are scrubbed on claim/completion. Files in an active conversation remain protected by the existing deletion guard.
 
@@ -71,7 +71,11 @@ The adapter copies and verifies at most **25 MiB total across 16 files per brows
 
 Assigning a file makes its bytes available to the approved website immediately, even before a form is submitted. An assignment result therefore reports unverified delivery; it does not claim that a website accepted a submission. The unchanged CUA driver revalidates the live origin and exact input node.
 
-## Native download qualification
+## Unified-browser downloads
+
+The unified Chromium adapter keeps ordinary browser downloads disabled. A fresh operator link observation permits a fixed fetch in an isolated JavaScript world, with the current website cookies. The link must remain on the confirmed page origin; cross-origin URLs, embedded credentials and redirects are refused. Streamed and declared sizes are capped at 25 MiB before bytes reach the host. This path uses the same existing per-session byte/count limits and import verification as the native adapter. Model observations cannot initiate downloads or expose upload handles.
+
+## Legacy native download qualification
 
 The browser opens a bounded native SDK session from the host-written capability manifest and verifies the installed SDK version. Tool calls carry that session and remain inside its tool allowlist. Cancellation closes the session, and shutdown releases the native runtime. Runtime downloads of executables are not allowed.
 
@@ -83,7 +87,7 @@ The private worker returns a bounded metadata header and contiguous 24 KiB chunk
 
 ## Download to Chat
 
-With single-website Control access, the operator takes control, refreshes the view, selects a visible link and provides a display filename. The confirmation freezes that filename, website and observation. The server rechecks the signed-in human, fresh link, controller generation, grant, process and run lease at admission, claim and import. Downloads use the existing 25-second operator deadline and are never replayed after uncertainty.
+With Control access, the operator takes control, refreshes the view, selects a visible link and provides a display filename. The confirmation freezes that filename, website and observation. The server rechecks the signed-in human, fresh link, controller generation, grant, process and run lease at admission, claim and import. Downloads use the existing 25-second operator deadline and are never replayed after uncertainty.
 
 The trusted host validates the bytes using the same file types, 25 MiB limit and account/global quotas as normal attachments. The user filename never selects a filesystem path. File readiness, linking to the current assistant response (maximum 100 files per run), and console completion commit atomically. Revocation, expiry, cancellation or a deleted conversation cannot publish a ready attachment. Website filenames, URLs and file bytes are absent from the command journal. The host alone can write the shared store; Chromium cannot mount it.
 

@@ -19,7 +19,12 @@ export function BrowserAccessPanel({ run }: { readonly run: MiraRun | null }) {
     const stop = useOperation((id: string, signal) =>
         api.mira.browser.stop.mutate({ id }, { signal })
     );
-    if (!access || access.state === "closed") return null;
+    if (!access || access.state === "closed")
+        return query.error ? (
+            <div className="shrink-0 border-t border-primary-700 px-4 py-2">
+                <ErrorNotice error={query.error} />
+            </div>
+        ) : null;
     const label = browserAccessLabel(access, run, query.fresh);
     return (
         <section

@@ -30,8 +30,8 @@ export function browserGrant(input: unknown): BrowserGrant {
     if (!path.isAbsolute(grant.executable))
         throw new Error("Browser executable must be an absolute local path.");
     if (unrestrictedBrowserSites(grant.origins)) {
-        if (grant.uploads || grant.downloads)
-            throw new Error("Broad browsing does not allow file transfers.");
+        if ((grant.uploads || grant.downloads) && grant.mode !== "control")
+            throw new Error("File transfers require control access.");
         browserUrl(grant.initialUrl, grant.origins);
         return grant;
     }

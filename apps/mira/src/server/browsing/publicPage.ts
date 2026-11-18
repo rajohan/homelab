@@ -20,9 +20,15 @@ export async function publicDocument(cdp: CDPSession, origins: readonly string[]
  * @param cdp - Private connection to the selected tab.
  * @param frameId - Current top-level frame only.
  * @param control - Whether input references can be created.
+ * @param uploads - Expose file-input handles only for an operator-controlled observation.
  * @returns Human-readable content and server-owned handles for supported controls.
  */
-export async function publicOutline(cdp: CDPSession, frameId: string, control: boolean) {
+export async function publicOutline(
+    cdp: CDPSession,
+    frameId: string,
+    control: boolean,
+    uploads = false
+) {
     const { nodes } = await cdp.send("Accessibility.getFullAXTree", {
         frameId,
         depth: 18,
@@ -35,11 +41,12 @@ export async function publicOutline(cdp: CDPSession, frameId: string, control: b
                 !node.ignored &&
                 (!node.frameId || node.frameId === frameId) &&
                 node.backendDOMNodeId &&
-                ["textbox", "searchbox"].includes(String(node.role?.value))
+                ["textbox", "searchbox", "button"].includes(String(node.role?.value))
         )
         .slice(0, 200);
     const editable = new Set<number>();
     const passwords = new Set<number>();
+    const files = new Set<number>();
     await Promise.all(
         fields.map(async (field) => {
             const id = field.backendDOMNodeId!;
@@ -58,6 +65,10 @@ export async function publicOutline(cdp: CDPSession, frameId: string, control: b
                     index === -1
                         ? "text"
                         : attributes[index + 1]?.toLowerCase() || "text";
+                if (type === "file") {
+                    files.add(id);
+                    return;
+                }
                 password = type === "password";
                 if (!password && !textInputTypes.includes(type)) return;
             }
@@ -75,7 +86,7 @@ export async function publicOutline(cdp: CDPSession, frameId: string, control: b
         ref: string;
         role: string;
         label: string;
-        actions: ("click" | "type")[];
+        actions: ("click" | "type" | "upload")[];
     }[] = [];
     const handles = new Map<string, number>();
     const lines: string[] = [];
@@ -110,8 +121,13 @@ export async function publicOutline(cdp: CDPSession, frameId: string, control: b
             node.properties?.some((p) => p.name === "disabled" && p.value.value)
         )
             continue;
-        const actions: ("click" | "type")[] = [];
-        if (editable.has(node.backendDOMNodeId) || passwords.has(node.backendDOMNodeId))
+        const actions: ("click" | "type" | "upload")[] = [];
+        if (files.has(node.backendDOMNodeId)) {
+            if (uploads) actions.push("upload");
+        } else if (
+            editable.has(node.backendDOMNodeId) ||
+            passwords.has(node.backendDOMNodeId)
+        )
             actions.push("type");
         else if (
             ["button", "link", "checkbox", "radio", "tab", "menuitem", "switch"].includes(
