@@ -3,6 +3,7 @@ import type { MiraSkillId } from "@homelab/contracts/miraSkills";
 import * as v from "valibot";
 
 import { assertRuntimeIsolation } from "./configuration";
+import { type GeneratedImage, imageGenerationEventSchema } from "./generatedImage";
 import {
     nativeSkillGuidance,
     nativeSkillInputs,
@@ -59,6 +60,7 @@ interface ActiveTurn {
 export class CodexRuntime {
     private readonly workspace: string;
     private readonly webSearch: boolean;
+    private readonly imageGeneration: boolean;
     private readonly connection: RpcProcess;
     private readonly threads = new Map<string, RuntimeTool<RuntimeToolResult>[]>();
     private readonly emptyThreads = new Set<string>();
@@ -73,15 +75,18 @@ export class CodexRuntime {
         options: Omit<RpcProcessOptions, "onRequest">,
         webSearch: boolean,
         nativeSkills: NativeSkills,
-        enabledSkills: readonly MiraSkillId[]
+        enabledSkills: readonly MiraSkillId[],
+        imageGeneration: boolean
     ) {
         this.nativeSkills = nativeSkills;
         this.nativeGuidance = nativeSkillGuidance(options.command, enabledSkills);
         this.webSearch = webSearch;
+        this.imageGeneration = imageGeneration;
         this.workspace = options.cwd;
         this.home = options.env.CODEX_HOME ?? "";
         this.connection = new RpcProcess({
             ...options,
+            ...(imageGeneration ? { maxFrameBytes: 36 * 1024 * 1024 } : {}),
             onRequest: (event, signal) => this.handleRequest(event, signal),
         });
     }
@@ -91,19 +96,27 @@ export class CodexRuntime {
      * @param options - Isolated child executable, environment and workspace.
      * @param webSearch - Enable provider web search for a direct manual Chat turn.
      * @param enabledSkills - Current owner's enabled release-owned native skills, empty for login and service probes.
+     * @param imageGeneration - Enable native images only when this manual run can persist their outputs.
      * @returns An initialized adapter; initialization failure always reaps the child.
      */
     static async connect(
         options: Omit<RpcProcessOptions, "onRequest">,
         webSearch = false,
-        enabledSkills: readonly MiraSkillId[] = []
+        enabledSkills: readonly MiraSkillId[] = [],
+        imageGeneration = false
     ): Promise<CodexRuntime> {
         if (!options.env.CODEX_HOME)
             throw new Error("Mira requires an explicit Codex home.");
         await assertNoCustomSkills(options.env.CODEX_HOME);
         const systemSkills = await readSystemSkills(options.command);
         const nativeSkills = await readNativeSkills(options.command, enabledSkills);
-        const runtime = new CodexRuntime(options, webSearch, nativeSkills, enabledSkills);
+        const runtime = new CodexRuntime(
+            options,
+            webSearch,
+            nativeSkills,
+            enabledSkills,
+            imageGeneration
+        );
         try {
             const initialized = v.parse(
                 initializeSchema,
@@ -325,7 +338,11 @@ export class CodexRuntime {
                 allowProviderModelFallback: false,
                 cwd: workspace,
                 sandbox: "read-only",
-                config: { web_search: this.webSearch ? "live" : "disabled" },
+                config: {
+                    web_search: this.webSearch ? "live" : "disabled",
+                    "features.sleep_tool": this.webSearch,
+                    "features.image_generation": this.imageGeneration,
+                },
                 approvalPolicy: "untrusted",
                 developerInstructions: [instructions, this.nativeGuidance]
                     .filter(Boolean)
@@ -371,7 +388,11 @@ export class CodexRuntime {
                 excludeTurns: true,
                 cwd: this.workspace,
                 sandbox: "read-only",
-                config: { web_search: this.webSearch ? "live" : "disabled" },
+                config: {
+                    web_search: this.webSearch ? "live" : "disabled",
+                    "features.sleep_tool": this.webSearch,
+                    "features.image_generation": this.imageGeneration,
+                },
                 approvalPolicy: "untrusted",
             })
         );
@@ -467,6 +488,7 @@ export class CodexRuntime {
             onStarted?: (turnId: string) => Promise<void>;
             attachments?: RuntimeInput[];
             onActivity?: (activity: MiraActivity) => void;
+            onImage?: (image: GeneratedImage) => Promise<void>;
             settings?: {
                 model: string;
                 effort: string | null;
@@ -496,6 +518,8 @@ export class CodexRuntime {
         void active.acknowledged.promise.catch(() => {});
         this.active = active;
         let output = "";
+        let imageSaves = Promise.resolve();
+        const generatedImages = new Set<string>();
         let lastMessageId: string | null = null;
         let thinking = "";
         let thinkingOffset = 0;
@@ -521,7 +545,44 @@ export class CodexRuntime {
                         options.onActivity?.({ phase: "thinking", tool: null });
                     if (item.output.item.type === "webSearch")
                         options.onActivity?.({ phase: "tool", tool: "web_search" });
+                    if (item.output.item.type === "imageGeneration")
+                        options.onActivity?.({ phase: "tool", tool: "image_gen" });
+                    if (item.output.item.type === "sleep")
+                        options.onActivity?.({ phase: "working", tool: "clock.sleep" });
                 }
+            } else if (event.method === "item/completed") {
+                const parsed = v.safeParse(
+                    v.object({
+                        threadId: v.string(),
+                        turnId: v.string(),
+                        item: v.object({ type: v.string() }),
+                    }),
+                    event.params
+                );
+                if (
+                    !parsed.success ||
+                    parsed.output.threadId !== threadId ||
+                    (active.id && parsed.output.turnId !== active.id)
+                )
+                    return;
+                if (parsed.output.item.type !== "imageGeneration") return;
+                const image = v.parse(imageGenerationEventSchema, event.params).item;
+                if (
+                    image.status !== "completed" ||
+                    image.failure ||
+                    generatedImages.has(image.id)
+                )
+                    return;
+                if (!this.imageGeneration || !options.onImage)
+                    throw new Error("Image generation is unavailable for this run.");
+                if (generatedImages.size >= 8)
+                    throw new Error("Image generation limit reached.");
+                generatedImages.add(image.id);
+                imageSaves = imageSaves.then(() => options.onImage!(image));
+                void imageSaves.catch((error: unknown) => {
+                    completion.reject(error);
+                    void this.close();
+                });
             } else if (event.method === "item/reasoning/summaryTextDelta") {
                 const delta = v.safeParse(
                     v.object({
@@ -646,6 +707,7 @@ export class CodexRuntime {
             active.acknowledged.resolve(started.turn.id);
             if (controller.signal.aborted) await this.interrupt();
             const result = await completion.promise;
+            await imageSaves;
             if (result.id !== active.id)
                 throw new Error("Mira returned an unexpected turn.");
             // Retire the native code host as well; a cancelled cell must never survive into another run.

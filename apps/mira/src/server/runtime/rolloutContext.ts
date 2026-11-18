@@ -14,6 +14,20 @@ const recordSchema = v.object({
 });
 const itemSchema = v.objectWithRest({ type: v.string() }, v.unknown());
 type Item = v.InferOutput<typeof itemSchema>;
+// Match the native image frame bound, including the base64 payload and record envelope.
+const rolloutRecordBytes = 36 * 1024 * 1024;
+
+function isGeneratedImage(value: unknown): value is Item & { result: string } {
+    return Boolean(
+        value &&
+        typeof value === "object" &&
+        "type" in value &&
+        value.type === "image_generation_call" &&
+        "result" in value &&
+        typeof value.result === "string" &&
+        value.result.length > 0
+    );
+}
 
 /**
  * Count inline images without exposing their content or charging encoded bytes as text tokens.
@@ -21,6 +35,9 @@ type Item = v.InferOutput<typeof itemSchema>;
  * @returns Inline image count and UTF-8 transport bytes.
  */
 export function inlineImages(value: unknown): { count: number; bytes: number } {
+    if (isGeneratedImage(value))
+        return { count: 1, bytes: Buffer.byteLength(value.result) };
+
     if (typeof value === "string") {
         const matches = [
             ...value.matchAll(/data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]{32,}/gi),
@@ -49,6 +66,22 @@ export function inlineImages(value: unknown): { count: number; bytes: number } {
  * @returns The same non-image values, with explicit text markers instead of image pixels.
  */
 export function withoutHistoricalImages(value: unknown): unknown {
+    if (isGeneratedImage(value))
+        return {
+            type: "message",
+            role: "assistant",
+            content: [
+                {
+                    type: "output_text",
+                    text:
+                        "[Historical generated image pixels expired. Retain the surrounding request and result text; refer to saved conversation attachments for any retained image.]" +
+                        (typeof value.revised_prompt === "string"
+                            ? `\nImage prompt: ${value.revised_prompt}`
+                            : ""),
+                },
+            ],
+        };
+
     if (
         value &&
         typeof value === "object" &&
@@ -107,7 +140,7 @@ async function* records(filename: string, start = 0) {
             pending = Buffer.concat([pending, Buffer.from(chunk)]);
             let end: number;
             while ((end = pending.indexOf(10)) !== -1) {
-                if (end > 32 * 1024 * 1024)
+                if (end > rolloutRecordBytes)
                     throw new Error("Provider history record exceeds its limit.");
                 const record = v.parse(
                     recordSchema,
@@ -117,7 +150,7 @@ async function* records(filename: string, start = 0) {
                 offset += end + 1;
                 pending = pending.subarray(end + 1);
             }
-            if (pending.length > 32 * 1024 * 1024)
+            if (pending.length > rolloutRecordBytes)
                 throw new Error("Provider history record exceeds its limit.");
         }
         if (pending.length > 0)

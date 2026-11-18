@@ -3,7 +3,8 @@ pre-commit:
   commands:
     format:
       glob: "*.{ts,tsx,js,jsx,json,jsonc,css,html,md,yml,yaml,toml}"
-      run: bun fmt --check {staged_files}
+      # Keep bunfig.toml authoritative instead of inheriting parent formatter configs.
+      run: bun fmt --no-config --check {staged_files}
     lint:
       glob: "*.{ts,tsx,js,jsx}"
       run: bun lint --no-script --deny-warnings {staged_files}

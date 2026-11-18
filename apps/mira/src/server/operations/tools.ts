@@ -15,6 +15,15 @@ import type { MiraToolContext, MiraToolDefinition } from "../executor/toolDefini
 import { miraOperationsBinding, type MiraOperationsConfiguration } from "./configuration";
 import { executeMiraHostCommand } from "./ssh";
 
+/** Bounded observed output from an earlier successful command on the same target and run. */
+export interface MiraActionObservation {
+    target: string;
+    command: string;
+    stdout: string;
+    stderr: string;
+    truncated: boolean;
+}
+
 /** Server-selected reviewer; model arguments cannot select or replace it. */
 export type MiraActionReviewer = (
     action:
@@ -25,7 +34,8 @@ export type MiraActionReviewer = (
               content: unknown;
               executionTarget?: string;
           },
-    signal: AbortSignal
+    signal: AbortSignal,
+    observations?: readonly MiraActionObservation[]
 ) => Promise<{ decision: "approve" | "ask" | "deny"; reason: string }>;
 
 const inspectCommands = {
@@ -65,6 +75,7 @@ export function createMiraOperationsTools(
         run.automationId
     )
         return [];
+    const observations: MiraActionObservation[] = [];
     const access = async (signal: AbortSignal, epoch?: string | null) => {
         signal.throwIfAborted();
         const [row] = await client<
@@ -120,6 +131,20 @@ export function createMiraOperationsTools(
                 throw new Error(
                     "Host command completed after authority was lost. Reconcile before retrying."
                 );
+            }
+            if (result.exitCode === 0) {
+                observations.push({
+                    target: input.target,
+                    command: input.command.slice(0, 4000),
+                    stdout: result.stdout.slice(0, 8000),
+                    stderr: result.stderr.slice(0, 1000),
+                    truncated:
+                        result.truncated ||
+                        input.command.length > 4000 ||
+                        result.stdout.length > 8000 ||
+                        result.stderr.length > 1000,
+                });
+                while (observations.length > 6) observations.shift();
             }
             return result;
         } finally {
@@ -225,7 +250,11 @@ export function createMiraOperationsTools(
                 }
                 if (reviewer) {
                     try {
-                        const verdict = await reviewer(parsed, signal);
+                        const verdict = await reviewer(
+                            parsed,
+                            signal,
+                            observations.filter((entry) => entry.target === parsed.target)
+                        );
                         reviewMessage = `Automatic review (${verdict.decision}): ${verdict.reason}`;
                         review = verdict.decision !== "approve";
                     } catch {

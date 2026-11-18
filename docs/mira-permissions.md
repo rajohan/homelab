@@ -21,3 +21,23 @@ Cancellation, an interrupted or failed origin, a stale live lease, task stop, ar
 Questions and required action decisions use the shared cards directly above the composer. They survive a completed reply and reconnect. Questions accept options or free text; silence never submits an answer. Human decisions bind the displayed exact action version and hash. Host-command approvals also bind the connection fingerprint and are consumed once through the resume tool.
 
 Deploy dashboard, Mira and code workers together. The data migration removes legacy mode fields and invalidates old delegated approvals and browser grants. Existing unstarted drafts become explicit review requests; migration never sends or publishes them. Existing completed outcomes remain historical evidence. No provider credentials, integration grants or automation policies are broadened by the migration.
+
+Automatic host-command reviews receive up to three recent, bounded successful
+command observations from the same target and active run. This lets the independent
+reviewer use source/help output already inspected by the assistant instead of
+asking the operator to resupply it. Observations carry their exact command and
+truncation status and remain untrusted data: they cannot grant authority, override
+a denial or establish that a proposed script is safe merely from its filename.
+The reviewer must assess every part of the exact proposed shell action. No
+command allowlist or automatic approval bypass is introduced.
+
+The independent reviewer keeps the selected model but uses its advertised low
+reasoning effort (or that model's default when low is unsupported). This bounded
+classification does not inherit an extended work-turn reasoning setting and time
+out merely because the operator selected deeper reasoning for the main task.
+Review uncertainty still asks; timeouts never imply approval.
+
+Requested implementation includes publishing the tested task branch and opening a
+normal PR for review. This is the existing direct code workflow, not mail/social/
+website publication. Merge still requires the authorized scope and current required
+reviews; releases and deployment remain separate decisions.

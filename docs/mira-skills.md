@@ -132,3 +132,34 @@ generated files with the pinned upstream objects and reassemble paged reads. Nat
 profile to verify discovery, thread setup, pause selection and rejection of altered
 files; actual model work is verified separately after deployment.
 There is no separate automated test suite or remote installer.
+
+## Impeccable Live in development
+
+The existing disposable development server supports `bun run dev --live`.
+This opt-in allows only `http://localhost:8400` in the dashboard's script and
+connection CSP, and refuses non-loopback or production listeners. Ordinary dev
+and production keep their existing policy. No production identity or database is
+used. The committed `.impeccable/live/config.json` targets the real dashboard HTML
+shell; helper tokens, journals and sessions are ignored by Git.
+
+Build Mira normally (`bun run build mira`) to install the original pinned helper.
+From the repository root, follow the installed Impeccable `live` skill:
+
+```sh
+apps/mira/dist/runtime/skills/impeccable/.agents/skills/impeccable/scripts/impeccable live --allow-missing-context --dev-url --auto-config --target apps/dashboard/src/index.html
+```
+
+Start `bun run dev --live` if the boot reports no running application, then repeat
+the boot as upstream directs. The app URL is `http://localhost:3100`, not the helper
+URL. For Main, forward 3100, 3101 and 8400 to their matching loopback ports through
+SSH. Use the disposable account documented above to sign in yourself. The helper
+must report port 8400; resolve a port conflict before opening the overlay rather
+than broadening the CSP.
+
+Keep the agent turn active and service the original foreground `live-poll` command.
+The browser toolbar alone is not an active agent. After accepting or discarding,
+follow upstream source cleanup and verification. On exit, run the original
+`live-server stop` and stop the dev process this session started. Check that the
+HTML injection was removed before committing or building production. Do not leave
+a helper or temporary database running after the session. Live is a development
+session, not a permanently enabled overlay on the deployed dashboard.

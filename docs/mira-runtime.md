@@ -331,3 +331,30 @@ server VAD with noise reduction and `gpt-transcribe`; the browser requests echo 
 Completed input audio is removed immediately. Spoken output uses explicit text with an
 out-of-band response, so the voice model receives no full task history or tool output. Long
 replies are read in bounded chunks, and an enabled session is renewed before its time limit.
+
+## Native images and waiting
+
+Direct manual Chat enables Codex's native `image_generation` when the attachment
+store is configured, and enables interruptible `sleep_tool`. Both remain disabled
+for reviewers, connection probes, tasks and automations. The current pinned Codex
+runtime supports these features; image generation uses the existing ChatGPT login
+and allowance. `HOMELAB_MIRA_OPENAI_API_KEY` belongs to voice and is never forwarded
+to the Codex child or used as an image fallback.
+
+Matching completed image items are imported through the normal owner-scoped
+attachment store before a turn is marked complete. Images are limited to eight
+per turn and 25 MiB each, validated as PNG, JPEG or WebP, and subject to the normal
+file quotas, message limits, cancellation and lease checks. Provider file references
+are confined to the private `generated_images` directory; arbitrary host paths are
+rejected. Failed or interrupted image calls are never automatically replayed.
+Native base64 image results count toward the existing visual-history budget.
+History records allow the bounded image frame plus its envelope; recovery expires
+the copied pixels into an explicit text marker before importing context, preserving
+the original provider file and any saved attachment.
+
+Other native capabilities remain intentionally disabled: shell/exec, browser,
+computer, remote control, connectors/plugins, hooks, workspace installation,
+memory and delegation. Mira already owns the relevant permission and execution
+paths. Native `view_image` would expose local service files outside the attachment
+interface. Experimental `code_mode_tool_search` is unnecessary for Mira's two-entry
+discovery/invocation router; `tool_suggest` is for integrations not enabled here.

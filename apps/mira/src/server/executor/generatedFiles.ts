@@ -34,12 +34,6 @@ export async function saveGeneratedMiraFile(
     input: unknown,
     signal: AbortSignal
 ) {
-    requireSignal(signal);
-    if (!directory || run.automationId)
-        throw new MiraFailure(
-            "PRECONDITION_FAILED",
-            "Generated files require a manual run and configured file storage."
-        );
     const parsed = v.parse(inputSchema, input);
     if (!parsed.name.isWellFormed() || !parsed.content.isWellFormed())
         throw new MiraFailure(
@@ -55,12 +49,44 @@ export async function saveGeneratedMiraFile(
             "BAD_REQUEST",
             "Generate UTF-8 text files up to 1 MiB. Binary file generation is not available."
         );
+    return saveGeneratedMiraAttachment(
+        client,
+        run,
+        directory,
+        { name: parsed.name, bytes },
+        signal
+    );
+}
+
+/**
+ * Persist a service-produced passive artifact on the current leased assistant response.
+ * @param client - Product database shared with normal attachments.
+ * @param run - Current owned run and lease, never model-selected.
+ * @param directory - Provisioned private attachment volume.
+ * @param input - Validated display name and passive bytes from text creation or native image generation.
+ * @param signal - Cancellation checked before reserving and linking the file.
+ * @returns Immutable attachment metadata after readiness and ownership checks commit.
+ */
+export async function saveGeneratedMiraAttachment(
+    client: SQL,
+    run: MiraClaim,
+    directory: string | undefined,
+    input: { name: string; bytes: Uint8Array },
+    signal: AbortSignal
+) {
+    requireSignal(signal);
+    if (!directory || run.automationId)
+        throw new MiraFailure(
+            "PRECONDITION_FAILED",
+            "Generated files require a manual run and configured file storage."
+        );
+    const { name, bytes } = input;
     const digest = new Bun.CryptoHasher("sha256")
         .update(
             JSON.stringify([
                 "mira:generated-file:v1",
                 run.id,
-                parsed.name,
+                name,
                 new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
             ])
         )
@@ -87,7 +113,7 @@ export async function saveGeneratedMiraFile(
     const file = await saveMiraFile(
         context,
         directory,
-        { id, name: parsed.name, bytes },
+        { id, name, bytes },
         async (query) => {
             requireSignal(signal);
             await auditMira(query, context, "file.generated", id);
