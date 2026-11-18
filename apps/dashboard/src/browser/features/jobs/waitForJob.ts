@@ -13,6 +13,11 @@ export async function waitForJob(
     signal: AbortSignal,
     state: (id: string, signal: AbortSignal) => Promise<string> = async (id, signal) => {
         const detail = await api.jobs.detail.query({ id, limit: 1 }, { signal });
+        if (
+            !["queued", "running", "succeeded"].includes(detail.run.state) &&
+            detail.run.message
+        )
+            throw new Error(detail.run.message);
         return detail.run.state;
     },
     failure = "Release checks did not complete successfully. Open Jobs to inspect the check."

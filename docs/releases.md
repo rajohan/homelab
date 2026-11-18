@@ -69,3 +69,11 @@ See [Release Please](https://github.com/googleapis/release-please-action),
 
 Windows package changes also compile the installer on a Windows runner. UI-only
 changes skip that workflow; it runs no acceptance or test suite.
+
+## Publication status
+
+Creating the GitHub release starts publication; it does not make the packages deployable. The release panel shows Publishing until the release workflow finishes, Publication failed for a failed workflow, and Verified release only after the reader validates the immutable packages and matching workflow evidence.
+
+Opening deployment confirmation during publication performs read-only checks every 15 seconds while the dialog is open. Each completed check replaces any older preparation snapshot. No host inspection or deployment is started until the required packages are verified. A failed or incomplete publication stops these checks and links to the release build; transport or job failures retain their recorded explanation. Deployment still requires explicit confirmation of the prepared release.
+
+After a confirmed image push, the publisher tolerates a briefly missing registry manifest with bounded reads (six attempts, 31 seconds of backoff). It never retries the push, ignores authentication failures, or overwrites a conflicting version tag. A failed publication remains unverified until matching packages and workflow evidence exist.

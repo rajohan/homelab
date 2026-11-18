@@ -1,3 +1,4 @@
+import { releasePublicationState } from "@homelab/contracts/deployment";
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
@@ -20,6 +21,15 @@ import {
 } from "./deploymentProtocol";
 import { releaseImageVersion } from "./imageReference";
 import { readHomelabRelease } from "./read";
+
+const publicationSnapshotSchema = v.strictObject({
+    configuration: v.string(),
+    publication: v.strictObject({
+        version: v.string(),
+        state: v.picklist(["publishing", "failed", "unverified"]),
+        buildUrl: v.nullable(v.string()),
+    }),
+});
 
 /**
  * Select only independently verified core and browser images for a configured deployment.
@@ -153,6 +163,31 @@ export function deploymentPreparationJobs(options: {
                 options.token,
                 context.signal
             );
+            const configuration = releaseDeploymentRevision(target, options.connections);
+            const state = releasePublicationState(published);
+            if (
+                state !== "verified" ||
+                (target.browserConfigFile && !published.browser) ||
+                (target.localCodeConfigFile && !published.code)
+            ) {
+                const value = {
+                    configuration,
+                    publication: {
+                        version: published.version,
+                        state: state === "verified" ? "unverified" : state,
+                        buildUrl: published.buildUrl,
+                    },
+                };
+                // A completed read is not a deployable plan. Replace any older plan,
+                // and let the dialog repeat only this read while publication is active.
+                if (
+                    !(await context.commit(async (transaction) => {
+                        await transaction`INSERT INTO operation_snapshots (key,value,captured_at) VALUES (${`homelab.prepare.${target.id}`}, ${JSON.stringify(value)}::text::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value,captured_at=EXCLUDED.captured_at`;
+                    }, true))
+                )
+                    throw new Error("Deployment preparation ownership changed");
+                return;
+            }
             const release = deploymentRelease(published, target);
             const connection = options.connections.find(
                 (entry) => entry.id === target.connection
@@ -167,7 +202,6 @@ export function deploymentPreparationJobs(options: {
             );
             if (expected.targetHash !== deploymentDigest(target))
                 throw new Error("Deployment authority changed");
-            const configuration = releaseDeploymentRevision(target, options.connections);
             const authExpected = target.auth
                 ? v.parse(
                       deploymentObservationSchema,
@@ -227,6 +261,7 @@ export async function preparedDeployment(
         SELECT value, captured_at::text AS "capturedAt", captured_at > now() - interval '5 minutes' AS fresh
         FROM operation_snapshots WHERE key = ${`homelab.prepare.${target.id}`}`;
     const parsed = v.safeParse(deploymentPlanSchema, row?.value);
+    const publication = v.safeParse(publicationSnapshotSchema, row?.value);
     const plan =
         parsed.success &&
         row?.fresh &&
@@ -236,6 +271,13 @@ export async function preparedDeployment(
             : null;
     return {
         plan,
+        publication:
+            publication.success &&
+            row?.fresh &&
+            publication.output.configuration ===
+                releaseDeploymentRevision(target, connections)
+                ? publication.output.publication
+                : null,
         revision: plan ? deploymentDigest({ plan, capturedAt: row!.capturedAt }) : null,
     };
 }

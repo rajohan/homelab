@@ -90,6 +90,7 @@ export const deploymentRouter = trpc.router({
                         ),
                         version: prepared.plan?.release.version ?? null,
                         revision: prepared.revision,
+                        publication: prepared.publication,
                     };
                 })
             );

@@ -40,3 +40,34 @@ export interface DeploymentPolicySummary {
     configurationChanged: boolean;
     timeZone: string;
 }
+
+/**
+ * Classify publication evidence without treating an active build as a failed release.
+ * @param release - Verification result and workflow state from the release reader.
+ * @returns A presentation state; only verified evidence permits deployment.
+ */
+export function releasePublicationState(release: { verified: boolean; tests: string }) {
+    if (release.verified) return "verified";
+    if (
+        [
+            "not_started",
+            "queued",
+            "in_progress",
+            "waiting",
+            "pending",
+            "requested",
+        ].includes(release.tests)
+    )
+        return "publishing";
+    if (
+        [
+            "failure",
+            "cancelled",
+            "timed_out",
+            "action_required",
+            "startup_failure",
+        ].includes(release.tests)
+    )
+        return "failed";
+    return "unverified";
+}
