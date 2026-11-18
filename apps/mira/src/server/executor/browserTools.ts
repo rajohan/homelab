@@ -210,7 +210,7 @@ export function createMiraBrowserTools(): MiraToolDefinition[] {
             ...lifecycle,
             name: "mira_browser_navigate",
             description:
-                "Navigate the isolated server browser within the current session website scope. This invalidates previous observations. The URL cannot broaden access. Navigation is never replayed after an uncertain outcome; observe to inspect the result. The browser starts with a fresh profile and cannot access the operator's PC browser.",
+                "Navigate the isolated server browser within the current session website scope. This invalidates previous observations. The URL cannot broaden access. Navigation is never replayed after an uncertain outcome; observe to inspect the result. Navigation retains this session's selected dedicated or temporary profile and cannot access the operator's PC browser.",
             inputSchema: {
                 type: "object",
                 properties: { url: { type: "string", minLength: 1, maxLength: 2048 } },

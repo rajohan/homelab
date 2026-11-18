@@ -43,8 +43,8 @@ export function miraStatusTone(state: string): Tone {
  * @returns Active access in green, transitions in blue, and unavailable or pending approval in amber.
  */
 export function accessStatusTone(label: string): Tone {
-    if (["View only", "Control"].includes(label)) return "positive";
-    if (["Ready to start", "Stopping"].includes(label)) return "info";
+    if (["View only", "Control", "Active"].includes(label)) return "positive";
+    if (["Ready to start", "Starting", "Stopping"].includes(label)) return "info";
     if (["Status unavailable", "Unavailable", "Awaiting local approval"].includes(label))
         return "warning";
     return "neutral";
