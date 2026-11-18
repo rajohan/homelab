@@ -4,7 +4,6 @@ import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
-import { AssistanceSettings } from "./AssistanceSettings";
 import type { ChatDisplaySettings } from "./chatDisplay";
 import { ModelSettings } from "./ModelSettings";
 import { RecallSettings } from "./RecallSettings";
@@ -67,8 +66,8 @@ export function ChatSettings({
                 }}
             >
                 <p className="text-sm text-primary-300">
-                    Model, thinking, code target and assistance choices apply to the next
-                    run. Display changes apply immediately.
+                    Model, thinking and code target choices apply to the next run. Display
+                    changes apply immediately.
                 </p>
                 {!fresh && (
                     <p className="text-sm text-primary-300">
@@ -85,11 +84,6 @@ export function ChatSettings({
                     disabled={save.isPending}
                 />
                 <RecallSettings
-                    settings={draft}
-                    onChange={setDraft}
-                    disabled={save.isPending}
-                />
-                <AssistanceSettings
                     settings={draft}
                     onChange={setDraft}
                     disabled={save.isPending}

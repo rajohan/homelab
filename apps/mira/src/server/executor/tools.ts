@@ -58,7 +58,7 @@ import type { MoltbookReadConfiguration } from "../integrations/moltbook/configu
 import { createMoltbookTools } from "../integrations/moltbook/tools";
 import type { MiraOperationsConfiguration } from "../operations/configuration";
 import { MiraHostCommandFailure } from "../operations/ssh";
-import { createMiraOperationsTools, type MiraActionReviewer } from "../operations/tools";
+import { createMiraOperationsTools } from "../operations/tools";
 import type { RuntimeTool } from "../runtime/protocol";
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
@@ -126,11 +126,10 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param client - Dedicated executor database pool.
  * @param run - Currently leased invocation; models cannot replace its owner or grants.
  * @param filesDirectory - Explicit shared file volume, scoped by selected message attachments.
- * @param agentMail - Optional provisioned inbox for checked mail reads and local drafts; sending requires separate human approval.
+ * @param agentMail - Optional provisioned inbox for checked mail reads and local drafts; sending requires an explicit operator request.
  * @param hereNow - Optional scoped website metadata settings; credentials stay in the executor.
  * @param moltbook - Optional social read settings, retained only by the service.
  * @param github - Optional GitHub mapping and dedicated read credential, retained only in the service closure.
- * @param reviewer - Server-selected independent host command reviewer.
  * @param operations - Explicit host administration, separate from sandbox execution.
  * @param localCode - Optional Main mapping; the run freezes its target before inference.
  * @param daytona - Nonsecret cloud job mapping; model tools cannot execute or approve.
@@ -146,8 +145,7 @@ export function createMiraTools(
     daytona?: DaytonaBinding,
     github?: GitHubBinding | GitHubConfiguration,
     localCode?: LocalCodeBinding,
-    operations?: MiraOperationsConfiguration,
-    reviewer?: MiraActionReviewer
+    operations?: MiraOperationsConfiguration
 ): RuntimeTool<RuntimeToolResult>[] {
     const context: MiraContext = {
         client,
@@ -157,7 +155,7 @@ export function createMiraTools(
     };
     let uncertain = false;
     const definitions: MiraToolDefinition[] = [
-        ...createMiraOperationsTools(client, run, operations, undefined, reviewer),
+        ...createMiraOperationsTools(client, run, operations),
         ...createMiraQuestionTools(run),
         ...createMiraRecallTools(client, run),
         ...createMiraComputerTools(),
@@ -562,19 +560,14 @@ export function createMiraTools(
             github && "token" in github ? github : undefined
         ),
     ];
-    const direct = directMiraActionTools(
-        definitions,
-        run,
-        {
-            mail: agentMail,
-            publication: hereNow,
-            social: moltbook,
-            code: github,
-            job: run.executionTarget === "main" ? localCode : daytona,
-            directory: filesDirectory,
-        },
-        reviewer
-    );
+    const direct = directMiraActionTools(definitions, run, {
+        mail: agentMail,
+        publication: hereNow,
+        social: moltbook,
+        code: github,
+        job: run.executionTarget === "main" ? localCode : daytona,
+        directory: filesDirectory,
+    });
     const available = run.taskAssessment
         ? direct.filter((definition) => taskAssessmentTools.has(definition.name))
         : direct;

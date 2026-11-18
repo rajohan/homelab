@@ -2,7 +2,7 @@
 
 Use `mira_github_create_pr` with a successful fixed structured-edit check and the
 requested PR title/body. The direct call queues the exact tested snapshot under
-the fixed Approve for me policy. There is no separate
+the direct manual-action policy. There is no separate
 local PR-drafting workflow or model-facing execute tool. Read
 `mira_github_publications` for the confirmed provider result. The durable queue
 retains source fingerprints and uncertain-write recovery. This does not merge or

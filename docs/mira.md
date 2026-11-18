@@ -25,7 +25,7 @@ A failed read-only PC observation is reported as a capture failure, not an
 uncertain click or keystroke. The computer grant still stops on a failed capture;
 input commands with unconfirmed outcomes remain blocked from replay.
 
-Manual Chat uses one fixed Approve for me policy, with direct coding and independent review for external actions. Web and Windows share the same server enforcement. See [Chat action review](mira-permissions.md) for exact scopes, revocation and deployment requirements.
+Manual Chat uses direct requested actions without a secondary model reviewer. Web and Windows share the same server enforcement. See [Chat action review](mira-permissions.md) for exact scopes, revocation and deployment requirements.
 
 ## Deployment boundaries
 

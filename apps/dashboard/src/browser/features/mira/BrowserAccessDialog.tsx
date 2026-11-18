@@ -16,8 +16,6 @@ import {
     LoadingState,
     Modal,
     SectionHeader,
-    Select,
-    Textarea,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Globe, Square } from "lucide-react";
@@ -31,15 +29,15 @@ import { accessStatusTone } from "./statusTone";
 import { browserAccessLabel, useBrowserAccess } from "./useBrowserAccess";
 
 function siteLabel(origin: string) {
-    if (origin === connectedBrowserScope) return "Home network";
+    if (origin === connectedBrowserScope) return "Internet and home network";
     return origin === publicBrowserScope || origin === internetBrowserScope
         ? "Public web"
         : origin;
 }
 
 /**
- * Grant exact website origins to the isolated server browser for this live manual run.
- * @returns A shared bounded form with explicit scope, effective status and immediate stop.
+ * Show the automatic server browser and its optional saved sign-ins.
+ * @returns Current status, an optional starting URL and immediate stop.
  */
 export function BrowserAccessDialog({
     run,
@@ -51,10 +49,6 @@ export function BrowserAccessDialog({
     readonly onClose: () => void;
 }) {
     const [initialUrl, setInitialUrl] = useState("");
-    const [sites, setSites] = useState<"public" | "specific">("public");
-    const [network, setNetwork] = useState<"public" | "home">("public");
-    const [additional, setAdditional] = useState("");
-    const [mode, setMode] = useState<"view" | "control">("view");
     const [profileId, setProfileId] = useState("");
     const profiles = useQuery({
         queryKey: ["operations", "mira", "browser-profiles"],
@@ -102,7 +96,7 @@ export function BrowserAccessDialog({
     return (
         <Modal
             title="Browser access"
-            description="Let Mira use an isolated browser on the server for this run."
+            description="Mira can browse internet, home services and development previews for your request."
             onClose={onClose}
             dismissible={!request.isPending}
         >
@@ -145,8 +139,8 @@ export function BrowserAccessDialog({
                 )}
                 {!running && (
                     <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-300">
-                        Ask Mira to browse first. Allow access while that manual run is
-                        running; access ends when the run stops.
+                        Ask Mira to browse and the browser starts automatically. Access
+                        ends when the run stops.
                     </p>
                 )}
                 {running && !supportsImages && (
@@ -158,7 +152,7 @@ export function BrowserAccessDialog({
                 {controlFresh && !enabled && (
                     <p className="text-sm text-primary-300">
                         Browser access is paused. Enable Browser in Automations before
-                        allowing a session.
+                        starting a session.
                     </p>
                 )}
                 {(controls.isPending || (run && accessQuery.isPending)) && (
@@ -194,10 +188,7 @@ export function BrowserAccessDialog({
                                     (item) => item.id === id
                                 );
                                 if (chosen) {
-                                    setSites("specific");
-                                    setNetwork(chosen.homeNetwork ? "home" : "public");
                                     setInitialUrl(chosen.origins[0] ?? "");
-                                    setAdditional(chosen.origins.slice(1).join("\n"));
                                 }
                             }}
                         />
@@ -210,70 +201,23 @@ export function BrowserAccessDialog({
                         onSubmit={(event) => {
                             event.preventDefault();
                             if (!ready || !run) return;
-                            let firstOrigin: string;
-                            try {
-                                firstOrigin = new URL(initialUrl.trim()).origin;
-                            } catch {
-                                return;
-                            }
+                            if (!URL.canParse(initialUrl.trim())) return;
                             request.mutate({
                                 runId: run.id,
                                 initialUrl: initialUrl.trim(),
-                                network,
-                                origins:
-                                    sites === "public" && !profileId
-                                        ? [publicBrowserScope]
-                                        : [
-                                              ...new Set([
-                                                  firstOrigin,
-                                                  ...additional
-                                                      .split(/\r?\n/)
-                                                      .map((line) => line.trim())
-                                                      .filter(Boolean),
-                                              ]),
-                                          ],
-                                mode,
+                                ...(profile
+                                    ? {
+                                          network: profile.homeNetwork
+                                              ? ("home" as const)
+                                              : ("public" as const),
+                                      }
+                                    : {}),
+                                origins: profile?.origins ?? [publicBrowserScope],
+                                mode: "control",
                                 ...(profileId ? { profileId } : {}),
                             });
                         }}
                     >
-                        {!profileId && (
-                            <FormField
-                                label="Network"
-                                description="Public sites and home services open in separate sessions."
-                            >
-                                <Select
-                                    label="Browser network"
-                                    value={network}
-                                    onChange={setNetwork}
-                                    disabled={request.isPending}
-                                    options={[
-                                        { value: "public", label: "Internet" },
-                                        { value: "home", label: "Home network" },
-                                    ]}
-                                />
-                            </FormField>
-                        )}
-                        {!profileId && (
-                            <FormField
-                                label="Websites"
-                                description="Choose the sites Mira can visit on this network."
-                            >
-                                <Select
-                                    label="Website access"
-                                    value={sites}
-                                    onChange={setSites}
-                                    disabled={request.isPending}
-                                    options={[
-                                        {
-                                            value: "public",
-                                            label: "All available websites",
-                                        },
-                                        { value: "specific", label: "Specific websites" },
-                                    ]}
-                                />
-                            </FormField>
-                        )}
                         <FormField label="Starting URL">
                             <Input
                                 aria-label="Starting URL"
@@ -286,51 +230,17 @@ export function BrowserAccessDialog({
                                 placeholder="https://example.com/page"
                             />
                         </FormField>
-                        {(sites === "specific" || profileId) && (
-                            <FormField label="Other allowed origins (optional)">
-                                <Textarea
-                                    aria-label="Other allowed origins"
-                                    rows={3}
-                                    maxLength={32_768}
-                                    value={additional}
-                                    disabled={request.isPending}
-                                    onChange={(event) =>
-                                        setAdditional(event.target.value)
-                                    }
-                                    placeholder="https://another.example.com"
-                                />
-                                <p className="text-xs text-primary-400">
-                                    One exact origin per line, without paths or wildcards.
-                                    Up to 16 websites in total.
-                                </p>
-                            </FormField>
-                        )}
-                        <FormField label="Permission">
-                            <Select
-                                label="Browser permission"
-                                value={mode}
-                                disabled={request.isPending}
-                                options={[
-                                    { value: "view", label: "View only" },
-                                    {
-                                        value: "control",
-                                        label: "Control — view, click and type",
-                                    },
-                                ]}
-                                onChange={setMode}
-                            />
-                            <p className="text-xs text-primary-400">
-                                Up to five minutes for this run. You can stop access here
-                                at any time.
-                            </p>
-                        </FormField>
+                        <p className="text-sm text-primary-300">
+                            No website list or separate browser approval is needed. You
+                            can stop access at any time.
+                        </p>
                         <ActionGroup>
                             <Button
                                 type="submit"
                                 busy={request.isPending}
                                 disabled={!ready}
                             >
-                                Allow browser
+                                Start browser
                             </Button>
                         </ActionGroup>
                     </form>

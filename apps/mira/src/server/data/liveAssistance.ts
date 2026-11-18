@@ -1,30 +1,7 @@
-import {
-    type MiraChatSettings,
-    miraLiveAssistanceMinutesSchema,
-} from "@homelab/contracts/mira";
 import type { SQL } from "bun";
-import * as v from "valibot";
 
 import { MiraFailure } from "./context";
 import type { MiraClaim } from "./queue";
-
-/**
- * Resolve the explicit assistance duration for direct Chat work only.
- * @param settings - Conversation preferences frozen at queue admission.
- * @param source - Trusted origin; task and automation runs retain their own completion rules.
- * @returns Selected minutes, -1 for assistance until stopped, or zero for ordinary replies and scheduled/task work.
- */
-export function liveAssistanceMinutes(
-    settings: MiraChatSettings,
-    source: {
-        manual: boolean;
-        automationId?: string | null | undefined;
-        taskId?: string | null | undefined;
-    }
-): number {
-    if (!source.manual || source.automationId || source.taskId) return 0;
-    return v.parse(miraLiveAssistanceMinutesSchema, settings.liveAssistanceMinutes ?? 0);
-}
 
 /**
  * Preserve accepted operator guidance across stateless provider continuations.

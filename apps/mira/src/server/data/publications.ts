@@ -179,7 +179,7 @@ export async function listMiraPublications(
 
 /**
  * Queue an exact authorized publication after verifying its selected files.
- * @param context - Human owner or fenced model context with an exact independent review.
+ * @param context - Human owner or fenced model context with an exact prepared manual request.
  * @param input - Displayed version, content hash and full review snapshot.
  * @param binding - Dashboard account mapping, matched with a fresh publishing executor.
  * @param directory - Shared private file store used to verify every reviewed byte.

@@ -20,6 +20,7 @@ table inet mira_egress {
         ip daddr @dns@ udp dport 53 accept
         ip daddr @dns@ tcp dport 53 accept
         tcp dport { 53, 2375, 2376 } drop
+        @dev_network@
         ip daddr { @lan4@, 100.64.0.0/10 } meta l4proto tcp @home@
         ip6 daddr @lan6@ meta l4proto tcp @home@
         ip daddr @restricted_v4 drop

@@ -88,8 +88,9 @@ export function ChatgptConnection() {
             ) : (
                 <>
                     {login?.message &&
-                        (login.state === "completed" ||
-                            connection?.state !== "connected") && (
+                        ((login.state === "completed" &&
+                            connection?.state === "connected") ||
+                            (login.state === "failed" && needsSignIn)) && (
                             <output className="block">{login.message}</output>
                         )}
                     {needsSignIn && connection?.canManage && (

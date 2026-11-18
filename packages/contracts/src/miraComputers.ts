@@ -49,7 +49,7 @@ export const miraComputerAccessRequestSchema = v.strictObject({
     runId: id,
     mode: v.picklist(["view", "control"]),
     scope: v.optional(v.picklist(["window", "desktop"]), "window"),
-    keepOpen: v.optional(v.boolean(), false),
+    keepOpen: v.optional(v.boolean(), true),
 });
 export const miraComputerAccessConnectionSchema = v.strictObject({ connectionId: id });
 export const miraComputerAccessAcceptSchema = v.strictObject({

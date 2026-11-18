@@ -109,10 +109,7 @@ export async function saveMiraChatSettings(
         if (
             conversation.settings.model !== input.settings.model ||
             conversation.settings.effort !== input.settings.effort ||
-            conversation.settings.serviceTier !== input.settings.serviceTier ||
-            ((input.settings.liveAssistanceMinutes ?? 0) !== 0 &&
-                input.settings.liveAssistanceMinutes !==
-                    conversation.settings.liveAssistanceMinutes)
+            conversation.settings.serviceTier !== input.settings.serviceTier
         ) {
             const catalog = await readCatalog(query);
             if (!catalog.fresh)
@@ -120,21 +117,7 @@ export async function saveMiraChatSettings(
                     "PRECONDITION_FAILED",
                     "Reconnect Mira before changing model settings."
                 );
-            const resolved = resolveMiraChatSettings(
-                catalog.models,
-                input.settings,
-                catalog.defaultModel
-            );
-            if (
-                (input.settings.liveAssistanceMinutes ?? 0) !== 0 &&
-                !catalog.models
-                    .find((model) => model.model === resolved.model)!
-                    .inputModalities.includes("image")
-            )
-                throw new MiraFailure(
-                    "BAD_REQUEST",
-                    "Live computer assistance requires a model that supports images. Choose another model in Chat settings."
-                );
+            resolveMiraChatSettings(catalog.models, input.settings, catalog.defaultModel);
         }
         await query`UPDATE mira_conversations SET settings = ${JSON.stringify(input.settings)}::text::jsonb, version = version + 1, updated_at = now() WHERE id = ${input.id}`;
         await auditMira(query, context, "conversation.settings_changed", input.id);

@@ -556,6 +556,7 @@ export const miraRouter = trpc.router({
                 }[]
             >`SELECT ready, model, version, message, heartbeat_at > now() - interval '30 seconds' AS fresh FROM mira_runtime_status WHERE id = 1`;
             return {
+                online: runtime?.fresh === true,
                 ready: runtime?.ready === true && runtime.fresh,
                 model: runtime?.model ?? null,
                 version: runtime?.version ?? null,

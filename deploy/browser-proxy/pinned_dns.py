@@ -1,4 +1,4 @@
-"""Loopback-only Squid resolver. Home origins can reach only addresses in their first validated DNS answer."""
+"""Loopback-only Squid resolver. Browser origins retain their first validated public or home DNS addresses."""
 import asyncio
 from collections import OrderedDict
 from ipaddress import ip_address, ip_network
@@ -39,16 +39,16 @@ class PinnedResolver(asyncio.DatagramProtocol):
 
     def pin(self, name, addresses):
         destination = frozenset(map(ip_address, addresses))
-        if not destination or not all(any(ip in net for net in self.networks) for ip in destination):
+        if not destination or not all(ip.is_global or any(ip in net for net in self.networks) for ip in destination):
             return False
         now = time.monotonic()
-        # Exceeds both the five-minute maximum grant and Squid's address cache TTL.
+        # Exceeds both the 24-hour maximum grant and Squid's address cache TTL.
         while self.pins and next(iter(self.pins.values()))[1] <= now:
             self.pins.popitem(last=False)
         prior = self.pins.get(name)
         if (prior and not destination.issubset(prior[0])) or (not prior and len(self.pins) >= 8192):
             return False
-        self.pins[name] = (prior[0] if prior else destination), now + 1800
+        self.pins[name] = (prior[0] if prior else destination), now + 86700
         self.pins.move_to_end(name)
         return True
 

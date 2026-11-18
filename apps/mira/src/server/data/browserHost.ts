@@ -225,6 +225,7 @@ export async function openMiraBrowserSession(
                 signal,
                 (input, lifetime) =>
                     openBrowserConnection(input, lifetime, {
+                        keepOpen: unrestrictedBrowserSites(access.policy.origins),
                         ...(profile ? { profile: profile.persistence } : {}),
                         prepare: (input, lifetime) =>
                             (dependencies.prepare ?? prepareBrowserContainer)(

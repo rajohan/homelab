@@ -82,7 +82,7 @@ export async function miraActionApproval(
 }
 
 /**
- * Check the live, owned manual run before local work or an independent action review.
+ * Check the live, owned manual run before requested manual work.
  * @param query - Current read or mutation transaction.
  * @param context - Server-created actor and fenced run, never tool arguments.
  * @returns Whether this exact manual run still has authority to work.
@@ -109,7 +109,7 @@ export async function miraManualRunAllowed(
  * @param context - Human or fenced model actor; synthetic human identities are never accepted.
  * @param conversationId - Draft's actual owner-checked conversation, not a tool-supplied link.
  * @param scope - Required operation class.
- * @param action - Exact action fingerprint required for externally reviewed operations.
+ * @param action - Exact action fingerprint required for externally queued operations.
  * @returns Origin run ID for delegated approvals, otherwise null for direct human consent.
  */
 export async function requireMiraApproval(
@@ -120,15 +120,15 @@ export async function requireMiraApproval(
     action?: { id: string; contentHash: string }
 ): Promise<string | null> {
     if (!context.run && context.actor === `human:${context.owner}`) return null;
-    const reviewed =
+    const prepared =
         scope !== "external" ||
         (action !== undefined &&
-            context.reviewedAction?.id === action.id &&
-            context.reviewedAction.contentHash === action.contentHash);
+            context.requestedAction?.id === action.id &&
+            context.requestedAction.contentHash === action.contentHash);
     if (
         context.run &&
         conversationId &&
-        reviewed &&
+        prepared &&
         (await miraManualRunAllowed(query, context))
     ) {
         const [row] = await query<
@@ -138,7 +138,7 @@ export async function requireMiraApproval(
     }
     throw new MiraFailure(
         "FORBIDDEN",
-        "This action requires an independent review or the operator's approval."
+        "This action requires an active manual request with its exact prepared content, or direct operator approval."
     );
 }
 

@@ -4,7 +4,7 @@ set -eu
 squid=/etc/squid/squid.conf
 rules=/etc/mira-egress.nft
 if [ "$#" -gt 0 ]; then
-    [ "$#" -eq 4 ] || exit 2
+    { [ "$#" -eq 4 ] || { [ "$#" -eq 5 ] && [ "$1" = connected ]; }; } || exit 2
     /usr/bin/python3 -I /usr/local/lib/mira-connected.py "$@"
     squid=/tmp/connected-squid.conf
     rules=/tmp/connected-egress.nft
@@ -14,6 +14,6 @@ fi
 if [ "${1:-}" = connected ]; then
     shift
     touch /tmp/home-dns-required
-    /usr/bin/setpriv --reuid=proxy --regid=proxy --init-groups --inh-caps=-all --ambient-caps=-all --bounding-set=-all --no-new-privs /usr/bin/python3 -I /usr/local/lib/mira-pinned-dns.py "$@" &
+    /usr/bin/setpriv --reuid=proxy --regid=proxy --init-groups --inh-caps=-all --ambient-caps=-all --bounding-set=-all --no-new-privs /usr/bin/python3 -I /usr/local/lib/mira-pinned-dns.py "$1" "$2" "$3" &
 fi
 exec /usr/bin/setpriv --reuid=proxy --regid=proxy --init-groups --inh-caps=-all --ambient-caps=-all --bounding-set=-all --no-new-privs /usr/sbin/squid -N -f "$squid"

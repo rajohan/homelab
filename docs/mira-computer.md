@@ -115,22 +115,9 @@ On the PC, run `mira-computer pair https://computer.home.example.test`. Paste th
 
 ## Computer access protocol
 
-Chat settings include optional **Live computer assistance**, off by default.
-Choose **Until finished or stopped**, or an explicit duration of 30 minutes, one hour or two hours before sending a request. The
-executor continues after completed replies, waiting at least fifteen seconds
-between observation turns. Each new reply has its own timestamped bubble, and
-messages sent during the session steer the active turn or its next continuation.
-Confirmed replies retain their completed status if a later continuation stops or fails.
-The selected ChatGPT model must support images; accepted operator guidance remains
-in its native conversation context. Provider turns have no separate five-minute cutoff. Explicit session durations still apply.
+Computer access uses **Until stopped**. There is no assistance-duration dropdown. Once the operator accepts access locally, it stays available between replies and after the task finishes in the same conversation. Stop in Chat or on the PC, a disconnected companion, a locked PC or an unavailable shared window ends access. Reconnecting does not restore the old grant.
 
-This is periodic assistance, not a continuous video stream. It uses the selected
-model throughout and ends when its duration expires, the model finishes the task,
-Stop is pressed or computer access becomes unavailable. It never grants or renews
-computer access: choose retained conversation access separately for sessions longer
-than the five-minute job grant. Task-linked chats and automations retain their
-normal completion rules. Long assistance sessions use general executor lanes,
-leaving the foreground lane available for ordinary user requests.
+Requested computer assistance starts continued work only after a successful screen observation, using the selected image-capable model. Retained consent alone never starts observation. The executor waits at least fifteen seconds between continued replies. Each reply has its own timestamped bubble; new messages steer the current turn or its next continuation. `mira_live_assistance_finish` ends work without revoking computer consent. Task-linked chats and automations keep their normal completion rules. This is periodic assistance, not a continuous video stream.
 
 Attachments arriving during assistance wait for a new turn. Unverified tool outcomes
 prevent further continuations and remain visible for review; interrupted work is
@@ -138,7 +125,7 @@ not automatically replayed. Reply text, queued guidance and command counts remai
 bounded, including a rolling thirty-two-command limit per minute during assistance.
 
 The server stores separate consent for one paired computer, either for the
-current job or retained across manual replies in the same conversation.
+current job (legacy callers) or, by default, retained across manual replies in the same conversation.
 `mira.computers.access.request` requires fresh human MFA and
 an exact displayed computer version. A request is only pending consent: the
 installed Windows companion must obtain a separate local approval before accepting

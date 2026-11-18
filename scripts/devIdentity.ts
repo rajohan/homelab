@@ -24,6 +24,7 @@ import { startDashboardServer } from "../apps/dashboard/src/server/index";
 import { publishNotification } from "../apps/dashboard/src/server/notifications/publish";
 import { createOperationsRuntime } from "../apps/dashboard/src/server/operations/runtime";
 import { runWorker } from "../apps/dashboard/src/worker/runtime";
+import { startDevelopmentBrowserBridge } from "./devBrowser";
 
 async function docker(...arguments_: string[]): Promise<string> {
     const child = Bun.spawn(["docker", ...arguments_], {
@@ -58,6 +59,17 @@ export async function main(): Promise<void> {
         dashboardPort > 65_534
     )
         throw new Error("The preview requires a loopback port between 1024 and 65534.");
+    const browserHost = Bun.argv
+        .find((argument) => argument.startsWith("--browser-host="))
+        ?.slice("--browser-host=".length);
+    if (
+        browserHost !== undefined &&
+        (!browserHost || dashboardPort !== 3100 || !Bun.argv.includes("--live"))
+    )
+        throw new Error(
+            "Browser preview uses --live, ports 3100/3101/8400 and an explicit Docker bridge gateway."
+        );
+    let closeBrowserBridge: (() => Promise<void>) | undefined;
     const authPort = dashboardPort + 1;
     const dashboardOrigin = `http://localhost:${dashboardPort}`;
     const authOrigin = `http://localhost:${authPort}`;
@@ -258,6 +270,8 @@ export async function main(): Promise<void> {
                 impeccableLive: Bun.argv.includes("--live"),
                 operations: operationConfiguration,
             });
+            if (browserHost)
+                closeBrowserBridge = await startDevelopmentBrowserBridge(browserHost);
             operations = createOperationsRuntime(operationConfiguration);
             worker = runWorker({
                 client: operations.client,
@@ -285,7 +299,11 @@ export async function main(): Promise<void> {
         }
     } finally {
         lifecycle.abort();
-        const servers = await Promise.allSettled([dashboard?.stop(true), auth?.stop()]);
+        const servers = await Promise.allSettled([
+            closeBrowserBridge?.(),
+            dashboard?.stop(true),
+            auth?.stop(),
+        ]);
         serverShutdownFailed = servers.some((result) => result.status === "rejected");
         try {
             await worker;

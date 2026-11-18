@@ -8,7 +8,7 @@ independent. This document describes the runtime and its qualification procedure
 ## ChatGPT model selection
 
 Chat and Automations share the native Codex model catalog and capability controls.
-Settings stay editable during work; model, thinking, code target and assistance
+Settings stay editable during work; model, thinking and code target
 changes apply to the next run while existing runs keep their frozen settings.
 Display preferences apply immediately. Permission changes revoke delegated approvals
 and apply to new actions in the current run. Recall restrictions prevent further
@@ -116,6 +116,16 @@ This proves the tested text/tool lifecycle, not voice entitlement or GUI control
 The initial test used a host wrapper that switched to the OpenClaw user and lost
 the requested home. It is not isolation evidence. After detecting this, the pilot
 was rerun with the pinned native executable and a newly approved, separate login.
+
+## Streamed replies
+
+Message deltas are provisional. Each completed provider message replaces that item's
+provisional text, including missing final chunks and corrections. Reply IDs and Unicode
+code-point offsets remain stable as earlier parts change; duplicate completion events
+and late deltas do not duplicate text. A part without confirmed completion is marked
+as interrupted once later replies or run completion close it. It is not promoted to
+successful recall merely because the overall run completes. Existing legacy history
+keeps its previous interpretation.
 
 ## Failure behavior
 
@@ -336,7 +346,7 @@ replies are read in bounded chunks, and an enabled session is renewed before its
 
 Direct manual Chat enables Codex's native `image_generation` when the attachment
 store is configured, and enables interruptible `sleep_tool`. Both remain disabled
-for reviewers, connection probes, tasks and automations. The current pinned Codex
+for connection probes, tasks and automations. The current pinned Codex
 runtime supports these features; image generation uses the existing ChatGPT login
 and allowance. `HOMELAB_MIRA_OPENAI_API_KEY` belongs to voice and is never forwarded
 to the Codex child or used as an image fallback.

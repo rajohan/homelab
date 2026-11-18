@@ -8,6 +8,7 @@ acl infrastructure_ports port 53 2375 2376
 http_access deny manager
 http_access deny infrastructure_ports
 http_access deny !CONNECT !web_protocol
+@dev_acl@
 @allow_home@
 http_access deny restricted
 acl internet dst 0.0.0.0/1 128.0.0.0/1 2000::/3

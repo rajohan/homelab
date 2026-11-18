@@ -189,6 +189,7 @@ export function ChatPanel({
             (model) => model.model === (modelId ?? catalog.data?.defaultModel)
         ) ??
         (modelId ? undefined : catalog.data?.models.find((model) => model.isDefault));
+    const waitingLabel = status.data?.online ? "Waiting" : "Offline";
     const supportsImages = Boolean(
         catalog.data?.fresh && selectedModel?.inputModalities.includes("image")
     );
@@ -200,7 +201,7 @@ export function ChatPanel({
                     icon={MessageSquare}
                     badge={
                         <Badge tone={status.data?.ready ? "positive" : "warning"}>
-                            {status.data?.ready ? "Ready" : "Offline"}
+                            {status.data?.ready ? "Ready" : waitingLabel}
                         </Badge>
                     }
                     compactActions

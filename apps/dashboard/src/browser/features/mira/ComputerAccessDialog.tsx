@@ -38,7 +38,6 @@ export function ComputerAccessDialog({
     const [choice, setChoice] = useState("");
     const [mode, setMode] = useState<"view" | "control">("view");
     const [scope, setScope] = useState<"window" | "desktop">("window");
-    const [lifetime, setLifetime] = useState<"conversation" | "run">("conversation");
     const computers = useQuery({
         queryKey: ["operations", "mira", "computers"],
         queryFn: ({ signal }) => api.mira.computers.list.query(undefined, { signal }),
@@ -98,7 +97,7 @@ export function ComputerAccessDialog({
                             description={
                                 `${access.scope === "desktop" ? "Entire desktop · primary display. " : "Selected window. "}` +
                                 (access.keepOpen
-                                    ? "Stays open between replies in this conversation until stopped."
+                                    ? "Until stopped or disconnected. Stays open between replies in this conversation."
                                     : `Ends by ${formatDateTime(access.expiresAt)}`)
                             }
                         />
@@ -166,7 +165,7 @@ export function ComputerAccessDialog({
                                     runId: run.id,
                                     mode,
                                     scope,
-                                    keepOpen: lifetime === "conversation",
+                                    keepOpen: true,
                                 });
                         }}
                     >
@@ -234,27 +233,11 @@ export function ComputerAccessDialog({
                                 onChange={setMode}
                             />
                         </FormField>
-                        <FormField
-                            label="Duration"
-                            description={`Stop access here or on your PC at any time. ${scope === "window" ? "Closing the shared window, locking" : "Locking"} the PC or disconnecting also ends access.`}
-                        >
-                            <Select
-                                label="Access duration"
-                                value={lifetime}
-                                disabled={request.isPending}
-                                options={[
-                                    {
-                                        value: "conversation",
-                                        label: "Keep open between replies",
-                                    },
-                                    {
-                                        value: "run",
-                                        label: "This run only · up to five minutes",
-                                    },
-                                ]}
-                                onChange={setLifetime}
-                            />
-                        </FormField>
+                        <p className="text-sm text-primary-300">
+                            Until stopped. Access stays open between replies in this
+                            conversation. Stop here or on your PC; disconnecting, locking
+                            the PC or closing the shared window also ends access.
+                        </p>
                         <ActionGroup>
                             <Button
                                 type="submit"
