@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.3](https://github.com/rajohan/homelab/compare/v0.20.2...v0.20.3) (2026-11-18)
+
+
+### Bug Fixes
+
+* **mira:** simplify browser sessions and profile handling ([#239](https://github.com/rajohan/homelab/issues/239)) ([79d923a](https://github.com/rajohan/homelab/commit/79d923ae4131709a624f60e9c0a14d2fd08ef5d3))
+
 ## [0.20.2](https://github.com/rajohan/homelab/compare/v0.20.1...v0.20.2) (2026-11-18)
 
 
