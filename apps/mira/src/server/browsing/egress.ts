@@ -125,7 +125,10 @@ export async function verifyBrowserEgress(
         slot.DriverOpts?.["com.docker.network.endpoint.ifname"] !== "browser" ||
         !equal(proxy.Config.Entrypoint, ["/usr/local/bin/mira-egress"]) ||
         (networkMode
-            ? proxy.Config.Cmd?.[0] !== networkMode || proxy.Config.Cmd.length !== 4
+            ? proxy.Config.Cmd?.[0] !== networkMode ||
+              ![4, ...(networkMode === "connected" ? [5] : [])].includes(
+                  proxy.Config.Cmd.length
+              )
             : (proxy.Config.Cmd?.length ?? 0) > 0) ||
         !equal(proxy.Config.Env, image.Config.Env) ||
         !equal(proxy.Config.Healthcheck.Test, [

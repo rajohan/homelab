@@ -18,7 +18,6 @@ import {
     requireComputerDevice,
 } from "./computerAuthority";
 import { type MiraContext, MiraFailure } from "./context";
-import { liveAssistanceMinutes } from "./liveAssistance";
 
 const idSchema = v.pipe(v.string(), v.uuid());
 const completionSchema = v.strictObject({
@@ -243,7 +242,6 @@ export async function enqueueMiraComputerCommand(
             (SELECT count(*)::int FROM mira_computer_commands WHERE access_id=${access.id} AND run_id=${context.run!.id}) AS recent,
             (SELECT count(*)::int FROM mira_computer_commands WHERE access_id=${access.id} AND created_at>clock_timestamp()-interval '1 minute') AS "lastMinute",
             (SELECT count(*)::int FROM mira_computer_commands WHERE access_id=${access.id}) AS "accessTotal"`;
-        const continuedAssistance = liveAssistanceMinutes(run.settings, run) !== 0;
         if (
             !limits ||
             limits.total >= 32 ||
@@ -251,7 +249,7 @@ export async function enqueueMiraComputerCommand(
             limits.busy ||
             limits.attempted ||
             limits.recent >= miraComputerCommandLimit ||
-            (continuedAssistance && limits.lastMinute >= 32) ||
+            limits.lastMinute >= 32 ||
             limits.accessTotal >= miraComputerCommandLimit
         )
             return null;

@@ -1,5 +1,6 @@
 import type { Readable, Writable } from "node:stream";
 
+import { unrestrictedBrowserSites } from "@homelab/contracts/miraBrowser";
 import * as v from "valibot";
 
 import { BrowserDownloadTransfer } from "./downloadTransfer";
@@ -150,6 +151,7 @@ export function serveBrowserWorker(
                 initializationFailed = true;
                 throw error;
             }
+            if (unrestrictedBrowserSites(grant.origins)) clearTimeout(lifetime);
             result = { version: 1, driver: browserDriverVersion };
         } else {
             if (!port || !grant) throw new Error("Browser worker is not initialized.");
@@ -270,7 +272,8 @@ export function serveBrowserWorker(
         clearTimeout(idle);
         active = handle(line).finally(() => {
             busy = false;
-            if (!stopped) idle = setTimeout(stop, 60_000);
+            if (!stopped && !(grant && unrestrictedBrowserSites(grant.origins)))
+                idle = setTimeout(stop, 60_000);
         });
         void active.catch(stop);
     };

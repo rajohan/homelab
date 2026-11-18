@@ -1,11 +1,9 @@
-import { miraDaytonaContentSchema as jobContentSchema } from "@homelab/contracts/miraDaytona";
 import { versionedIdSchema } from "@homelab/contracts/operations";
 import * as v from "valibot";
 
 import {
     type MiraActionKind,
     miraActionPreparing,
-    miraJobApprovalScope,
     miraManualRunAllowed,
 } from "../data/approvalPolicy";
 import { approveMiraCode, readMiraCode } from "../data/code";
@@ -19,7 +17,6 @@ import type { AgentMailBinding } from "../integrations/agentmail/configuration";
 import type { GitHubBinding } from "../integrations/github/configuration";
 import type { HereNowBinding } from "../integrations/herenow/configuration";
 import type { MoltbookBinding } from "../integrations/moltbook/configuration";
-import type { MiraActionReviewer } from "../operations/tools";
 import type { CodeJobBinding } from "../sandbox/localBinding";
 import type { MiraToolDefinition } from "./toolDefinition";
 
@@ -153,27 +150,17 @@ const directActionKinds: Readonly<Record<string, MiraActionKind>> = {
     mira_code_read_sources: "job",
 };
 
-const actionTables: Record<MiraActionKind, string> = {
-    mail: "mira_mail_drafts",
-    publication: "mira_publications",
-    social: "mira_social_drafts",
-    code: "mira_code_publications",
-    job: "mira_daytona_jobs",
-};
-
 /**
- * Expose one direct operation, reviewing external effects outside its short SQL transactions.
+ * Expose requested manual operations through their existing fenced queues.
  * @param definitions - Existing validated action builders and read tools.
  * @param run - Fenced manual run owning the request.
  * @param bindings - Server-selected integrations and execution target.
- * @param reviewer - Independent, tool-free reviewer; unavailable review asks the operator.
- * @returns Tools with direct local execution and one durable review/queue transition for external actions.
+ * @returns Tools with a durable preparation/queue transition and no separate model review.
  */
 export function directMiraActionTools(
     definitions: MiraToolDefinition[],
     run: MiraClaim,
-    bindings: Parameters<typeof createActionExecutor>[1],
-    reviewer?: MiraActionReviewer
+    bindings: Parameters<typeof createActionExecutor>[1]
 ): MiraToolDefinition[] {
     const execute = createActionExecutor(run, bindings);
     return definitions.map((definition) => {
@@ -183,7 +170,7 @@ export function directMiraActionTools(
             ...definition,
             transactional: false,
             commitsIndependently: true,
-            description: `${definition.description} This is one direct action: local coding proceeds immediately; external effects receive independent automatic review. Only an unresolved review asks the operator in Chat. Queued means accepted, not completed. Inspect the normal result tool; never repeat an uncertain action.`,
+            description: `${definition.description} This directly queues the action explicitly requested by the operator. Do not use sending or publishing tools for a draft-only request. Queued means accepted, not completed. Inspect the normal result tool; never repeat an uncertain action.`,
             action: async (input, signal, context) => {
                 const saved = await context.client.begin(async (query) => {
                     await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
@@ -219,7 +206,7 @@ export function directMiraActionTools(
                         if (!receipt[0])
                             throw new MiraFailure(
                                 "CONFLICT",
-                                "The action receipt changed before review."
+                                "The action receipt changed before preparation."
                             );
                     }
                     const [origin] = await query<{ epoch: string | null }[]>`
@@ -234,78 +221,30 @@ export function directMiraActionTools(
                         state: "awaiting_approval",
                         approvalRequired: true,
                     };
-                const actionScope = kind === "code" ? "code" : "external";
-                const scope =
-                    kind === "job"
-                        ? miraJobApprovalScope(
-                              record.id,
-                              v.parse(jobContentSchema, record.content),
-                              record.executionTarget
-                          )
-                        : actionScope;
-                const verdict =
-                    scope === "external"
-                        ? await (reviewer?.(
-                              {
-                                  kind,
-                                  contentHash: record.contentHash,
-                                  content: record.content,
-                                  ...(record.executionTarget
-                                      ? { executionTarget: record.executionTarget }
-                                      : {}),
-                              },
-                              signal
-                          ) ??
-                              Promise.resolve({
-                                  decision: "ask" as const,
-                                  reason: "Automatic review is unavailable. Review this exact action in Chat.",
-                              }))
-                        : {
-                              decision: "approve" as const,
-                              reason: "Requested code work proceeds directly.",
-                          };
                 signal.throwIfAborted();
                 return context.client.begin(async (query) => {
                     await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
                     if (!(await miraManualRunAllowed(query, context)))
                         throw new MiraFailure(
                             "FORBIDDEN",
-                            "The run stopped during action review."
+                            "The run stopped before the action could be queued."
                         );
                     const [current] = await query<{ epoch: string | null }[]>`
                         SELECT approval_revoked_at::text AS epoch FROM mira_runs WHERE id=${run.id} AND owner=${run.owner}`;
                     if (current?.epoch !== epoch)
                         throw new MiraFailure(
                             "FORBIDDEN",
-                            "Action authority changed during review."
+                            "Action authority changed before dispatch."
                         );
-                    const message = `Automatic review (${verdict.decision}): ${verdict.reason}`;
+                    const message = "Queuing requested action.";
                     const receipt = await query<
                         { id: string }[]
                     >`UPDATE mira_tool_receipts SET message=${message},proposal=${JSON.stringify({ kind, id: record.id, contentHash: record.contentHash })}::text::jsonb WHERE id=${context.receiptId} AND run_id=${run.id} AND state='running' RETURNING id`;
                     if (!receipt[0])
                         throw new MiraFailure(
                             "CONFLICT",
-                            "The action receipt changed during review."
+                            "The action receipt changed before dispatch."
                         );
-                    if (verdict.decision !== "approve") {
-                        const table = actionTables[kind];
-                        const updated = await query<{ id: string }[]>`
-                            UPDATE ${query(table)} SET message=${message},updated_at=clock_timestamp()
-                            WHERE id=${record.id} AND owner=${context.owner} AND version=${record.version}
-                            AND state='draft' AND content_hash=${record.contentHash} RETURNING id`;
-                        if (!updated[0])
-                            throw new MiraFailure(
-                                "CONFLICT",
-                                "The action changed during review. Inspect its current outcome."
-                            );
-                        return {
-                            ...record,
-                            state: "awaiting_approval",
-                            approvalRequired: true,
-                            message,
-                        };
-                    }
                     return execute(
                         {
                             kind,
@@ -317,7 +256,7 @@ export function directMiraActionTools(
                         {
                             ...context,
                             transaction: query,
-                            reviewedAction: {
+                            requestedAction: {
                                 id: record.id,
                                 contentHash: record.contentHash,
                             },

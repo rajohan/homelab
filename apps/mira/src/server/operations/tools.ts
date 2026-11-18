@@ -1,5 +1,4 @@
 import {
-    type MiraHostCommand,
     miraHostCommandSchema,
     miraHostInspectionSchema,
     miraHostProposalSchema,
@@ -14,29 +13,6 @@ import type { MiraClaim } from "../data/queue";
 import type { MiraToolContext, MiraToolDefinition } from "../executor/toolDefinition";
 import { miraOperationsBinding, type MiraOperationsConfiguration } from "./configuration";
 import { executeMiraHostCommand } from "./ssh";
-
-/** Bounded observed output from an earlier successful command on the same target and run. */
-export interface MiraActionObservation {
-    target: string;
-    command: string;
-    stdout: string;
-    stderr: string;
-    truncated: boolean;
-}
-
-/** Server-selected reviewer; model arguments cannot select or replace it. */
-export type MiraActionReviewer = (
-    action:
-        | MiraHostCommand
-        | {
-              kind: string;
-              contentHash: string;
-              content: unknown;
-              executionTarget?: string;
-          },
-    signal: AbortSignal,
-    observations?: readonly MiraActionObservation[]
-) => Promise<{ decision: "approve" | "ask" | "deny"; reason: string }>;
 
 const inspectCommands = {
     identity: "id; hostname",
@@ -57,16 +33,14 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param client - Executor database pool for live leases and exact command approvals.
  * @param run - Service-owned run, never a model-supplied identity.
  * @param configuration - Optional operator-provisioned SSH destinations and owner binding.
- * @param reviewer - Optional independent automatic reviewer for Approve for me.
  * @param execute - Trusted SSH transport; tests use isolated fake hosts.
- * @returns Discovery, fixed inspections and reviewed shell execution; no implicit automation grants.
+ * @returns Discovery, fixed inspections and direct requested shell execution; no implicit automation grants.
  */
 export function createMiraOperationsTools(
     client: SQL,
     run: MiraClaim,
     configuration?: MiraOperationsConfiguration,
-    execute = executeMiraHostCommand,
-    reviewer?: MiraActionReviewer
+    execute = executeMiraHostCommand
 ): MiraToolDefinition[] {
     if (
         !configuration ||
@@ -75,7 +49,6 @@ export function createMiraOperationsTools(
         run.automationId
     )
         return [];
-    const observations: MiraActionObservation[] = [];
     const access = async (signal: AbortSignal, epoch?: string | null) => {
         signal.throwIfAborted();
         const [row] = await client<
@@ -132,25 +105,18 @@ export function createMiraOperationsTools(
                     "Host command completed after authority was lost. Reconcile before retrying."
                 );
             }
-            if (result.exitCode === 0) {
-                observations.push({
-                    target: input.target,
-                    command: input.command.slice(0, 4000),
-                    stdout: result.stdout.slice(0, 8000),
-                    stderr: result.stderr.slice(0, 1000),
-                    truncated:
-                        result.truncated ||
-                        input.command.length > 4000 ||
-                        result.stdout.length > 8000 ||
-                        result.stderr.length > 1000,
-                });
-                while (observations.length > 6) observations.shift();
-            }
             return result;
         } finally {
             clearInterval(timer);
             await check;
         }
+    };
+    const finalize: NonNullable<MiraToolDefinition["finalize"]> = async (
+        scoped,
+        signal
+    ) => {
+        signal.throwIfAborted();
+        await client`UPDATE mira_tool_receipts SET state='succeeded',proposal=NULL,finished_at=clock_timestamp() WHERE id=${scoped.receiptId} AND run_id=${run.id} AND state='running'`;
     };
     return [
         {
@@ -203,7 +169,7 @@ export function createMiraOperationsTools(
             automatic: false,
             commitsIndependently: true,
             description:
-                "Run an exact shell command on a provisioned Homelab host for the operator's requested work, including SSH administration, service restarts, managed gh operations and release procedures. Approve for me independently reviews the exact action; unresolved requests appear above the Chat composer. A pending request is durable and has not executed. When the operator approves, use mira_homelab_resume with its request ID. Do not recreate rejected requests. Never use this to bypass a denied action, MFA, branch rules, deployment checks or an intentionally paused automation. Before GitHub mutations on Main verify gh api user is mira-2026 / 264348558, retain Mira commit identity, and never use --admin or bypass reviews. Follow the versioned deployment procedure, inspect actual outcomes and never replay an unknown SSH operation. Do not print credentials or whole secret-bearing environments/configurations. Output reaches the selected model provider. Keep commands focused; use the timeout needed for this command, not a whole-chat deadline.",
+                "Run an exact shell command on a provisioned Homelab host for the operator's requested work, including SSH administration, service restarts, managed gh operations and release procedures. Requested manual work executes directly without a separate model review. Existing saved approval requests remain unexecuted and must be handled through mira_homelab_resume after the operator approves. Do not recreate rejected requests. Never use this to bypass a denied action, MFA, branch rules, deployment checks or an intentionally paused automation. Before GitHub mutations on Main verify gh api user is mira-2026 / 264348558, retain Mira commit identity, and never use --admin or bypass reviews. Follow the versioned deployment procedure, inspect actual outcomes and never replay an unknown SSH operation. Do not print credentials or whole secret-bearing environments/configurations. Output reaches the selected model provider. Keep commands focused; use the timeout needed for this command, not a whole-chat deadline.",
             inputSchema: object(
                 {
                     target: { type: "string" },
@@ -213,16 +179,11 @@ export function createMiraOperationsTools(
                 },
                 ["target", "command", "reason"]
             ),
-            finalize: async (scoped, signal) => {
-                signal.throwIfAborted();
-                await client`UPDATE mira_tool_receipts SET state='succeeded',finished_at=clock_timestamp() WHERE id=${scoped.receiptId} AND run_id=${run.id} AND state='running'`;
-            },
+            finalize,
             action: async (input, signal, scoped: MiraToolContext) => {
                 const parsed = v.parse(miraHostCommandSchema, input);
                 const epoch = await access(signal);
                 const target = connection(parsed.target);
-                let review = true;
-                let reviewMessage = "Review this exact host command before execution.";
                 const proposal = v.parse(miraHostProposalSchema, {
                     ...parsed,
                     binding: miraOperationsBinding(run.owner, target),
@@ -233,8 +194,13 @@ export function createMiraOperationsTools(
                     .digest("hex");
                 const [prior] = await client<
                     { id: string; state: string; message: string | null }[]
-                >`SELECT t.id,t.state,t.message FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE r.owner=${run.owner} AND r.conversation_id=${run.conversationId} AND t.tool='mira_homelab_command' AND (t.input_hash=${hash} OR (t.proposal->>'target'=${parsed.target} AND t.proposal->>'command'=${parsed.command})) AND t.id<>${scoped.receiptId} AND (t.state='rejected' OR (t.state IN ('awaiting_approval','approved') AND t.proposal IS NOT NULL AND t.created_at>clock_timestamp()-interval '24 hours' AND r.state IN ('running','completed') AND NOT r.cancel_requested AND (r.approval_revoked_at::text IS NOT DISTINCT FROM t.proposal->>'permissionEpoch') AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at)))) ORDER BY t.id DESC LIMIT 1`;
+                >`SELECT t.id,t.state,t.message FROM mira_tool_receipts t JOIN mira_runs r ON r.id=t.run_id WHERE r.owner=${run.owner} AND r.conversation_id=${run.conversationId} AND t.tool IN ('mira_homelab_command','mira_homelab_resume') AND (t.input_hash=${hash} OR (t.proposal->>'target'=${parsed.target} AND t.proposal->>'command'=${parsed.command})) AND t.id<>${scoped.receiptId} AND (t.state IN ('rejected','unknown') OR (t.state IN ('awaiting_approval','approved') AND t.proposal IS NOT NULL AND t.created_at>clock_timestamp()-interval '24 hours' AND r.state IN ('running','completed') AND NOT r.cancel_requested AND (r.approval_revoked_at::text IS NOT DISTINCT FROM t.proposal->>'permissionEpoch') AND NOT EXISTS(SELECT 1 FROM mira_tasks task WHERE task.id=r.task_id AND task.owner=r.owner AND (task.deleted_at IS NOT NULL OR task.work_stopped_at>=r.created_at)))) ORDER BY t.id DESC LIMIT 1`;
                 if (prior) {
+                    if (prior.state === "unknown")
+                        throw new MiraFailure(
+                            "FORBIDDEN",
+                            "This command has an uncertain outcome. Inspect its durable receipt before any further action; nothing was replayed."
+                        );
                     if (prior.state === "rejected")
                         throw new MiraFailure(
                             "FORBIDDEN",
@@ -248,46 +214,25 @@ export function createMiraOperationsTools(
                             "Use the existing request. Approved commands execute only through mira_homelab_resume.",
                     };
                 }
-                if (reviewer) {
-                    try {
-                        const verdict = await reviewer(
-                            parsed,
-                            signal,
-                            observations.filter((entry) => entry.target === parsed.target)
-                        );
-                        reviewMessage = `Automatic review (${verdict.decision}): ${verdict.reason}`;
-                        review = verdict.decision !== "approve";
-                    } catch {
-                        reviewMessage =
-                            "Automatic review was unavailable. Please review this exact command.";
-                    }
-                    await access(signal, epoch);
-                }
-                const approvalMessage = reviewMessage;
                 await client.begin(async (query) => {
                     await lockMiraProposals(query, run.owner);
                     const [saved] = await query<
                         { id: string }[]
-                    >`UPDATE mira_tool_receipts SET state=${review ? "awaiting_approval" : "running"},proposal=${review ? JSON.stringify(proposal) : null}::text::jsonb,input_hash=${hash},message=${approvalMessage} WHERE id=${scoped.receiptId} AND run_id=${run.id} AND state='running' AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() AND approval_revoked_at IS NOT DISTINCT FROM ${epoch}::timestamptz) RETURNING id`;
+                    >`UPDATE mira_tool_receipts SET proposal=${JSON.stringify(proposal)}::text::jsonb,input_hash=${hash},message='Executing requested host command.' WHERE id=${scoped.receiptId} AND run_id=${run.id} AND state='running' AND EXISTS(SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() AND approval_revoked_at IS NOT DISTINCT FROM ${epoch}::timestamptz) RETURNING id`;
                     if (!saved)
                         throw new MiraFailure(
                             "CONFLICT",
                             "Host command lost its execution lease."
                         );
                 });
-                if (review)
-                    return {
-                        requestId: scoped.receiptId,
-                        state: "awaiting_approval",
-                        message: `${approvalMessage} The exact command is saved above the Chat composer and has not executed.`,
-                    };
-                // Review cannot outlive a permission change or a stopped run.
+                // Live permission fences still apply immediately before dispatch.
                 await access(signal, epoch);
                 return dispatch(parsed, signal, epoch);
             },
         },
         {
             name: "mira_homelab_resume",
+            finalize,
             automatic: false,
             commitsIndependently: true,
             description:
@@ -319,7 +264,7 @@ export function createMiraOperationsTools(
                             "The host or command changed. Request a fresh review."
                         );
                     await query`UPDATE mira_tool_receipts SET proposal=NULL,message=${`Approval consumed once; execution receipt ${scoped.receiptId}.`} WHERE id=${id}`;
-                    await query`UPDATE mira_tool_receipts SET message=${`Executing approved request ${id}.`} WHERE id=${scoped.receiptId} AND run_id=${run.id}`;
+                    await query`UPDATE mira_tool_receipts SET proposal=${JSON.stringify(proposal)}::text::jsonb,input_hash=${receipt.hash},message=${`Executing approved request ${id}.`} WHERE id=${scoped.receiptId} AND run_id=${run.id}`;
                     const {
                         binding: _binding,
                         permissionEpoch: _epoch,

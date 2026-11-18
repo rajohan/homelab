@@ -20,7 +20,6 @@ import {
     requireTask,
 } from "./context";
 import { readMessageParts } from "./historyMessages";
-import { liveAssistanceMinutes } from "./liveAssistance";
 import { unreviewedTaskRun } from "./taskRecovery";
 
 // Conversation mutations already hold the conversation row. Use a nonblocking
@@ -259,15 +258,8 @@ export async function enqueueTurn(
         await query`UPDATE mira_conversations SET settings=${JSON.stringify(conversation.settings)}::text::jsonb WHERE id=${input.conversationId}`;
     }
     const manual = source.manual ?? !source.automationId;
-    const assistanceMinutes = liveAssistanceMinutes(conversation.settings, {
-        manual,
-        automationId: source.automationId,
-        taskId,
-    });
     const defaultBudget = manual && !taskId && !source.automationId ? 0 : 300;
-    const budgetSeconds =
-        source.budgetSeconds ??
-        (assistanceMinutes > 0 ? assistanceMinutes * 60 : defaultBudget);
+    const budgetSeconds = source.budgetSeconds ?? defaultBudget;
     if (!(await miraQueueAvailable(query, context.owner, manual)))
         throw new MiraFailure(
             "PRECONDITION_FAILED",

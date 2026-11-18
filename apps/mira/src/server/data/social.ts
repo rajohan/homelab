@@ -162,7 +162,7 @@ export async function listMiraSocial(
 }
 /**
  * Queue only the exact text and destination displayed to the signed-in operator.
- * @param context - Human owner or fenced model context with an exact independent review.
+ * @param context - Human owner or fenced model context with an exact prepared manual request.
  * @param input - Displayed version, hash and content snapshot.
  * @param binding - Current configured agent.
  * @returns Queued state or the result of the same previously accepted approval.

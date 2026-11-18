@@ -28,6 +28,7 @@ services:
       - ${HOMELAB_MIRA_BROWSER_DNS:?Set the private IPv4 resolver}
       - ${HOMELAB_MIRA_BROWSER_LAN_V4:?Set the routed LAN IPv4 subnet}
       - ${HOMELAB_MIRA_BROWSER_LAN_V6:?Set the routed LAN IPv6 subnet}
+      - ${HOMELAB_MIRA_BROWSER_DEV_HOST:-}
     networks: !override
       mira-browser-b:
         aliases: [mira-egress]

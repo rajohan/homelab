@@ -48,7 +48,7 @@ async function requireBrowserProfile(
 type Policy = Pick<
     ReturnType<typeof browserWorkerGrant>,
     "origins" | "initialUrl" | "mode"
-> & { connected?: true };
+> & { connected?: true; networkVersion?: 2 };
 interface AccessRow {
     id: string;
     runId: string;
@@ -107,7 +107,7 @@ export async function readBrowserAccess(
     const [row] = await query<AccessRow[]>`
         SELECT g.id,g.run_id AS "runId",g.run_lease AS "runLease",g.mode,g.state,g.host_token AS "hostToken",(g.policy - 'delegated') AS policy,g.expires_at AS "expiresAt",coalesce(console.controller,'mira') AS controller,
             (g.state IN ('pending','active') AND g.expires_at>clock_timestamp() AND r.manual
-                AND (NOT (g.policy ? 'connected') OR (r.automation_id IS NULL AND NOT (g.policy ? 'delegated') AND ${browserNetworkForOwner(owner)}))
+                AND (NOT (g.policy ? 'connected') OR (g.policy->>'networkVersion'='2' AND r.automation_id IS NULL AND ${browserNetworkForOwner(owner)}))
                 AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease
                 AND r.lease_expires_at>clock_timestamp() AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
                 AND c.deleted_at IS NULL AND coalesce(u.enabled,true) AND b.enabled
@@ -149,16 +149,16 @@ export async function requestMiraBrowserAccess(
     );
 }
 
-/** Start a temporary public browser within the current Chat permission and executor lease.
+/** Start the configured browser for requested manual work without a separate website grant.
  * @param context - Fenced tool actor. The database supplies all permission and ownership decisions.
  * @param initialUrl - Requested document.
- * @param network - Separate browsing session requested for this task.
- * @returns Browser status, or a request for manual approval in Ask mode.
+ * @param network - Legacy network hint; configured manual browsing uses the combined network.
+ * @returns Browser status, with operator stop and account pauses enforced.
  */
 export async function requestPublicBrowser(
     context: MiraContext,
     initialUrl: string,
-    network: "public" | "home" = "public"
+    network?: "public" | "home"
 ) {
     if (!context.run || context.actor !== `mira:${context.run.id}`)
         throw new MiraFailure("FORBIDDEN", "A running chat is required.");
@@ -169,7 +169,7 @@ export async function requestPublicBrowser(
             initialUrl,
             origins: [publicBrowserScope],
             network,
-            mode: "view",
+            mode: "control",
         },
         true
     );
@@ -183,7 +183,10 @@ async function reserveBrowserAccess(
     let policy: Policy;
     try {
         const installed = browserNetworkForOwner(context.owner);
-        const connected = request.network === "home";
+        const connected =
+            request.network === "home" ||
+            (installed &&
+                (delegated || (request.network === undefined && !request.profileId)));
         if (connected && !installed)
             throw new Error("Home browsing is not configured for this account.");
         if (
@@ -194,7 +197,9 @@ async function reserveBrowserAccess(
             throw new Error("The network is selected by the server.");
         const parsed = browserWorkerGrant({
             origins:
-                installed && request.network && unrestrictedBrowserSites(request.origins)
+                installed &&
+                (request.network || connected) &&
+                unrestrictedBrowserSites(request.origins)
                     ? [connected ? connectedBrowserScope : internetBrowserScope]
                     : request.origins,
             initialUrl: request.initialUrl,
@@ -204,7 +209,9 @@ async function reserveBrowserAccess(
             origins: parsed.origins,
             initialUrl: parsed.initialUrl,
             mode: parsed.mode,
-            ...(connected ? { connected: true as const } : {}),
+            ...(connected
+                ? { connected: true as const, networkVersion: 2 as const }
+                : {}),
         };
     } catch {
         throw new MiraFailure(
@@ -233,24 +240,19 @@ async function reserveBrowserAccess(
                     existing?.available &&
                     existing.runLease === context.run?.leaseToken
                 ) {
-                    if (Boolean(existing.policy?.connected) !== Boolean(policy.connected))
+                    if (policy.connected && !existing.policy?.connected)
                         throw new MiraFailure(
                             "PRECONDITION_FAILED",
-                            "This browser is on the other network. Start a separate session in Chat."
+                            "This older browser session has internet-only access. Start a new session to use the updated network."
                         );
                     return summary(existing);
                 }
                 throw new MiraFailure(
                     "FORBIDDEN",
-                    "Browser access ended for this run. The operator can grant a new session."
+                    "This browser session has stopped. Ask the operator before starting another session in this run."
                 );
             }
-            if (policy.connected)
-                throw new MiraFailure(
-                    "FORBIDDEN",
-                    "Ask the operator to grant Home network access in Chat for this run."
-                );
-            policy.mode = "view";
+            policy.mode = "control";
         }
         if (request.profileId && unrestrictedBrowserSites(policy.origins))
             throw new MiraFailure(
@@ -284,7 +286,7 @@ async function reserveBrowserAccess(
         const [run] = await query<
             { lease: string; expiresAt: Date; controls: unknown }[]
         >`
-            SELECT r.lease_token AS lease,least(clock_timestamp()+interval '5 minutes',r.started_at+nullif(r.budget_seconds,0)*interval '1 second') AS "expiresAt",
+            SELECT r.lease_token AS lease,least(clock_timestamp()+${unrestrictedBrowserSites(policy.origins) ? 86_400 : 300}*interval '1 second',r.started_at+nullif(r.budget_seconds,0)*interval '1 second') AS "expiresAt",
                 jsonb_build_array(coalesce(u.version,1),b.version,a.version,s.version,CASE WHEN a.schedule->>'event'='agentmail' THEN i.version END) AS controls
             FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner
             LEFT JOIN mira_switches u ON u.owner=r.owner AND u.key='autonomy'
@@ -309,7 +311,7 @@ async function reserveBrowserAccess(
             WITH timing AS MATERIALIZED(SELECT clock_timestamp() AS at)
             INSERT INTO mira_browser_access(id,owner,run_id,run_lease,controls,mode,policy,profile_id,expires_at,created_at)
             SELECT ${id},${context.owner},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${policy.mode},${JSON.stringify({ ...policy, ...(delegated ? { delegated: true } : {}) })}::text::jsonb,${request.profileId ?? null},
-                least(${run.expiresAt}::timestamptz,timing.at+interval '5 minutes'),timing.at FROM timing WHERE ${run.expiresAt}::timestamptz>timing.at RETURNING id`;
+                least(${run.expiresAt}::timestamptz,timing.at+${unrestrictedBrowserSites(policy.origins) ? 86_400 : 300}*interval '1 second'),timing.at FROM timing WHERE ${run.expiresAt}::timestamptz>timing.at RETURNING id`;
         if (!inserted)
             throw new MiraFailure(
                 "PRECONDITION_FAILED",

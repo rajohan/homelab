@@ -31,6 +31,7 @@ interface Dependencies {
     attach?: typeof attachBrowserContainer;
     requestTimeoutMs?: number;
     profile?: BrowserProfilePersistence;
+    keepOpen?: boolean;
 }
 
 /** A single-flight JSONL channel whose retirement includes confirmed process-tree cleanup. */
@@ -41,6 +42,7 @@ class BrowserConnection {
     private readonly timeoutMs: number;
     private readonly controller = new AbortController();
     private readonly lifetime: ReturnType<typeof setTimeout>;
+    private readonly keepOpen: boolean;
     private idle: ReturnType<typeof setTimeout>;
     private closing: Promise<void> | undefined;
     private failure: Error | undefined;
@@ -63,14 +65,17 @@ class BrowserConnection {
      * @param owner - Permanent host cancellation.
      * @param timeoutMs - Validated request deadline from the host factory.
      * @param profile - Private persistence selected by the trusted host, never by a model request.
+     * @param keepOpen - Keep temporary broad browsing available while the outer host lease is valid.
      */
     constructor(
         stream: Duplex,
         lease: Lease,
         owner: AbortSignal,
         timeoutMs: number,
-        profile?: BrowserProfilePersistence
+        profile?: BrowserProfilePersistence,
+        keepOpen = false
     ) {
+        this.keepOpen = keepOpen;
         this.stream = stream;
         this.lease = lease;
         this.owner = owner;
@@ -98,7 +103,9 @@ class BrowserConnection {
         stream.on("close", this.ended);
         this.lifetime = setTimeout(this.disconnected, 300_000);
         this.idle = setTimeout(this.disconnected, 60_000);
+        if (keepOpen) clearTimeout(this.lifetime);
         this.lifetime.unref();
+        if (this.keepOpen) clearTimeout(this.idle);
         this.idle.unref();
         owner.addEventListener("abort", this.disconnected, { once: true });
         lease.signal.addEventListener("abort", this.disconnected, { once: true });
@@ -217,6 +224,7 @@ class BrowserConnection {
         clearTimeout(pending.timer);
         pending.cancel();
         this.idle = setTimeout(this.disconnected, 60_000);
+        if (this.keepOpen) clearTimeout(this.idle);
         this.idle.unref();
         pending.resolve(reply.result);
     }
@@ -296,7 +304,8 @@ export async function openBrowserConnection(
             lease,
             signal,
             timeout,
-            dependencies.profile
+            dependencies.profile,
+            dependencies.keepOpen
         );
         connection.signal.throwIfAborted();
         await lease.start();

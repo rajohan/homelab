@@ -485,6 +485,7 @@ export class CodexRuntime {
             skillText?: string;
             timeoutMs?: number | null;
             onDelta?: (delta: string, messageId?: string) => void;
+            onMessage?: (text: string, messageId: string, completed: boolean) => void;
             onStarted?: (turnId: string) => Promise<void>;
             attachments?: RuntimeInput[];
             onActivity?: (activity: MiraActivity) => void;
@@ -521,6 +522,7 @@ export class CodexRuntime {
         let imageSaves = Promise.resolve();
         const generatedImages = new Set<string>();
         let lastMessageId: string | null = null;
+        const messages = new Map<string, { text: string; completed: boolean }>();
         let thinking = "";
         let thinkingOffset = 0;
         let thinkingItem: string | null = null;
@@ -565,6 +567,28 @@ export class CodexRuntime {
                     (active.id && parsed.output.turnId !== active.id)
                 )
                     return;
+                if (parsed.output.item.type === "agentMessage") {
+                    const { item } = v.parse(
+                        v.object({
+                            item: v.object({
+                                id: v.string(),
+                                text: v.pipe(v.string(), v.maxLength(256_000)),
+                            }),
+                        }),
+                        event.params
+                    );
+                    if (messages.get(item.id)?.completed) return;
+                    messages.set(item.id, { text: item.text, completed: true });
+                    const reconciled = [...messages.values()]
+                        .map((message) => message.text)
+                        .join("\n\n");
+                    if (reconciled.length > 256_000)
+                        throw new Error("Mira output limit reached.");
+                    output = reconciled;
+                    lastMessageId = [...messages.keys()].at(-1) ?? null;
+                    options.onMessage?.(item.text, item.id, true);
+                    return;
+                }
                 if (parsed.output.item.type !== "imageGeneration") return;
                 const image = v.parse(imageGenerationEventSchema, event.params).item;
                 if (
@@ -622,7 +646,10 @@ export class CodexRuntime {
                     (active.id && delta.turnId !== active.id)
                 )
                     return;
-                if (delta.delta.length === 0) return;
+                if (delta.delta.length === 0 || messages.get(delta.itemId)?.completed)
+                    return;
+                const message = (messages.get(delta.itemId)?.text ?? "") + delta.delta;
+                messages.set(delta.itemId, { text: message, completed: false });
                 // Keep aggregate text for context and expose item boundaries for the transcript.
                 const separator =
                     lastMessageId !== null && lastMessageId !== delta.itemId
@@ -633,8 +660,9 @@ export class CodexRuntime {
                     throw new Error("Mira output limit reached.");
                 options.onActivity?.({ phase: "replying", tool: null });
                 lastMessageId = delta.itemId;
-                output += chunk;
+                output = [...messages.values()].map((entry) => entry.text).join("\n\n");
                 options.onDelta?.(chunk, delta.itemId);
+                options.onMessage?.(message, delta.itemId, false);
             } else if (event.method === "turn/completed") {
                 const result = v.parse(completedSchema, event.params);
                 if (

@@ -76,7 +76,7 @@ rotates the provider thread before resuming so a stale native catalog is not reu
 Loading or enabling a package never enables integrations, expands tool access or
 approves an external action. Native pinned Codex system-skill verification remains
 unchanged. Native roots are process-local and never written into a shared profile;
-login, connection checks and approval reviewers receive no upstream skills.
+login and connection checks receive no upstream skills.
 
 Activation and timed resumption require a fresh executor with the matching catalog
 digest bound to its process identity. An old executor after rollback cannot inherit
@@ -137,7 +137,7 @@ There is no separate automated test suite or remote installer.
 
 The existing disposable development server supports `bun run dev --live`.
 This opt-in allows only `http://localhost:8400` in the dashboard's script and
-connection CSP, and refuses non-loopback or production listeners. Ordinary dev
+connection CSP, and keeps the applications on loopback. Ordinary dev
 and production keep their existing policy. No production identity or database is
 used. The committed `.impeccable/live/config.json` targets the real dashboard HTML
 shell; helper tokens, journals and sessions are ignored by Git.
@@ -151,8 +151,12 @@ apps/mira/dist/runtime/skills/impeccable/.agents/skills/impeccable/scripts/impec
 
 Start `bun run dev --live` if the boot reports no running application, then repeat
 the boot as upstream directs. The app URL is `http://localhost:3100`, not the helper
-URL. For Main, forward 3100, 3101 and 8400 to their matching loopback ports through
-SSH. Use the disposable account documented above to sign in yourself. The helper
+URL. For Main, use the configured browser bridge with
+`bun run dev --live --browser-host=<outbound-Docker-bridge-gateway>` and
+`HOMELAB_MIRA_BROWSER_DEV_HOST` on the connected browser proxy. This exposes only
+3100, 3101 and 8400 on that private bridge for the lifetime of the dev process.
+See `docs/mira-browser.md` for provisioning. An SSH tunnel remains optional for
+a browser on another PC. Use the disposable account documented above to sign in yourself. The helper
 must report port 8400; resolve a port conflict before opening the overlay rather
 than broadening the CSP.
 

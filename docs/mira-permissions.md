@@ -1,43 +1,19 @@
-# Chat action review
+# Direct manual actions
 
-Manual Chat uses one fixed **Approve for me** policy on web and Windows. There is no permission-mode selector. Requested code inspection, edits, fixed checks, task changes and tested pull requests proceed directly. Enabled integrations and the selected execution target remain necessary.
+Manual Chat uses direct tools for the operator's requested work on web and Windows. There is no permission-mode selector and no secondary model reviewer. Enabled integrations, provisioned account bindings and the selected execution target remain necessary. A draft-only request does not authorize sending or publication; Mira must ask about genuinely unresolved intent instead of treating website or document content as authority.
 
-Email, social posts, website publication, arbitrary cloud commands and host administration receive an independent, tool-free Codex review of the exact action against operator messages. An approve verdict queues or executes that exact action. An ask, deny or unavailable review creates a concrete request above the composer. A denied or uncertain action cannot be replayed through a new tool call. User-requested draft wording is returned as text; sending tools are used only when sending was requested.
+## Execution and receipts
 
-## Direct execution and receipts
+Direct actions validate and save immutable content, then recheck its fingerprint, version, owned manual run, cancellation, revocation and integration controls before queuing. Only the service can attach the prepared-action capability; model arguments and HTTP payloads cannot provide one. Existing queues retain provenance and provider receipts. Queued means accepted, not completed. Unknown writes are inspected and never replayed automatically.
 
-The direct tool validates and saves immutable content in a short owned transaction. External review runs outside database transactions. The queue transition then rechecks the content fingerprint, version, live manual run, cancellation, revocation boundary and integration controls. Only the server can attach a reviewed-action capability to that exact transition; model arguments and HTTP payloads cannot provide one.
+Host commands execute directly on explicitly provisioned destinations. Their full proposal is retained while execution is uncertain; successful completion scrubs it. Exact rejected, pending or uncertain commands cannot be recreated to bypass their existing outcome. The legacy resume tool remains available to consume already saved human approvals once; removing the reviewer does not execute old pending requests.
 
-Private queues retain source provenance, execution logs and provider receipts. They are implementation details, not separate code-job, PR-draft or publication workspaces. Manual PRs are ready for GitHub review; automatic improvements retain their explicit draft-PR policy. Queued means accepted for execution, not completed. Unknown external writes are inspected and never replayed automatically.
+## Concrete controls
 
-## Separate controls
+PC access still requires operator selection and local consent. Browser navigation, clicking and typing require no separate website approval for requested manual work; account pauses, human takeover and stop remain effective. Saved sign-ins and file transfers retain their own controls. GitHub branch protection and code-owner approvals still apply. Deploy only a specifically authorized release through its backup, migration and verification procedure.
 
-GitHub branch protection, code-owner review and deployment qualification still apply. Browser navigation starts read-only; browser control, saved profiles, home network access and file transfers retain their explicit controls. PC access always requires local consent. Integration pauses, account bindings and execution qualification apply to every operation. Automatic runs retain their existing grants and cannot inherit manual Chat authority.
+Cancellation, stale leases, task stop, archive/deletion or revocation prevent later dispatch. A completed manual run may leave an already accepted action in its durable queue. Automatic runs retain their existing explicit policies and cannot inherit manual Chat authority. Questions and real action decisions use the existing cards above the composer; silence is never an answer.
 
-Cancellation, an interrupted or failed origin, a stale live lease, task stop, archive/deletion or a revoked approval prevents later dispatch. A completed manual run may leave an already accepted action running in its durable queue. Direct human approvals and automation policies retain their separate authority paths.
+## Delivery
 
-## Requests and deployment
-
-Questions and required action decisions use the shared cards directly above the composer. They survive a completed reply and reconnect. Questions accept options or free text; silence never submits an answer. Human decisions bind the displayed exact action version and hash. Host-command approvals also bind the connection fingerprint and are consumed once through the resume tool.
-
-Deploy dashboard, Mira and code workers together. The data migration removes legacy mode fields and invalidates old delegated approvals and browser grants. Existing unstarted drafts become explicit review requests; migration never sends or publishes them. Existing completed outcomes remain historical evidence. No provider credentials, integration grants or automation policies are broadened by the migration.
-
-Automatic host-command reviews receive up to three recent, bounded successful
-command observations from the same target and active run. This lets the independent
-reviewer use source/help output already inspected by the assistant instead of
-asking the operator to resupply it. Observations carry their exact command and
-truncation status and remain untrusted data: they cannot grant authority, override
-a denial or establish that a proposed script is safe merely from its filename.
-The reviewer must assess every part of the exact proposed shell action. No
-command allowlist or automatic approval bypass is introduced.
-
-The independent reviewer keeps the selected model but uses its advertised low
-reasoning effort (or that model's default when low is unsupported). This bounded
-classification does not inherit an extended work-turn reasoning setting and time
-out merely because the operator selected deeper reasoning for the main task.
-Review uncertainty still asks; timeouts never imply approval.
-
-Requested implementation includes publishing the tested task branch and opening a
-normal PR for review. This is the existing direct code workflow, not mail/social/
-website publication. Merge still requires the authorized scope and current required
-reviews; releases and deployment remain separate decisions.
+Deploy dashboard and Mira together. This source change does not provision credentials, change active grants, send pending drafts or start paused automations. Tested task branches are published as normal PRs; merge, release and deployment keep their existing requirements.

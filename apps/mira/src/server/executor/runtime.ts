@@ -279,8 +279,12 @@ export async function runMiraExecutor(options: {
                 await runtime?.close();
             }
             try {
-                quotas = observed;
-                models = nativeModels;
+                // A failed probe is not a logout. Retain last reported metadata
+                // for display; dispatch still requires a verified connection.
+                if (chatgpt.state !== "error") {
+                    quotas = observed;
+                    models = nativeModels;
+                }
                 // Keep the configured or previous default during an outage.
                 model =
                     config.model ??
@@ -289,15 +293,18 @@ export async function runMiraExecutor(options: {
                     models[0]?.model ??
                     model ??
                     null;
-                defaultReady = models.some((entry) => entry.model === model);
+                defaultReady =
+                    chatgpt.state === "connected" &&
+                    models.some((entry) => entry.model === model);
                 // Explicit available chats remain usable while default work waits.
-                health.ready = models.length > 0;
+                health.ready = chatgpt.state === "connected" && models.length > 0;
                 const defaultMessage = defaultReady
                     ? null
                     : "The default model is unavailable. Work using it is waiting; choose an available model in Chat or Automation settings.";
-                message = health.ready
-                    ? defaultMessage
-                    : "Mira needs a connected ChatGPT account and an available model.";
+                message =
+                    chatgpt.state === "connected"
+                        ? defaultMessage
+                        : chatgptStatusMessage(chatgpt.state);
             } catch {
                 health.ready = false;
                 message =

@@ -199,7 +199,7 @@ export async function listMiraMail(
 }
 
 /**
- * Queue an exact draft under direct human approval or an exact independent automatic review.
+ * Queue an exact draft under direct human approval or an exact prepared manual request.
  * @param context - Human owner or fenced model context with explicit conversation delegation.
  * @param input - Draft version and displayed content fingerprint.
  * @param binding - Dashboard's configured receiver, matched against the live executor.

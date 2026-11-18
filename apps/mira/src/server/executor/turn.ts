@@ -11,10 +11,7 @@ import { resolveMiraChatSettings } from "../data/chatSettings";
 import { acknowledgeChatSteering, claimChatSteering } from "../data/chatSteering";
 import { readMiraComputerReadiness } from "../data/computerWait";
 import { MiraFailure } from "../data/context";
-import {
-    liveAssistanceMinutes,
-    readLiveAssistanceGuidance,
-} from "../data/liveAssistance";
+import { readLiveAssistanceGuidance } from "../data/liveAssistance";
 import {
     deferMiraRun,
     finishMiraRun,
@@ -34,7 +31,6 @@ import type {
 } from "../integrations/github/configuration";
 import type { HereNowReadConfiguration } from "../integrations/herenow/configuration";
 import type { MoltbookReadConfiguration } from "../integrations/moltbook/configuration";
-import { createMiraActionReviewer } from "../operations/autoReview";
 import type { MiraOperationsConfiguration } from "../operations/configuration";
 import {
     miraInstructions as instructions,
@@ -123,8 +119,8 @@ export async function executeMiraTurn(
     let savedActivity = "";
     let text = "";
     const parts: MiraMessagePart[] = [];
-    let messageId: string | undefined;
     let persisted = "";
+    let savedParts = "";
     let updating = false;
     let renewing = false;
     let renewal: Promise<void> = Promise.resolve();
@@ -186,19 +182,23 @@ export async function executeMiraTurn(
     const flush = setInterval(() => {
         if (
             updating ||
-            (persisted === text && savedActivity === JSON.stringify(activity))
+            (persisted === text &&
+                savedParts === JSON.stringify(parts) &&
+                savedActivity === JSON.stringify(activity))
         )
             return;
         updating = true;
         const snapshot = text;
         const currentActivity = activity;
+        const currentParts = parts.map((part) => ({ ...part }));
         update = Promise.all([
-            saveMiraDelta(client, run, snapshot, [...parts]),
+            saveMiraDelta(client, run, snapshot, currentParts),
             saveMiraActivity(client, run, currentActivity),
         ])
             .then(([textAccepted, activityAccepted]) => {
                 if (textAccepted && activityAccepted) {
                     persisted = snapshot;
+                    savedParts = JSON.stringify(currentParts);
                     savedActivity = JSON.stringify(currentActivity);
                 } else controller.abort();
                 return;
@@ -257,12 +257,11 @@ export async function executeMiraTurn(
         const models = verified.models;
         const settings = resolveMiraChatSettings(models, record.settings, automaticModel);
         const selectedModel = models.find((entry) => entry.model === settings.model)!;
-        assistance = liveAssistanceMinutes(record.settings, run) !== 0;
-        if (assistance && !selectedModel.inputModalities.includes("image"))
-            throw new MiraFailure(
-                "BAD_REQUEST",
-                "Live computer assistance needs a model that supports images."
-            );
+        const computerAssistance =
+            run.manual &&
+            !run.automationId &&
+            !run.taskId &&
+            selectedModel.inputModalities.includes("image");
         const recall = await readMiraRecallPolicy(client, run);
         const recallHash =
             recall.memory && recall.history
@@ -318,17 +317,9 @@ export async function executeMiraTurn(
                     daytona,
                     github,
                     localCode,
-                    operations,
-                    createMiraActionReviewer(client, run, config, {
-                        ...settings,
-                        effort: selectedModel.supportedReasoningEfforts.some(
-                            (entry) => entry.reasoningEffort === "low"
-                        )
-                            ? "low"
-                            : selectedModel.defaultReasoningEffort,
-                    })
+                    operations
                 ),
-                ...(assistance
+                ...(computerAssistance
                     ? [
                           {
                               name: "mira_live_assistance_finish",
@@ -350,17 +341,36 @@ export async function executeMiraTurn(
                           },
                       ]
                     : []),
-            ].filter(
-                (tool) =>
-                    (recall.memory || !tool.name.startsWith("mira_memory_")) &&
-                    (recall.history || tool.name !== "mira_history_search") &&
-                    (recall.conversation ||
-                        (tool.name !== "mira_conversation_history" &&
-                            tool.name !== "mira_history_read")) &&
-                    (selectedModel.inputModalities.includes("image") ||
-                        (!tool.name.startsWith("mira_computer_") &&
-                            !tool.name.startsWith("mira_browser_")))
-            ),
+            ]
+                .map((tool) => {
+                    if (!computerAssistance || tool.name !== "mira_computer_observe")
+                        return tool;
+                    return {
+                        ...tool,
+                        execute: async (...args: Parameters<typeof tool.execute>) => {
+                            const result = await tool.execute(...args);
+                            // Only an actual observation starts continued assistance.
+                            // Retained consent or an ordinary chat never starts screen work.
+                            if (
+                                typeof result !== "string" &&
+                                result.content.some((item) => item.type === "image")
+                            )
+                                assistance = true;
+                            return result;
+                        },
+                    };
+                })
+                .filter(
+                    (tool) =>
+                        (recall.memory || !tool.name.startsWith("mira_memory_")) &&
+                        (recall.history || tool.name !== "mira_history_search") &&
+                        (recall.conversation ||
+                            (tool.name !== "mira_conversation_history" &&
+                                tool.name !== "mira_history_read")) &&
+                        (selectedModel.inputModalities.includes("image") ||
+                            (!tool.name.startsWith("mira_computer_") &&
+                                !tool.name.startsWith("mira_browser_")))
+                ),
             record.providerThread !== null
         );
         let threadId = record.providerThread;
@@ -423,9 +433,9 @@ export async function executeMiraTurn(
         const recallContext = await readMiraRecallContext(client, run);
         const initialPrompt = `${recallContext}\n\n${record.content}`;
         const assistanceInstruction =
-            "Live computer assistance is enabled by the operator. Inspect fresh screen observations and help with their current request. The host will continue after your replies while access remains active. Give concise advice when useful; do not repeat unchanged advice or invent unseen screen activity. Use mira_live_assistance_finish when the operator asks you to stop or the task ends. All existing permissions still apply.";
+            "For requested computer assistance, an actual screen observation enables continued help after replies while access remains active. Retained computer consent alone is not an instruction to observe or act. Use mira_live_assistance_finish when the task ends or the operator asks you to stop working; this finishes the work but keeps the approved computer connection open. All existing permissions still apply.";
         let nextPrompt =
-            initialPrompt + (assistance ? `\n\n${assistanceInstruction}` : "");
+            initialPrompt + (computerAssistance ? `\n\n${assistanceInstruction}` : "");
         let continuation = false;
         let result: Awaited<ReturnType<CodexRuntime["turn"]>>;
         for (;;) {
@@ -445,8 +455,10 @@ export async function executeMiraTurn(
             });
             providerThread = threadId;
             const guidance = continuation ? await claimChatSteering(client, run) : null;
-            const firstPart = parts.length;
-            let firstDelta = true;
+            const messageParts = new Map<
+                string,
+                { part: MiraMessagePart; length: number }
+            >();
             assistanceIdle = false;
             result = await runtime.turn(
                 threadId,
@@ -511,45 +523,59 @@ export async function executeMiraTurn(
                             ...(thinking ? { thinking } : {}),
                         };
                     },
-                    onDelta: (delta, itemId) => {
-                        const separator =
-                            firstDelta && continuation && text ? "\n\n" : "";
+                    onMessage: (message, itemId, completed) => {
+                        let entry = messageParts.get(itemId);
+                        const separator = !entry && text ? "\n\n" : "";
+                        // oxlint-disable-next-line typescript/no-misused-spread -- Match PostgreSQL Unicode code point offsets.
+                        const characters = [...text];
+                        // oxlint-disable-next-line typescript/no-misused-spread -- Match PostgreSQL Unicode code point offsets.
+                        const replacement = [...message];
                         if (
-                            assistance &&
-                            text.length + separator.length + delta.length > 256_000
+                            characters.length +
+                                separator.length +
+                                replacement.length -
+                                (entry?.length ?? 0) >
+                            256_000
                         ) {
                             replyLimitFailure = new MiraFailure(
                                 "PRECONDITION_FAILED",
-                                "Live assistance reached its reply limit. Review the conversation before continuing."
+                                "Mira reached its reply limit. Review the conversation before continuing."
                             );
                             throw replyLimitFailure;
                         }
-                        text += separator;
-                        if (
-                            firstDelta ||
-                            parts.length === 0 ||
-                            (itemId && itemId !== messageId)
-                        ) {
+                        if (!entry) {
                             if (parts.length >= (assistance ? 1024 : 256))
                                 throw new Error("Mira reply limit reached.");
-                            parts.push({
+                            if (separator) characters.push("\n", "\n");
+                            const part: MiraMessagePart = {
                                 id: Bun.randomUUIDv7(),
-                                offset:
-                                    // oxlint-disable-next-line typescript/no-misused-spread -- Match PostgreSQL Unicode code point offsets.
-                                    [...text].length +
-                                    (text && delta.startsWith("\n\n") ? 2 : 0),
+                                offset: characters.length,
                                 createdAt: new Date().toISOString(),
-                            });
-                            messageId = itemId;
+                                completed: false,
+                            };
+                            parts.push(part);
+                            entry = { part, length: 0 };
+                            messageParts.set(itemId, entry);
                         }
-                        text += delta;
-                        firstDelta = false;
+                        const difference = replacement.length - entry.length;
+                        const offset = entry.part.offset;
+                        // Final provider text is authoritative, including corrections to earlier parts.
+                        text =
+                            characters.slice(0, offset).join("") +
+                            message +
+                            characters.slice(offset + entry.length).join("");
+                        let following = false;
+                        for (const part of parts) {
+                            if (following) part.offset += difference;
+                            if (part === entry.part) following = true;
+                        }
+                        entry.length = replacement.length;
+                        entry.part.completed = completed;
                     },
                 }
             );
             providerTurn = undefined;
             if (assistance && result.status === "completed") {
-                for (const part of parts.slice(firstPart)) part.completed = true;
                 await update;
                 if (!(await saveMiraDelta(client, run, text, parts)))
                     throw new Error("Run lease lost while saving completed replies.");

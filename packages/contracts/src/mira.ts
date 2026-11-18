@@ -159,7 +159,6 @@ const modelIdentifier = v.pipe(
     v.maxLength(160),
     v.regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$/)
 );
-export const miraLiveAssistanceMinutesSchema = v.picklist([-1, 0, 30, 60, 120]);
 export const miraChatSettingsSchema = v.strictObject({
     model: v.nullable(modelIdentifier),
     effort: v.nullable(modelIdentifier),
@@ -167,7 +166,6 @@ export const miraChatSettingsSchema = v.strictObject({
     useMemory: v.optional(v.boolean()),
     useHistory: v.optional(v.boolean()),
     executionTarget: v.optional(miraCodeTargetSchema),
-    liveAssistanceMinutes: v.optional(miraLiveAssistanceMinutesSchema),
 });
 export const miraDefaultChatSettings = { model: null, effort: null, serviceTier: null };
 export type MiraChatSettings = v.InferOutput<typeof miraChatSettingsSchema>;
@@ -223,7 +221,7 @@ export interface MiraMessagePart {
     /** Unicode code-point offset, matching PostgreSQL substring and history chunks. */
     offset: number;
     createdAt: string;
-    /** Confirmed provider completion; later continuations cannot change this reply's outcome. */
+    /** True confirms completion; explicit false preserves an unconfirmed stream across later replies. */
     completed?: boolean;
 }
 export interface MiraMessage {
