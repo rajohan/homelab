@@ -7,4 +7,4 @@ pre-commit:
       run: bun fmt --no-config --check {staged_files}
     lint:
       glob: "*.{ts,tsx,js,jsx}"
-      run: bun lint --no-script --deny-warnings {staged_files}
+      run: bun run lint {staged_files}

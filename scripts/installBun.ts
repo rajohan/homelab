@@ -51,10 +51,7 @@ export async function installBun(destination: string): Promise<void> {
     );
     const version = versionFile.trim();
     const revision = revisionFile.trim();
-    if (
-        !/^\d+\.\d+\.\d+-canary\.\d{8}\.\d+$/.test(version) ||
-        !/^[a-f0-9]{40}$/.test(revision)
-    )
+    if (!/^\d+\.\d+\.\d+$/.test(version) || !/^[a-f0-9]{40}$/.test(revision))
         throw new Error("Invalid pinned Bun package or revision.");
     const temporary = await mkdtemp(path.join(tmpdir(), "homelab-bun-"));
     const platform = process.platform === "win32" ? "windows" : "linux";

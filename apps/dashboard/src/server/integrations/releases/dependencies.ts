@@ -10,16 +10,13 @@ import information from "../../../../../../package.json";
 import { readBoundedJson } from "../http/readJson";
 import { githubReleaseRequest } from "../updates/github";
 
-const semanticVersion = v.pipe(
-    v.string(),
-    v.regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/)
-);
+const stableBunVersion = v.pipe(v.string(), v.regex(/^\d+\.\d+\.\d+$/));
 type Source = v.InferOutput<typeof sourceUpdateSchema>;
 type Dependency = {
     id: string;
     name: string;
     version: string;
-    source: Source | { kind: "canary" };
+    source: Source | { kind: "bun" };
 };
 
 /**
@@ -49,12 +46,12 @@ export function buildDependencies(): Dependency[] {
         }
     }
     const bun = information.packageManager.replace(/^bun@/, "");
-    v.parse(v.pipe(semanticVersion, v.regex(/^\d+\.\d+\.\d+-canary\.\d{8}\.\d+$/)), bun);
+    v.parse(stableBunVersion, bun);
     entries.push({
         id: "runtime:bun",
-        name: "Bun Canary",
+        name: "Bun",
         version: bun,
-        source: { kind: "canary" },
+        source: { kind: "bun" },
     });
     return entries;
 }
@@ -152,11 +149,9 @@ async function latest(
     const versions = await Promise.all(
         ["linux", "windows"].map(async (platform) => {
             const body = v.parse(
-                v.object({ version: semanticVersion }),
-                await read(`https://registry.npmjs.org/@oven/bun-${platform}-x64/canary`)
+                v.object({ version: stableBunVersion }),
+                await read(`https://registry.npmjs.org/@oven/bun-${platform}-x64/latest`)
             );
-            if (!/^\d+\.\d+\.\d+-canary\.\d{8}\.\d+$/.test(body.version))
-                throw new Error("Unexpected Bun channel.");
             return body.version;
         })
     );
@@ -188,10 +183,7 @@ export async function readBuildDependencies(
                     AbortSignal.any([signal, AbortSignal.timeout(12_000)]),
                     request
                 );
-                const newer =
-                    dependency.source.kind === "canary"
-                        ? Bun.semver.order(available, dependency.version) > 0
-                        : numericOrder(available, dependency.version) > 0;
+                const newer = numericOrder(available, dependency.version) > 0;
                 return {
                     ...row,
                     available,

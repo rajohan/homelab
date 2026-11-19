@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 /**
- * Verify the exact runtime revision; Canary's short version also identifies stable Bun.
+ * Verify the exact runtime revision used by builds and checks.
  * @returns Completion after the runtime matches the repository revision.
  */
 export async function verifyBun(): Promise<void> {

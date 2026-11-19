@@ -4,11 +4,11 @@ Dependabot keeps the update conventions from Mira-Dashboard: weekly Monday check
 
 GitHub Actions are checked at 06:30, with at most four open version-update PRs, the `type: dependencies` and `area: ci` labels, and the `ci(deps)` prefix.
 
-Bun application updates are checked at 06:00, with up to five open version-update PRs, the `type: dependencies` label and the `chore(deps)` prefix. Version updates are enabled again: GitHub announced hosted Bun 1.4 support on 2026-10-20, and Dependabot's merged parser/updater change supports text lockfile versions 2 and 3. This repository uses the immutable Bun Canary package `1.4.4-canary.20261118.1`, source revision `4ce14ba8b150c3c7315284f3df8480eb4158b38a`, and retains `bun.lock` version 2. Do not downgrade the lockfile or switch package managers. `.bun-version` and `packageManager` name the published npm package; `.bun-revision` identifies the executable. `Bun.version` reports `1.4.5`, so `engines.bun` describes that compatibility version while setup, checks, Windows packaging and sandbox qualification verify the full revision. `@types/bun` remains pinned to the published 1.4.4 types.
+Bun application updates are checked at 06:00, with up to five open version-update PRs, the `type: dependencies` label and the `chore(deps)` prefix. Version updates are enabled again: GitHub announced hosted Bun 1.4 support on 2026-10-20, and Dependabot's merged parser/updater change supports text lockfile versions 2 and 3. The repository uses stable Bun 1.4.5 and lockfile version 2. The native installer and runtime checks verify the exact revision in `.bun-revision`. The published Bun types are pinned separately.
 
-CI and Docker use stable 1.4.4 only to bootstrap the immutable native package with `scripts/installBun.ts`; application builds and final runtime images use Canary. The shared GitHub action replaces all workflow-specific setup steps. No moving `canary` tag is downloaded. Update both pin files, `packageManager`, and the sandbox profile together, qualify both operating systems, and publish a new check image before changing the Main/Daytona image binding. The new harness refuses older snapshots. Daytona's policy fingerprint includes the exact runtime revision and requires fresh operator qualification; older policy fingerprints remain valid only for observing and cleaning up existing attempts.
+CI and Docker bootstrap the same stable version. Update both pin files, `packageManager`, and the sandbox profile together, qualify both operating systems, and publish a new check image before changing the Main/Daytona image binding. The new harness refuses older snapshots. Daytona's policy fingerprint includes the exact runtime revision and requires fresh operator qualification; older policy fingerprints remain valid only for observing and cleaning up existing attempts.
 
-The separate `oxfmt`, `oxlint` and `oxlint-tsgolint` engines and the unused preset package have been removed. Bun supplies formatting, type-aware linting and TypeScript diagnostics, configured in `bunfig.toml`. The reviewed preset rules are now explicit in that file; the existing `oxlint-tailwindcss` and ESLint JSDoc/React plugins remain pinned. JSDoc parameter selectors preserve the previous native rule's typed-function exemptions. The resolved native lint policy and intentional diagnostics were compared with the original setup. Formatting preserves the existing printing style and Tailwind ordering while adopting Bun's named-import sorting and import merging, as approved for this migration.
+The separate `oxfmt`, `oxlint` and `oxlint-tsgolint` engines and the unused preset package have been removed. Stable Bun supplies formatting. Stable 1.4.5 does not include the lint command, so `bun run lint` resolves the pinned development-only Canary package and checks revision `4ce14ba8b150c3c7315284f3df8480eb4158b38a` before running the existing type-aware lint policy in `bunfig.toml`. The reviewed preset rules are now explicit in that file; the existing `oxlint-tailwindcss` and ESLint JSDoc/React plugins remain pinned. JSDoc parameter selectors preserve the previous native rule's typed-function exemptions. The resolved native lint policy and intentional diagnostics were compared with the original setup. Formatting preserves the existing printing style and Tailwind ordering while adopting Bun's named-import sorting and import merging, as approved for this migration.
 
 Dependabot version updates, security updates and alerts remain separate features. Continue running `bun audit` and reviewing security findings. The first hosted Bun update after this configuration reaches the default branch must preserve lockfile version 2, install with the pinned Bun version and pass CI.
 
@@ -50,7 +50,7 @@ application and proxy base images. Installed images update through Homelab relea
 Windows build-tool pins are centralized in `package.json` under `config.windows`,
 including their checksum, publisher and official update feed. Skill source versions,
 revisions and source paths live under `config.skills`. The updater checks all these
-entries and the root `packageManager` Bun Canary channel every hour; no manual search
+entries and the root `packageManager` stable Bun channel every hour; no manual search
 for new upstream releases is required. Dependabot continues to own npm dependencies,
 GitHub Actions and both Dockerfiles. The installed companion
 continues to use the standard Homelab release updater; no locally installed helper is introduced.
@@ -66,8 +66,8 @@ release or rollback cannot show another version's pins as current.
 
 Impeccable and Intent use their official stable GitHub releases. Inno Setup uses its
 official GitHub release tags; WebView2 uses the stable NuGet SDK feed. Bun follows
-the existing Canary channel and requires matching Linux/Windows package versions.
-Newer stable Bun releases do not silently replace that chosen channel. All reads
+the stable npm channel and requires matching Linux/Windows package versions.
+All reads
 are bounded, and GitHub uses the existing release credential/cache/backoff.
 
 New source entries in `config.windows` or `config.skills` must include a supported
