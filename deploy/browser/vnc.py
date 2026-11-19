@@ -5,7 +5,7 @@ import subprocess
 import sys
 import threading
 
-if len(sys.argv) != 2 or sys.argv[1] not in ("view", "control"):
+if len(sys.argv) != 2 or sys.argv[1] not in ("view", "input", "control"):
     raise SystemExit(2)
 
 parent, child = socket.socketpair()
@@ -14,7 +14,9 @@ arguments = [
     "-auth", "/tmp/mira-browser.xauth", "-quiet", "-nosel", "-noremote", "-xkb",
 ]
 if sys.argv[1] == "view":
-    arguments.append("-viewonly")
+    arguments.extend(["-viewonly", "-nocursorshape"])
+elif sys.argv[1] == "input":
+    arguments.append("-nofb")
 process = subprocess.Popen(
     arguments, stdin=child, stdout=child, stderr=subprocess.DEVNULL, close_fds=True
 )

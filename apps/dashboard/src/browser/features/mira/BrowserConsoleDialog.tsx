@@ -127,7 +127,7 @@ export function BrowserConsoleDialog({
                 )}
                 {state && fresh ? (
                     <BrowserLiveView
-                        key={state.epoch}
+                        key={access.id}
                         accessId={access.id}
                         epoch={state.epoch}
                         control={human && access.mode === "control"}

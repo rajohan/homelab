@@ -1,5 +1,7 @@
 import type { MiraHostCommand } from "@homelab/contracts/miraOperations";
+import { Effect, Semaphore } from "effect";
 
+import { MiraFailure } from "../data/context";
 import type { MiraOperationsTarget } from "./configuration";
 
 interface HostCommandResult {
@@ -61,7 +63,7 @@ export function miraOperationsSshArguments(target: MiraOperationsTarget): string
         target.user,
         "--",
         target.host,
-        "sh -s",
+        "printf R && exec sh -s",
     ];
 }
 
@@ -88,10 +90,13 @@ async function boundedOutput(stream: ReadableStream<Uint8Array>) {
     }
 }
 
-function spawnCommand(args: string[], stdin: Uint8Array) {
+// Bound unauthenticated connections. Established commands release their slot immediately.
+const connections = Semaphore.makeUnsafe(4);
+
+function spawnCommand(args: string[]) {
     return Bun.spawn(args, {
         env: { PATH: "/usr/bin:/bin", HOME: "/nonexistent", LANG: "C.UTF-8" },
-        stdin,
+        stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",
     });
@@ -110,23 +115,44 @@ export async function executeMiraHostCommand(
     signal: AbortSignal,
     spawn = spawnCommand
 ) {
-    signal.throwIfAborted();
     const deadline = AbortSignal.any([
         signal,
         AbortSignal.timeout(command.timeoutSeconds * 1000),
     ]);
-    const child = spawn(
-        miraOperationsSshArguments(target),
-        new TextEncoder().encode(command.command + "\n")
-    );
-    const stop = () => child.kill("SIGKILL");
+    let child: ReturnType<typeof spawnCommand> | undefined;
+    let sent = false;
+    const stop = () => child?.kill("SIGKILL");
     deadline.addEventListener("abort", stop, { once: true });
-    if (deadline.aborted) stop();
     try {
+        const connected = await Effect.runPromise(
+            connections.withPermit(
+                Effect.tryPromise(async () => {
+                    deadline.throwIfAborted();
+                    child = spawn(miraOperationsSshArguments(target));
+                    const reader = child.stdout.getReader();
+                    try {
+                        // Only the fixed remote wrapper can write before we supply stdin.
+                        const { value } = await reader.read();
+                        if (value?.length !== 1 || value[0] !== 0x52)
+                            throw new Error("Missing SSH readiness acknowledgement.");
+                        return child;
+                    } finally {
+                        reader.releaseLock();
+                    }
+                })
+            ),
+            { signal: deadline }
+        );
+        deadline.throwIfAborted();
+        sent = true;
         const [exitCode, stdout, stderr] = await Promise.all([
-            child.exited,
-            boundedOutput(child.stdout),
-            boundedOutput(child.stderr),
+            connected.exited,
+            boundedOutput(connected.stdout),
+            boundedOutput(connected.stderr),
+            (async () => {
+                await connected.stdin.write(command.command + "\n");
+                await connected.stdin.end();
+            })(),
         ]);
         deadline.throwIfAborted();
         if (exitCode === 255) throw new Error("SSH outcome was not confirmed.");
@@ -139,9 +165,16 @@ export async function executeMiraHostCommand(
         };
         if (exitCode !== 0) throw new MiraHostCommandFailure(result);
         return result;
+    } catch (error) {
+        if (!sent)
+            throw new MiraFailure(
+                "PRECONDITION_FAILED",
+                "The SSH connection did not become ready. No command was sent."
+            );
+        throw error;
     } finally {
         deadline.removeEventListener("abort", stop);
-        if (child.exitCode === null) child.kill("SIGKILL");
-        await child.exited;
+        if (child?.exitCode === null) stop();
+        await child?.exited;
     }
 }

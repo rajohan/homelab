@@ -37,15 +37,22 @@ export async function readMiraBrowserLive(context: MiraContext, input: unknown) 
             !access.policy ||
             !unrestrictedBrowserSites(access.policy.origins) ||
             !row ||
-            row.epoch !== identity.epoch
+            (identity.epoch !== null && row.epoch !== identity.epoch)
         )
             throw new MiraFailure(
                 "PRECONDITION_FAILED",
                 "Browser display is starting, stopped or changed."
             );
-        return {
-            ...row,
-            control: access.controller === "human" && access.mode === "control",
-        };
+        // A session-scoped display can never acquire input privileges.
+        const control =
+            identity.epoch !== null &&
+            access.controller === "human" &&
+            access.mode === "control";
+        if (identity.inputOnly && !control)
+            throw new MiraFailure(
+                "PRECONDITION_FAILED",
+                "Browser input requires operator control."
+            );
+        return { ...row, control };
     });
 }
