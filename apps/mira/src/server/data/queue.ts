@@ -71,7 +71,7 @@ async function reconcileExpired(query: TransactionSQL): Promise<number> {
     for (const run of expired) {
         await notifyMiraRun(query, run.id);
         await query`UPDATE mira_messages SET state = 'failed' WHERE id = ${run.assistantMessageId}`;
-        await query`UPDATE mira_tool_receipts SET state='failed',message='The screen capture did not complete. No clicks or keystrokes were sent.',finished_at=now() WHERE run_id=${run.id} AND state='running' AND tool='mira_computer_observe'`;
+        await query`UPDATE mira_tool_receipts SET state='failed',message='The observation did not complete. No clicks or keystrokes were sent.',finished_at=now() WHERE run_id=${run.id} AND state='running' AND tool IN ('mira_computer_observe','mira_browser_observe')`;
         await query`UPDATE mira_tool_receipts SET state = 'unknown', message = 'Executor disconnected; reconcile before retrying.' WHERE run_id = ${run.id} AND state = 'running'`;
         await auditMira(
             query,
@@ -256,7 +256,7 @@ export async function finishMiraRun(
             { id: string; cancelRequested: boolean }[]
         >`SELECT id,cancel_requested AS "cancelRequested" FROM mira_runs WHERE id=${run.id} AND state='running' AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() FOR UPDATE`;
         if (!owned) return false;
-        await query`UPDATE mira_tool_receipts SET state='failed',message='The screen capture did not complete. No clicks or keystrokes were sent.',finished_at=now() WHERE run_id=${run.id} AND state='running' AND tool='mira_computer_observe'`;
+        await query`UPDATE mira_tool_receipts SET state='failed',message='The observation did not complete. No clicks or keystrokes were sent.',finished_at=now() WHERE run_id=${run.id} AND state='running' AND tool IN ('mira_computer_observe','mira_browser_observe')`;
         await query`UPDATE mira_tool_receipts SET state='unknown', message='The tool receipt was not completed. Review before continuing.', finished_at=now() WHERE run_id=${run.id} AND state='running'`;
         const [receipts] = await query<
             { uncertain: boolean }[]

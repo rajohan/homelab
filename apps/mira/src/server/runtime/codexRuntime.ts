@@ -543,6 +543,8 @@ export class CodexRuntime {
                     item.output.threadId === threadId &&
                     (!active.id || item.output.turnId === active.id)
                 ) {
+                    if (item.output.item.type === "contextCompaction")
+                        options.onActivity?.({ phase: "compacting", tool: null });
                     if (item.output.item.type === "reasoning")
                         options.onActivity?.({ phase: "thinking", tool: null });
                     if (item.output.item.type === "webSearch")
@@ -567,6 +569,10 @@ export class CodexRuntime {
                     (active.id && parsed.output.turnId !== active.id)
                 )
                     return;
+                if (parsed.output.item.type === "contextCompaction") {
+                    options.onActivity?.({ phase: "working", tool: null });
+                    return;
+                }
                 if (parsed.output.item.type === "agentMessage") {
                     const { item } = v.parse(
                         v.object({

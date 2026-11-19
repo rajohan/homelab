@@ -115,7 +115,7 @@ export async function executeMiraTurn(
     signal.addEventListener("abort", stopTransport, { once: true });
     if (signal.aborted) stopTransport();
     let attachments: Awaited<ReturnType<typeof prepareMiraAttachments>> | undefined;
-    let activity: MiraActivity = { phase: "starting", tool: null };
+    let activity: MiraActivity = { phase: "preparing", tool: null };
     let savedActivity = "";
     let text = "";
     const parts: MiraMessagePart[] = [];
@@ -226,6 +226,7 @@ export async function executeMiraTurn(
             .filter((skill) => skill.control.enabled)
             .map((skill) => skill.id)
             .toSorted();
+        activity = { phase: "connecting", tool: null };
         runtime = await CodexRuntime.connect(
             {
                 command: config.command,
@@ -254,6 +255,7 @@ export async function executeMiraTurn(
                 return;
             throw new ProviderRequestError("authentication");
         }
+        activity = { phase: "preparing", tool: null };
         const models = verified.models;
         const settings = resolveMiraChatSettings(models, record.settings, automaticModel);
         const selectedModel = models.find((entry) => entry.model === settings.model)!;
@@ -439,6 +441,7 @@ export async function executeMiraTurn(
         let continuation = false;
         let result: Awaited<ReturnType<CodexRuntime["turn"]>>;
         for (;;) {
+            activity = { ...activity, phase: "preparing", tool: null };
             threadId = await maintainMiraContext({
                 client,
                 run,
@@ -452,8 +455,12 @@ export async function executeMiraTurn(
                 // Retire the preceding reply's images before the next model turn,
                 // never keep a completed reply running for provider maintenance.
                 expireImages: !continuation,
+                onCompacting: () => {
+                    activity = { ...activity, phase: "compacting", tool: null };
+                },
             });
             providerThread = threadId;
+            activity = { ...activity, phase: "working", tool: null };
             const guidance = continuation ? await claimChatSteering(client, run) : null;
             const messageParts = new Map<
                 string,

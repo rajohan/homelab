@@ -38,6 +38,9 @@ export function ChatActivity({
         replying: "Writing reply…",
         tool: "Using a tool…",
         starting: "Starting…",
+        connecting: "Connecting to ChatGPT…",
+        preparing: "Preparing context…",
+        compacting: "Compacting context…",
         working: "Working…",
     };
     let label =
@@ -52,6 +55,9 @@ export function ChatActivity({
         replying: MessageSquare,
         tool: Wrench,
         starting: LoaderCircle,
+        connecting: LoaderCircle,
+        preparing: LoaderCircle,
+        compacting: LoaderCircle,
         working: LoaderCircle,
     };
     const Icon = icons[phase ?? "working"];

@@ -240,7 +240,15 @@ export type MiraRunState =
     | "failed"
     | "needs_attention";
 export interface MiraActivity {
-    phase: "starting" | "thinking" | "replying" | "tool" | "working";
+    phase:
+        | "starting"
+        | "connecting"
+        | "preparing"
+        | "compacting"
+        | "thinking"
+        | "replying"
+        | "tool"
+        | "working";
     tool: string | null;
     /** Provider-supplied display summary; never raw hidden reasoning. */
     thinking?: string;
