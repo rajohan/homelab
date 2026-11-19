@@ -7,7 +7,11 @@ bun = true
 shell = "bun"
 
 [serve.static]
-plugins = ["./scripts/development/routerHmr.ts", "bun-plugin-tailwind"]
+plugins = [
+    "./scripts/development/routerHmr.ts",
+    "./scripts/development/novnc.ts",
+    "bun-plugin-tailwind",
+]
 env = "disable"
 
 [fmt]

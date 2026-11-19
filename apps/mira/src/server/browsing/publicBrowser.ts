@@ -12,7 +12,11 @@ import { type CDPSession, launch, type Page } from "puppeteer-core";
 import * as v from "valibot";
 
 import { publicBrowserNetwork } from "../config/environment";
-import { browserDesktopFrame, browserDesktopInput } from "./desktop";
+import {
+    browserDesktopClipboard,
+    browserDesktopFrame,
+    browserDesktopInput,
+} from "./desktop";
 import { type BrowserGrant, browserUrl } from "./policy";
 import { browserProfileDirectory } from "./profile";
 import { publicDocument, publicInput, publicOutline } from "./publicPage";
@@ -59,6 +63,7 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
         ...(grant.savedProfile ? { userDataDir: savedDirectory } : {}),
         executablePath: grant.executable,
         headless: false,
+        ignoreDefaultArgs: ["--enable-automation"],
         pipe: true,
         timeout: 30_000,
         protocolTimeout: 10_000,
@@ -272,6 +277,10 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
         return {
             close,
             observe,
+            clipboard: (input: unknown, operation: AbortSignal) => {
+                observation = undefined;
+                return browserDesktopClipboard(input, operation);
+            },
             tabs: async (input: unknown, operation: AbortSignal, operator = false) => {
                 operation.throwIfAborted();
                 observation = undefined;

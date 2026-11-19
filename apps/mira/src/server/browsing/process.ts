@@ -1,4 +1,8 @@
 import { miraBrowserTabCommandSchema } from "@homelab/contracts/miraBrowser";
+import {
+    browserClipboardCommandSchema,
+    browserClipboardResultSchema,
+} from "@homelab/contracts/miraBrowserClipboard";
 import * as v from "valibot";
 
 import { openBrowserConnection } from "./connection";
@@ -129,6 +133,17 @@ export async function openBrowserWorker(
     };
     return {
         signal: connection.signal,
+        clipboard: (input: unknown, operation: AbortSignal) =>
+            run(operation, async () => {
+                if (grant.mode !== "control")
+                    throw new Error("Browser access is view-only.");
+                observed = undefined;
+                const params = v.parse(browserClipboardCommandSchema, input);
+                return v.parse(
+                    browserClipboardResultSchema,
+                    await connection.request({ method: "clipboard", params }, operation)
+                );
+            }),
         observe: (operation: AbortSignal, operator = false) =>
             run(operation, async () => {
                 return observe(

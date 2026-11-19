@@ -3,6 +3,8 @@ import RFB from "@novnc/novnc";
 import { Maximize, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { BrowserClipboard } from "./BrowserClipboard";
+
 /** Display the current Chromium window and route direct input only during operator control.
  * @returns A live, keyboard-focusable browser viewport with explicit connection recovery.
  */
@@ -103,6 +105,13 @@ export function BrowserLiveView({
                     </div>
                 )}
             </div>
+            <BrowserClipboard
+                key={`${accessId}:${epoch}:${control}:${state}`}
+                target={container}
+                accessId={accessId}
+                epoch={epoch}
+                enabled={control && state === "connected"}
+            />
             <div className="flex items-center justify-between gap-3">
                 <p className="text-sm text-primary-300">
                     {control

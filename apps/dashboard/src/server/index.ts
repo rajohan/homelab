@@ -22,6 +22,7 @@ import {
 } from "./http/responses";
 import { createDashboardAuthentication } from "./identity/authentication";
 import { agentMailReceiverHeartbeat, agentMailWebhookReceiver } from "./mira/agentmail";
+import { browserClipboardRequest } from "./mira/browserClipboard";
 import {
     browserDisplayHandlers,
     type BrowserDisplaySocket,
@@ -80,13 +81,18 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
     ): Promise<Response | undefined> {
         try {
             const incomingPath = new URL(incoming.url).pathname;
-            if (incomingPath === "/api/mira/browser/display") {
+            if (
+                incomingPath === "/api/mira/browser/display" ||
+                incomingPath === "/api/mira/browser/clipboard"
+            ) {
+                const clipboard = incomingPath.endsWith("/clipboard");
                 if (
                     !authentication ||
                     !configuration ||
-                    incoming.method !== "GET" ||
+                    incoming.method !== (clipboard ? "POST" : "GET") ||
                     incoming.headers.get("origin") !== configuration.origin ||
-                    incoming.headers.get("upgrade")?.toLowerCase() !== "websocket" ||
+                    (!clipboard &&
+                        incoming.headers.get("upgrade")?.toLowerCase() !== "websocket") ||
                     incoming.headers.has("authorization")
                 )
                     return json(
@@ -98,6 +104,12 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
                 const passiveHeaders = new Headers(incoming.headers);
                 passiveHeaders.set("x-homelab-passive", "1");
                 const passive = new Request(incoming, { headers: passiveHeaders });
+                if (clipboard)
+                    return await browserClipboardRequest(incoming, {
+                        operations,
+                        principal,
+                        verifyHuman: () => authentication.operationPrincipal(passive),
+                    });
                 const data = await prepareBrowserDisplay(incoming, {
                     operations,
                     principal,

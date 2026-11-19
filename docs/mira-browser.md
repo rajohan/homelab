@@ -159,7 +159,7 @@ Model observations capture the full isolated Chromium desktop with scrot directl
 to memory, including tabs, menus and the address bar. Native model input uses
 xdotool with fixed executables and validated argument arrays: pointer movement,
 single/double/right clicks, dragging, wheel input, key combinations and literal
-text at the current caret. Text goes through stdin to a short-lived clipboard owner inside the isolated desktop, never shell interpolation. Native paste supports Unicode and releases that private selection after delivery; it never reads or connects to the operator\'s PC clipboard.
+text at the current caret. Text goes through stdin to a short-lived clipboard owner inside the isolated desktop, never shell interpolation. Native paste supports Unicode and releases that private selection after delivery; model input never reads the operator's PC clipboard.
 These tools are Debian packages in the managed Main image.
 
 Each native action consumes a fresh observation, checks control ownership and
@@ -169,3 +169,9 @@ Chromium pages have no website URL or element refs, but remain visible and
 operable through the native window. The model receives neither a shell nor a
 CDP endpoint. Password extraction, operating human security confirmations and
 unconfirmed file transfers remain outside the model tool contract.
+
+### Operator clipboard
+
+While the operator has control, Ctrl/Cmd+C and Ctrl/Cmd+V transfer plain text between their PC and Chromium. Explicit copy/paste buttons provide the same bridge; a text field is available if the local browser refuses clipboard permission. Transfer is limited to 8,192 characters, preserves Unicode, and requires an explicit user gesture. View-only sessions cannot transfer text. The authenticated same-origin endpoint and private host socket recheck owner, process and console epoch. The host serializes clipboard work with browser commands and waits for in-flight input before handing control back. Text is held in memory only: it is not a chat attachment, tool result, database command or log entry. No automatic clipboard synchronization, file transfer or credential extraction is exposed.
+
+The development server bundles the installed noVNC dependency into one module to avoid Bun HMR initialization cycles. Application HMR remains enabled and production uses the normal root dependency and build.

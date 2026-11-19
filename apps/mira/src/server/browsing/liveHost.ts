@@ -2,11 +2,19 @@ import { chmod, lstat, mkdir, unlink } from "node:fs/promises";
 import { connect, createServer, type Socket } from "node:net";
 import path from "node:path";
 
+import {
+    type browserClipboardCommandSchema,
+    browserClipboardResultSchema,
+} from "@homelab/contracts/miraBrowserClipboard";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
 import { readMiraBrowserLive } from "../data/browserLive";
-import { browserLiveIdentitySchema, browserLiveSocket } from "./liveSocket";
+import {
+    type browserLiveIdentitySchema,
+    browserLiveRequestSchema,
+    browserLiveSocket,
+} from "./liveSocket";
 import { BrowserDisplayUnavailable, openBrowserVnc } from "./vnc";
 
 type Identity = v.InferOutput<typeof browserLiveIdentitySchema>;
@@ -15,12 +23,16 @@ type Entry = {
     processId: string;
     containerId: string;
     signal: AbortSignal;
+    clipboard: (
+        input: unknown
+    ) => Promise<v.InferOutput<typeof browserClipboardResultSchema>>;
 };
 type Viewer = {
     identity: Identity;
     control: boolean;
     socket: Socket;
     abort: AbortController;
+    clipboard?: Promise<void>;
     stop: () => Promise<void>;
 };
 
@@ -61,6 +73,14 @@ export async function serveBrowserLive(options: {
     const entries = new Map<string, Entry>();
     const viewers = new Map<string, Viewer>();
     const invalidated = new Set<string>();
+    const clipboard = new Map<
+        string,
+        {
+            identity: Identity;
+            command: v.InferOutput<typeof browserClipboardCommandSchema>;
+            socket: Socket;
+        }
+    >();
     const sockets = new Set<Socket>();
     const context = (owner: string) => ({
         client: options.client,
@@ -112,6 +132,7 @@ export async function serveBrowserLive(options: {
                         if (!(error instanceof BrowserDisplayUnavailable)) throw error;
                     }
                     await display?.close();
+                    await viewer.clipboard;
                     if (row.control) invalidated.add(identity.accessId);
                     return;
                 })),
@@ -152,7 +173,7 @@ export async function serveBrowserLive(options: {
         socket.once("close", () => clearTimeout(timer));
         const receive = (chunk: Buffer) => {
             buffer = Buffer.concat([buffer, chunk]);
-            if (buffer.length > 1024) {
+            if (buffer.length > 64 * 1024) {
                 socket.destroy();
                 return;
             }
@@ -166,11 +187,35 @@ export async function serveBrowserLive(options: {
                 return;
             }
             try {
-                const identity = v.parse(
-                    browserLiveIdentitySchema,
-                    JSON.parse(buffer.toString("utf8"))
+                const request = v.parse(
+                    browserLiveRequestSchema,
+                    JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(buffer))
                 );
-                void accept(socket, identity).catch(() => socket.destroy());
+                const identity = {
+                    owner: request.owner,
+                    accessId: request.accessId,
+                    epoch: request.epoch,
+                };
+                if ("clipboard" in request) {
+                    const viewer = viewers.get(identity.accessId);
+                    if (
+                        !viewer?.control ||
+                        viewer.socket.destroyed ||
+                        viewer.identity.owner !== identity.owner ||
+                        viewer.identity.epoch !== identity.epoch ||
+                        clipboard.has(identity.accessId) ||
+                        viewer.clipboard
+                    )
+                        throw new Error("Clipboard is unavailable.");
+                    const pending = { identity, command: request.clipboard, socket };
+                    clipboard.set(identity.accessId, pending);
+                    socket.once("close", () => {
+                        if (clipboard.get(identity.accessId) === pending)
+                            clipboard.delete(identity.accessId);
+                    });
+                    socket.resume();
+                    socket.once("data", () => socket.destroy());
+                } else void accept(socket, identity).catch(() => socket.destroy());
             } catch {
                 socket.destroy();
             }
@@ -213,10 +258,50 @@ export async function serveBrowserLive(options: {
                     if (viewers.get(accessId) === viewer) viewers.delete(accessId);
                 }
             }
+            const pending = clipboard.get(accessId);
+            if (pending) {
+                clipboard.delete(accessId);
+                const currentViewer = viewers.get(accessId);
+                const perform = async () => {
+                    try {
+                        const { row, entry } = await authority(pending.identity);
+                        if (
+                            !row.control ||
+                            !currentViewer?.control ||
+                            currentViewer.socket.destroyed ||
+                            currentViewer.identity.epoch !== pending.identity.epoch ||
+                            pending.socket.destroyed
+                        )
+                            throw new Error("Clipboard control changed.");
+                        const result = await entry.clipboard(pending.command);
+                        invalidated.add(accessId);
+                        const current = await authority(pending.identity);
+                        if (
+                            !current.row.control ||
+                            currentViewer.socket.destroyed ||
+                            pending.socket.destroyed
+                        )
+                            throw new Error("Clipboard control changed.");
+                        pending.socket.end(
+                            JSON.stringify(
+                                v.parse(browserClipboardResultSchema, result)
+                            ) + "\n"
+                        );
+                    } catch {
+                        pending.socket.destroy();
+                    }
+                };
+                const work = perform();
+                if (currentViewer) currentViewer.clipboard = work;
+                await work;
+                if (currentViewer) delete currentViewer.clipboard;
+            }
             return invalidated.delete(accessId);
         },
         unregister: async (accessId: string) => {
             entries.delete(accessId);
+            clipboard.get(accessId)?.socket.destroy();
+            clipboard.delete(accessId);
             const viewer = viewers.get(accessId);
             if (viewer) {
                 await viewer.stop();

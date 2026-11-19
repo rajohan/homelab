@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import { browserClipboardCommandSchema } from "@homelab/contracts/miraBrowserClipboard";
 import * as v from "valibot";
 
 const uuid = v.pipe(v.string(), v.uuid());
@@ -8,6 +9,14 @@ export const browserLiveIdentitySchema = v.strictObject({
     accessId: uuid,
     epoch: uuid,
 });
+
+export const browserLiveRequestSchema = v.union([
+    browserLiveIdentitySchema,
+    v.strictObject({
+        ...browserLiveIdentitySchema.entries,
+        clipboard: browserClipboardCommandSchema,
+    }),
+]);
 
 /** Resolve a private host socket inside the existing shared Mira storage.
  * @param directory - Trusted attachment directory from service configuration.

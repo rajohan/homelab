@@ -1,6 +1,12 @@
+import { setTimeout as delay } from "node:timers/promises";
+
 import type { miraBrowserActionSchema } from "@homelab/contracts/miraBrowser";
+import {
+    browserClipboardCommandSchema,
+    browserClipboardTextSchema,
+} from "@homelab/contracts/miraBrowserClipboard";
 import { imageSize } from "image-size";
-import type * as v from "valibot";
+import * as v from "valibot";
 
 type Action = Exclude<
     v.InferOutput<typeof miraBrowserActionSchema>,
@@ -15,7 +21,11 @@ const desktopEnvironment = {
     PATH: "/usr/bin:/bin",
 };
 
-async function desktop(command: string[], signal: AbortSignal) {
+async function desktop(
+    command: string[],
+    signal: AbortSignal,
+    maximum = 4 * 1024 * 1024
+) {
     signal.throwIfAborted();
     const child = Bun.spawn(command, {
         stdin: "ignore",
@@ -31,7 +41,7 @@ async function desktop(command: string[], signal: AbortSignal) {
         let length = 0;
         for await (const chunk of child.stdout) {
             length += chunk.length;
-            if (length > 4 * 1024 * 1024)
+            if (length > maximum)
                 throw new Error("Browser desktop output exceeds its bound.");
             chunks.push(chunk);
         }
@@ -50,8 +60,8 @@ async function desktop(command: string[], signal: AbortSignal) {
 
 async function pasteBrowserText(text: string, signal: AbortSignal) {
     signal.throwIfAborted();
-    // This private desktop clipboard never connects to the operator's PC. Keep
-    // Unicode text only for the paste, then release the selection and its owner.
+    // Keep Unicode text only for this paste, then release its selection owner.
+    // Human clipboard transfer is separately authorized by the live console.
     const clipboard = Bun.spawn(
         ["/usr/bin/xclip", "-selection", "clipboard", "-in", "-quiet"],
         { stdin: "pipe", stdout: "ignore", stderr: "pipe", env: desktopEnvironment }
@@ -205,5 +215,47 @@ export async function browserDesktopInput(
                 ["/usr/bin/xdotool", "mouseup", "1"],
                 AbortSignal.timeout(5000)
             );
+    }
+}
+
+/** Transfer plain Unicode text for an authenticated human console gesture.
+ * @param input - Fixed copy, read or paste operation; no executable or shell input.
+ * @param signal - Session cancellation, including container retirement.
+ * @returns Bounded text or a redacted failure, never clipboard contents in diagnostics.
+ */
+export async function browserDesktopClipboard(input: unknown, signal: AbortSignal) {
+    const command = v.parse(browserClipboardCommandSchema, input);
+    try {
+        if (command.kind === "paste") {
+            await pasteBrowserText(command.text, signal);
+            return { ok: true as const, text: "" };
+        }
+        if (command.kind === "copy") {
+            await desktop(
+                ["/usr/bin/xdotool", "key", "--clearmodifiers", "ctrl+c"],
+                signal
+            );
+            await delay(150, undefined, { signal });
+        }
+        const bytes = await desktop(
+            [
+                "/usr/bin/xclip",
+                "-selection",
+                "clipboard",
+                "-out",
+                "-target",
+                "UTF8_STRING",
+            ],
+            signal,
+            32 * 1024
+        );
+        const text = v.parse(
+            browserClipboardTextSchema,
+            new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+        );
+        return { ok: true as const, text };
+    } catch {
+        signal.throwIfAborted();
+        return { ok: false as const };
     }
 }
