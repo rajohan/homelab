@@ -5,6 +5,7 @@ import path from "node:path";
 import {
     type browserClipboardCommandSchema,
     browserClipboardResultSchema,
+    browserClipboardTimeoutMs,
 } from "@homelab/contracts/miraBrowserClipboard";
 import type { SQL } from "bun";
 import * as v from "valibot";
@@ -24,7 +25,8 @@ type Entry = {
     containerId: string;
     signal: AbortSignal;
     clipboard: (
-        input: unknown
+        input: unknown,
+        signal: AbortSignal
     ) => Promise<v.InferOutput<typeof browserClipboardResultSchema>>;
 };
 type Viewer = {
@@ -78,6 +80,7 @@ export async function serveBrowserLive(options: {
         {
             identity: Identity;
             command: v.InferOutput<typeof browserClipboardCommandSchema>;
+            signal: AbortSignal;
             socket: Socket;
         }
     >();
@@ -207,9 +210,25 @@ export async function serveBrowserLive(options: {
                         viewer.clipboard
                     )
                         throw new Error("Clipboard is unavailable.");
-                    const pending = { identity, command: request.clipboard, socket };
+                    const disconnected = new AbortController();
+                    const signal = AbortSignal.any([
+                        disconnected.signal,
+                        viewer.abort.signal,
+                        options.signal,
+                        AbortSignal.timeout(browserClipboardTimeoutMs),
+                    ]);
+                    const cancel = () => socket.destroy();
+                    signal.addEventListener("abort", cancel, { once: true });
+                    const pending = {
+                        identity,
+                        command: request.clipboard,
+                        socket,
+                        signal,
+                    };
                     clipboard.set(identity.accessId, pending);
                     socket.once("close", () => {
+                        signal.removeEventListener("abort", cancel);
+                        disconnected.abort();
                         if (clipboard.get(identity.accessId) === pending)
                             clipboard.delete(identity.accessId);
                     });
@@ -273,8 +292,15 @@ export async function serveBrowserLive(options: {
                             pending.socket.destroyed
                         )
                             throw new Error("Clipboard control changed.");
-                        const result = await entry.clipboard(pending.command);
+                        const signal = AbortSignal.any([
+                            pending.signal,
+                            entry.signal,
+                            currentViewer.abort.signal,
+                        ]);
+                        signal.throwIfAborted();
                         invalidated.add(accessId);
+                        const result = await entry.clipboard(pending.command, signal);
+                        signal.throwIfAborted();
                         const current = await authority(pending.identity);
                         if (
                             !current.row.control ||

@@ -3,6 +3,7 @@ import { connect } from "node:net";
 import {
     browserClipboardCommandSchema,
     browserClipboardResultSchema,
+    browserClipboardTimeoutMs,
 } from "@homelab/contracts/miraBrowserClipboard";
 import { browserLiveSocket } from "@homelab/mira/browsing/liveSocket";
 import { Effect } from "effect";
@@ -55,7 +56,7 @@ export async function browserClipboardRequest(
                         else resolve(value);
                     };
                     const cancel = () => finish();
-                    const timer = setTimeout(cancel, 15_000);
+                    const timer = setTimeout(cancel, browserClipboardTimeoutMs);
                     request.signal.addEventListener("abort", cancel, { once: true });
                     if (request.signal.aborted) cancel();
                     socket.on("connect", () =>

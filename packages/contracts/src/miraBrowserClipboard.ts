@@ -1,5 +1,7 @@
 import * as v from "valibot";
 
+export const browserClipboardTimeoutMs = 15_000;
+
 export const browserClipboardTextSchema = v.pipe(v.string(), v.maxLength(8192));
 export const browserClipboardCommandSchema = v.variant("kind", [
     v.strictObject({ kind: v.literal("copy") }),

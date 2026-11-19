@@ -54,7 +54,10 @@ interface ActiveTurn {
     images: number;
     contextMaintenance: boolean;
     onActivity?: ((activity: MiraActivity) => void) | undefined;
-    reviewers: Map<string, { ready: Promise<void>; controller: AbortController }>;
+    reviewers: Map<
+        string,
+        { ready: Promise<void>; owned: Promise<boolean>; controller: AbortController }
+    >;
 }
 
 /** A single-turn Codex adapter with explicit tools and no implicit approval grants. */
@@ -576,6 +579,7 @@ export class CodexRuntime {
                         !controller.signal.aborted
                     ) {
                         const register = options.onReviewerStarted;
+                        const owned = Promise.withResolvers<boolean>();
                         const ready = active.acknowledged.promise.then(
                             async (parentTurn) => {
                                 if (parentTurn !== turnId)
@@ -598,6 +602,7 @@ export class CodexRuntime {
                                     }),
                                     metadata
                                 );
+                                owned.resolve(true);
                                 await register(item.agentThreadId);
                                 // Attach this stdio client to receive the child's dynamic
                                 // requests. A metadata read alone does not subscribe it.
@@ -616,14 +621,22 @@ export class CodexRuntime {
                                 return;
                             }
                         );
-                        void ready.catch(() => {});
+                        void ready.catch(() => owned.resolve(false));
                         active.reviewers.set(item.agentThreadId, {
                             ready,
+                            owned: owned.promise,
                             controller: new AbortController(),
                         });
                     }
-                    if (item.kind === "completed" || item.kind === "interrupted") {
-                        active.reviewers.get(item.agentThreadId)?.controller.abort();
+                    const reviewer = active.reviewers.get(item.agentThreadId);
+                    if (reviewer) {
+                        if (item.kind === "completed" || item.kind === "interrupted")
+                            reviewer.controller.abort();
+                        else if (reviewer.controller.signal.aborted)
+                            active.reviewers.set(item.agentThreadId, {
+                                ...reviewer,
+                                controller: new AbortController(),
+                            });
                     }
                     return;
                 }
@@ -850,14 +863,15 @@ export class CodexRuntime {
             clearTimeout(deadline);
             unsubscribe();
             controller.abort();
+            active.acknowledged.reject(new Error("Mira turn did not start."));
             await Promise.allSettled(
                 [...active.reviewers].map(async ([id, reviewer]) => {
                     reviewer.controller.abort();
-                    await reviewer.ready;
-                    await this.connection.request("thread/delete", { threadId: id });
+                    await reviewer.ready.catch(() => {});
+                    if (await reviewer.owned)
+                        await this.connection.request("thread/delete", { threadId: id });
                 })
             );
-            active.acknowledged.reject(new Error("Mira turn did not start."));
             options.signal?.removeEventListener("abort", abort);
             this.connection.signal.removeEventListener("abort", disconnect);
             this.active = null;
@@ -1117,6 +1131,8 @@ export class CodexRuntime {
             });
             turnSignal.throwIfAborted();
             const contentItems = runtimeContentItems(result);
+            // Child-only tool results do not occupy context in the parent.
+            if (reviewer) return { success: true, contentItems };
             const images = inlineImages(contentItems);
             active.imageBytes += images.bytes;
             active.images += images.count;
