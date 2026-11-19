@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.21.0](https://github.com/rajohan/homelab/compare/v0.20.3...v0.21.0) (2026-11-19)
+
+
+### Features
+
+* **mira:** share an interactive Chromium browser with native controls ([#243](https://github.com/rajohan/homelab/issues/243)) ([404b98e](https://github.com/rajohan/homelab/commit/404b98e825d2ef43944cd29967aac4f1db030a3d))
+
+
+### Bug Fixes
+
+* **mira:** preserve diagnosis after failed browser reads ([#241](https://github.com/rajohan/homelab/issues/241)) ([84ea777](https://github.com/rajohan/homelab/commit/84ea777062940124061a69f18913f4e2cd33f679))
+
 ## [0.20.3](https://github.com/rajohan/homelab/compare/v0.20.2...v0.20.3) (2026-11-18)
 
 
