@@ -48,14 +48,27 @@ export function BrowserConsoleDialog({
         gcTime: 0,
     });
     const transfer = useOperation(
-        (input: { epoch: string; controller: "mira" | "human" }, signal) =>
-            api.mira.browser.transfer.mutate({ id: access.id, ...input }, { signal })
+        async (input: { epoch: string; controller: "mira" | "human" }, signal) => {
+            try {
+                await api.mira.browser.transfer.mutate(
+                    { id: access.id, ...input },
+                    { signal }
+                );
+            } finally {
+                // A lost response can still mean that the server transferred control.
+                await query.refetch();
+            }
+        }
     );
     const command = useBrowserCommand();
-    const stop = useOperation(
-        (id: string, signal) => api.mira.browser.stop.mutate({ id }, { signal }),
-        onClose
-    );
+    const stop = useOperation(async (id: string, signal) => {
+        try {
+            await api.mira.browser.stop.mutate({ id }, { signal });
+        } catch (error) {
+            await query.refetch();
+            throw error;
+        }
+    }, onClose);
     const state = query.data;
     const fresh = !query.error && !query.isPending && now - query.dataUpdatedAt < 5000;
     const busy =
@@ -65,6 +78,12 @@ export function BrowserConsoleDialog({
         command.isPending ||
         stop.isPending;
     const human = state?.controller === "human";
+    const control =
+        fresh &&
+        human &&
+        access.mode === "control" &&
+        !transfer.isPending &&
+        !stop.isPending;
     const preview = fresh ? state?.preview : null;
     const inputFresh = preview && now - Date.parse(preview.observedAt) < 55_000;
     const send = (
@@ -130,12 +149,12 @@ export function BrowserConsoleDialog({
                         key={access.id}
                         accessId={access.id}
                         epoch={state.epoch}
-                        control={human && access.mode === "control"}
+                        control={control}
                     />
                 ) : (
                     <LoadingState />
                 )}
-                {human && access.mode === "control" && (
+                {control && (
                     <details className="border-t border-primary-700 pt-3">
                         <summary className="cursor-pointer text-sm font-medium text-primary-200">
                             Files
