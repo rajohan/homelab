@@ -6,7 +6,7 @@ Manual Chat uses direct tools for the operator's requested work on web and Windo
 
 Direct actions validate and save immutable content, then recheck its fingerprint, version, owned manual run, cancellation, revocation and integration controls before queuing. Only the service can attach the prepared-action capability; model arguments and HTTP payloads cannot provide one. Existing queues retain provenance and provider receipts. Queued means accepted, not completed. Unknown writes are inspected and never replayed automatically.
 
-Host commands execute directly on explicitly provisioned destinations. Their full proposal is retained while execution is uncertain; successful completion scrubs it. Exact rejected, pending or uncertain commands cannot be recreated to bypass their existing outcome. The legacy resume tool remains available to consume already saved human approvals once; removing the reviewer does not execute old pending requests.
+Host commands execute directly on explicitly provisioned destinations. Their full proposal is retained while execution is uncertain; successful completion scrubs it. Exact rejected, pending or unresolved uncertain commands cannot be recreated to bypass their existing outcome. After the operator closes a terminal run follow-up, a later manual run may submit newly requested host work; the original receipt remains unchanged and is never replayed. Closure alone does not authorize another operation. The legacy resume tool remains available to consume already saved human approvals once; removing the reviewer does not execute old pending requests.
 
 ## Concrete controls
 
@@ -17,3 +17,5 @@ Cancellation, stale leases, task stop, archive/deletion or revocation prevent la
 ## Delivery
 
 Deploy dashboard and Mira together. This source change does not provision credentials, change active grants, send pending drafts or start paused automations. Tested task branches are published as normal PRs; merge, release and deployment keep their existing requirements.
+
+Read-only inspection, recall and browser closure remain available after an uncertain action. The executor keeps the write fence in durable receipts, including across router reconstruction; a successful or failed diagnostic read cannot clear it. Browser observations are read-only. A command refused before host dispatch is a known failure, while lost acknowledgements after dispatch remain uncertain. The affected browser still loses input authority and follows its normal cleanup path.

@@ -35,6 +35,7 @@ export function createMiraRecallTools(client: SQL, run: MiraClaim): MiraToolDefi
                 additionalProperties: false,
             },
             automatic: true,
+            readOnly: true,
             action: (input) =>
                 readMiraConversationHistory(
                     client,
@@ -53,6 +54,7 @@ export function createMiraRecallTools(client: SQL, run: MiraClaim): MiraToolDefi
                 additionalProperties: false,
             },
             automatic: true,
+            readOnly: true,
             action: (input) =>
                 searchMiraHistory(client, run, v.parse(miraHistorySearchSchema, input)),
         },
@@ -70,6 +72,7 @@ export function createMiraRecallTools(client: SQL, run: MiraClaim): MiraToolDefi
                 additionalProperties: false,
             },
             automatic: true,
+            readOnly: true,
             action: (input) =>
                 readMiraHistory(client, run, v.parse(miraHistoryReadSchema, input)),
         },

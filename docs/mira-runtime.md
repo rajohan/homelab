@@ -283,6 +283,8 @@ for a completed model turn before accepting another tool action. The executor
 continues the same product run after context maintenance; no existing action is
 replayed. Maintenance never starts while a tool or provider turn is active.
 
+Chat distinguishes connection setup, context preparation and native compaction. `Compacting context…` is reported only after maintenance selects a compaction path or Codex emits a `contextCompaction` item; completion returns the status to ordinary work. Both pre-turn maintenance and automatic compaction during a model turn feed the same persisted activity used by web and Windows.
+
 Codex owns summarization through `thread/compact/start`. Mira copies the latest
 native checkpoint and subsequent text into an independent provider thread using
 `thread/inject_items`, removes expired image copies, and verifies native compaction

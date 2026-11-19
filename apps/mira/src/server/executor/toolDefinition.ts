@@ -12,6 +12,8 @@ export interface MiraToolDefinition extends Omit<RuntimeTool, "execute"> {
     transactional?: boolean;
     commitsIndependently?: boolean;
     readOnly?: boolean;
+    /** Trusted cleanup that only revokes access; never supplied by model arguments. */
+    recovery?: boolean;
     confirmation?: boolean;
     structuredOutput?: boolean;
     action: (

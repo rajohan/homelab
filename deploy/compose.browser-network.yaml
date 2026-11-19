@@ -40,3 +40,10 @@ services:
 networks:
   mira-browser-connected-outbound:
     enable_ipv6: true
+    ipam:
+      driver: default
+      config:
+        - subnet: ${HOMELAB_MIRA_BROWSER_OUTBOUND_SUBNET:-172.26.0.0/16}
+          gateway: ${HOMELAB_MIRA_BROWSER_DEV_HOST:-172.26.0.1}
+        - subnet: ${HOMELAB_MIRA_BROWSER_OUTBOUND_SUBNET_V6:-fd55:d90d:e31d:1::/64}
+          gateway: ${HOMELAB_MIRA_BROWSER_OUTBOUND_GATEWAY_V6:-fd55:d90d:e31d:1::1}

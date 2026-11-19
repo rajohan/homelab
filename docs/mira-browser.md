@@ -12,6 +12,8 @@ Install the optional `deploy/compose.browser-network.yaml` after the other Compo
 
 The connected proxy permits HTTP(S) traffic to the configured home networks and internet in one session. DNS answers are pinned for the session. Non-web infrastructure ports, link-local metadata and container management interfaces remain outside browser access. The code runner keeps its independent public-only proxy. Remove the overlay, account binding and network markers together to return to the original public-only setup.
 
+The connected outbound bridge has explicit IPAM so its gateway survives network recreation. The defaults are `172.26.0.0/16` with gateway `172.26.0.1` and `fd55:d90d:e31d:1::/64` with gateway `fd55:d90d:e31d:1::1`. The IPv4 gateway uses `HOMELAB_MIRA_BROWSER_DEV_HOST` when configured. Override `HOMELAB_MIRA_BROWSER_OUTBOUND_SUBNET`, `HOMELAB_MIRA_BROWSER_OUTBOUND_SUBNET_V6` and `HOMELAB_MIRA_BROWSER_OUTBOUND_GATEWAY_V6` through the existing deployment environment if the host uses different ranges. Check host/VPN/Docker overlap before activation. On an existing installation, preserve both current subnet/gateway pairs, back up the installed Compose file, drain the browser host and stop both proxy service supervisors before recreating this network. Verify both proxies, their bound container IDs, internet/LAN routing and the development gateway before restarting the browser host. A Compose dry-run is required: even matching addresses can cause network recreation because its configuration hash changes. Do not restart unrelated services or remove other networks.
+
 For development on Main, optionally set `HOMELAB_MIRA_BROWSER_DEV_HOST` to the gateway IPv4 address of the proxy's outbound Docker bridge. The connected proxy resolves `localhost` to that gateway only for ports 3100, 3101 and 8400. Run `bun run dev --live --browser-host=<gateway>` in the development checkout. The existing disposable dev process forwards these three ports from that bridge to its loopback listeners and removes them on exit. It rejects LAN and wildcard bindings. No production identity data or additional permanent service is used.
 
 ## Browser tabs
@@ -39,7 +41,7 @@ For specific websites, the pinned driver handles page observation, navigation, i
 
 Each stage checks the live run, tool receipt, grant scope, process generation and deadlines. Result completion, one-time consumption and final model disclosure remain separately fenced. Images, dimensions, URL origins and element references are validated before delivery. Result content is erased on consumption, cancellation, expiry and conversation deletion; content-free tombstones prevent replay. Provider-independent cleanup also runs in the ordinary Mira executor if the browser host is unavailable.
 
-Navigation invalidates observations. Input delivery remains `unverified`; it is not proof of the website's resulting state. A lost result can mean input happened. Any uncertain outcome retires access and blocks further tool actions in that run until reviewed.
+Navigation invalidates observations. Input delivery remains `unverified`; it is not proof of the website's resulting state. A lost result can mean input happened. Any uncertain input outcome retires access and blocks new changes in that run until reviewed; read-only diagnosis and browser closure remain available. Observation failures do not claim that input happened or block unrelated work. Commands refused before host dispatch are reported as known failures.
 
 ## Trusted host lifecycle
 

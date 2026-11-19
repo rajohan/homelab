@@ -29,6 +29,7 @@ export async function maintainMiraContext(options: {
     instructions: string;
     signal: AbortSignal;
     expireImages?: boolean;
+    onCompacting?: () => void;
 }): Promise<string> {
     const { client, run, runtime, threadId, signal } = options;
     let source = await runtime.readContext(threadId);
@@ -41,6 +42,7 @@ export async function maintainMiraContext(options: {
     )
         return threadId;
     signal.throwIfAborted();
+    options.onCompacting?.();
     // The normal path summarizes pixels before expiry. Already broken, oversized legacy
     // requests retain their previous native checkpoint and all subsequent textual context.
     if (source.imageBytes <= 2 * visualContextBytes) {
