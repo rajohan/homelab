@@ -28,8 +28,8 @@ export type DaytonaSandboxRequest = v.InferOutput<typeof daytonaSandboxSchema>;
 export const daytonaCheckProfile = Object.freeze({
     version: 2,
     repository: "https://github.com/rajohan/homelab.git",
-    bunVersion: "1.4.4-canary.20261118.1",
-    bunRevision: "4ce14ba8b150c3c7315284f3df8480eb4158b38a",
+    bunVersion: "1.4.5",
+    bunRevision: "a7733435cf40429e3b35c36072769df2052b80f1",
     executable: "/opt/homelab/daytona-check.js",
     minutes: 10,
     collectionSeconds: 120,

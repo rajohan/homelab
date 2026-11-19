@@ -2,7 +2,7 @@
 
 Manual Chat and manually started tasks can discover provisioned hosts, inspect them and run requested shell commands through Mira's trusted executor. This is independent of the Main/Daytona code-test setting. ChatGPT/Codex uses these tools, and the same controls work on web and Windows.
 
-`mira_homelab_targets` reports actual configured destinations. `mira_homelab_inspect` runs fixed identity, health, service, disk, Docker or managed-GitHub identity inspections. `mira_homelab_command` accepts the exact target, shell program, purpose and command deadline. Shell commands intentionally provide general administration, including SSH, restarting services, managed `gh` operations and the repository's deployment procedures. They are not confined to code-check profiles.
+`mira_homelab_targets` reports actual configured destinations. `mira_homelab_inspect` runs fixed identity, health, service, disk, Docker or managed-GitHub identity inspections. On Main, pass `inspect: "github_pr_status"` and a numeric PR number to read the current Homelab PR head, check runs and review decision. Poll this inspection between waits. Failed reads are recorded separately from commands with unconfirmed host effects. `mira_homelab_command` accepts the exact target, shell program, purpose and command deadline. Shell commands intentionally provide general administration, including SSH, restarting services, managed `gh` operations and the repository's deployment procedures. They are not confined to code-check profiles.
 
 ## Authority and execution
 

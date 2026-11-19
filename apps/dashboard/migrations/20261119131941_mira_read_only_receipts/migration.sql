@@ -1,0 +1,1 @@
+ALTER TABLE "mira_tool_receipts" ADD COLUMN "read_only" boolean DEFAULT false NOT NULL;

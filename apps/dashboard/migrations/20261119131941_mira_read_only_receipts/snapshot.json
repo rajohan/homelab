@@ -1,0 +1,37 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "7615e5e3-c6ed-4355-a62b-0647886100fb",
+    "prevIds": ["e953b233-4682-4907-a706-9ae3cbc7382d"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_tool_receipts", "read_only"],
+            "writes": [
+                "s|col|public.mira_tool_receipts.read_only",
+                "n|col|public.mira_tool_receipts.read_only",
+                "e|col|public.mira_tool_receipts.read_only"
+            ],
+            "reads": ["n|tbl|public.mira_tool_receipts", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_tool_receipts",
+                "name": "read_only",
+                "type": "boolean",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "false",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}

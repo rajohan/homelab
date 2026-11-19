@@ -406,6 +406,7 @@ export const miraToolReceipts = pgTable(
             .references(() => miraRuns.id),
         callId: text("call_id").notNull(),
         tool: text().notNull(),
+        readOnly: boolean("read_only").notNull().default(false),
         inputHash: text("input_hash").notNull(),
         proposal: jsonb().$type<Record<string, unknown>>(),
         state: text().notNull(),

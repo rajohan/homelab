@@ -10,7 +10,7 @@
         "check": "bun scripts/check.ts",
         "format": "bun fmt --no-config",
         "format:check": "bun fmt --no-config --check",
-        "lint": "bun lint --no-script --deny-warnings",
+        "lint": "bun scripts/lint.ts",
         "typecheck": "bun node_modules/typescript/bin/tsc -p tsconfig.browser.json --noEmit && bun node_modules/typescript/bin/tsc -p tsconfig.bun.json --noEmit",
         "db:check:auth": "bun node_modules/drizzle-kit/bin.cjs check --config apps/auth/drizzle.config.ts",
         "db:check:dashboard": "bun node_modules/drizzle-kit/bin.cjs check --config apps/dashboard/drizzle.config.ts",
@@ -70,6 +70,7 @@
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
         "@types/react-syntax-highlighter": "15.5.13",
+        "bun-lint-runtime": "npm:bun@1.4.4-canary.20261118.1",
         "bun-plugin-tailwind": "0.1.2",
         "drizzle-kit": "1.0.0-rc.5",
         "eslint-plugin-jsdoc": "65.4.7",
@@ -80,14 +81,14 @@
         "typescript": "7.0.2"
     },
     "overrides": {
-        "bun": "1.4.4-canary.20261118.1",
+        "bun": "1.4.5",
         "postcss-selector-parser": "7.1.7"
     },
     "config": {
         "skills": {
             "impeccable": {
-                "version": "4.9.2",
-                "revision": "d41d9860b0094dcb68030657da63461212835aaa",
+                "version": "4.10.0",
+                "revision": "b49177d32788f2dc585c42831d845dacf1ebed2c",
                 "update": {
                     "kind": "github",
                     "repository": "pbakaus/impeccable",
@@ -104,11 +105,11 @@
                     "README.md"
                 ],
                 "entrypoint": ".agents/skills/impeccable/SKILL.md",
-                "contentHash": "7cd0400625edec655267e59f85097b074a959fda93611da2308ab0bafd9737d4"
+                "contentHash": "1da452d697bb5630b9cd3bd182ba785371e3fbc70f35e2dd9caf67cc6031c8ba"
             },
             "intent": {
-                "version": "1.7.4",
-                "revision": "1806110106a472bc588d7a8a2b7e3d39aee4a4b8",
+                "version": "1.7.5",
+                "revision": "1bc00bb55609dbecb3b1fe1a7114487dd0abd867",
                 "update": {
                     "kind": "github",
                     "repository": "ghaida/intent",
@@ -128,14 +129,14 @@
                     "LICENSE"
                 ],
                 "entrypoint": "skills/intent/SKILL.md",
-                "contentHash": "4d35adbac4c19780877a5313fb1d4f3f35fe8b9e0e7a825b5f50665be3e5732b"
+                "contentHash": "88073775c1e8e7e87a12457658d3e6b3b78c93444955a83926a1c702e52dfb27"
             }
         },
         "windows": {
             "inno": {
-                "version": "7.1.0",
-                "url": "https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe",
-                "sha256": "0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f",
+                "version": "7.1.1",
+                "url": "https://github.com/jrsoftware/issrc/releases/download/is-7_1_1/innosetup-7.1.1-x64.exe",
+                "sha256": "8a5a6711c3766a6e5fb74f280ba0e3551e719ce94538d901fdbd1f8f9920b3f0",
                 "publisher": "CN=Pyrsys B.V., O=Pyrsys B.V., S=Noord-Holland, C=NL",
                 "update": {
                     "kind": "github",
@@ -158,6 +159,6 @@
     "engines": {
         "bun": "1.4.5"
     },
-    "packageManager": "bun@1.4.4-canary.20261118.1",
+    "packageManager": "bun@1.4.5",
     "trustedDependencies": []
 }

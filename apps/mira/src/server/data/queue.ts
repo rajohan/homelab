@@ -64,6 +64,14 @@ export async function reconcileMiraRuns(client: SQL): Promise<number> {
     });
 }
 
+async function finishInterruptedToolReceipts(query: TransactionSQL, runId: string) {
+    // The two observation names preserve the classification of pre-migration receipts.
+    await query`UPDATE mira_tool_receipts SET state='failed',message='The read did not complete.',finished_at=now()
+        WHERE run_id=${runId} AND state='running' AND (read_only OR tool IN ('mira_computer_observe','mira_browser_observe'))`;
+    await query`UPDATE mira_tool_receipts SET state='unknown',message='The tool receipt was not completed. Review before continuing.',finished_at=now()
+        WHERE run_id=${runId} AND state='running'`;
+}
+
 async function reconcileExpired(query: TransactionSQL): Promise<number> {
     const expired = await query<
         { id: string; assistantMessageId: string; owner: string }[]
@@ -71,8 +79,7 @@ async function reconcileExpired(query: TransactionSQL): Promise<number> {
     for (const run of expired) {
         await notifyMiraRun(query, run.id);
         await query`UPDATE mira_messages SET state = 'failed' WHERE id = ${run.assistantMessageId}`;
-        await query`UPDATE mira_tool_receipts SET state='failed',message='The observation did not complete. No clicks or keystrokes were sent.',finished_at=now() WHERE run_id=${run.id} AND state='running' AND tool IN ('mira_computer_observe','mira_browser_observe')`;
-        await query`UPDATE mira_tool_receipts SET state = 'unknown', message = 'Executor disconnected; reconcile before retrying.' WHERE run_id = ${run.id} AND state = 'running'`;
+        await finishInterruptedToolReceipts(query, run.id);
         await auditMira(
             query,
             { owner: run.owner, actor: "mira:executor" },
@@ -256,8 +263,7 @@ export async function finishMiraRun(
             { id: string; cancelRequested: boolean }[]
         >`SELECT id,cancel_requested AS "cancelRequested" FROM mira_runs WHERE id=${run.id} AND state='running' AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() FOR UPDATE`;
         if (!owned) return false;
-        await query`UPDATE mira_tool_receipts SET state='failed',message='The observation did not complete. No clicks or keystrokes were sent.',finished_at=now() WHERE run_id=${run.id} AND state='running' AND tool IN ('mira_computer_observe','mira_browser_observe')`;
-        await query`UPDATE mira_tool_receipts SET state='unknown', message='The tool receipt was not completed. Review before continuing.', finished_at=now() WHERE run_id=${run.id} AND state='running'`;
+        await finishInterruptedToolReceipts(query, run.id);
         const [receipts] = await query<
             { uncertain: boolean }[]
         >`SELECT EXISTS(SELECT 1 FROM mira_tool_receipts WHERE run_id=${run.id} AND state='unknown') AS uncertain`;

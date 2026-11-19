@@ -1,4 +1,4 @@
-FROM oven/bun:1.4.4 AS build
+FROM oven/bun:1.4.5 AS build
 WORKDIR /source
 COPY .bun-version .bun-revision ./
 COPY scripts/installBun.ts ./scripts/installBun.ts
@@ -17,7 +17,7 @@ RUN mkdir -p /browser /tools && if [ "$APP" = homelab ]; then \
     bun build --target=bun apps/mira/src/server/sandbox/localHarness.ts --outfile=/tools/local-check.js && \
     bun --no-env-file -e 'import {daytonaCheckProfile} from "./apps/mira/src/server/sandbox/profile.ts"; await Bun.write("/tools/profile.json", JSON.stringify(daytonaCheckProfile));'; fi
 
-FROM oven/bun:1.4.4-slim AS runtime
+FROM oven/bun:1.4.5-slim AS runtime
 COPY --from=build /opt/bun/bin/bun /usr/local/bin/bun
 ARG APP
 # Debian packages are updated by the managed image rebuild; JavaScript uses the root lockfile.
