@@ -40,14 +40,6 @@ export const miraBrowserTabsSchema = v.strictObject({
     ),
 });
 export type MiraBrowserTabs = v.InferOutput<typeof miraBrowserTabsSchema>;
-export const miraBrowserAccessRequestSchema = v.strictObject({
-    runId: id,
-    origins: v.pipe(v.array(address), v.minLength(1), v.maxLength(16)),
-    initialUrl: address,
-    mode: v.picklist(["view", "control"]),
-    profileId: v.optional(id),
-    network: v.optional(v.picklist(["public", "home"])),
-});
 export const miraBrowserProfileCreateSchema = v.strictObject({
     homeNetwork: v.optional(v.boolean()),
     name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(80)),
@@ -112,9 +104,6 @@ export const miraBrowserDownloadNameSchema = v.pipe(
 );
 export const miraBrowserHumanOperationSchema = v.variant("method", [
     v.strictObject({ method: v.literal("observe") }),
-    v.strictObject({ method: v.literal("tabs"), input: miraBrowserTabCommandSchema }),
-    v.strictObject({ method: v.literal("navigate"), url: address }),
-    v.strictObject({ method: v.literal("act"), input: miraBrowserActionSchema }),
     v.strictObject({
         method: v.literal("download"),
         input: v.strictObject({ observationId: id, ref }),
@@ -135,7 +124,6 @@ export const miraBrowserHumanCommandSchema = v.strictObject({
     operation: miraBrowserHumanOperationSchema,
 });
 export interface MiraBrowserPreview {
-    tabs?: MiraBrowserTabs;
     observationId: string;
     url: string;
     title: string;
@@ -145,9 +133,6 @@ export interface MiraBrowserPreview {
         label: string;
         actions: ("click" | "type" | "upload")[];
     }[];
-    width: number;
-    height: number;
-    image: string;
     observedAt: string;
 }
 export interface MiraBrowserConsole {

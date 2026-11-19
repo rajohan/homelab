@@ -12,5 +12,4 @@ done
 xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id # 0x' >/dev/null
 # The capless, isolated container is the process boundary. Chromium's nested
 # namespace sandbox is unavailable under the fixed host container policy.
-export CUA_DRIVER_BROWSER_NO_SANDBOX=1
 exec bun --no-env-file /opt/mira-browser/worker.js

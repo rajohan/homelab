@@ -8,15 +8,16 @@ import {
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
+import type { BrowserCommand } from "../browsing/command";
 import { browserUrl } from "../browsing/policy";
-import { browserWorkerFrame } from "../browsing/wire";
+import { browserPreviewSchema } from "../browsing/wire";
 import { lockBrowserOwner, readBrowserAccess } from "./browserAccess";
 import { requireBrowserDownload } from "./browserDownloadAccess";
 import { retireBrowserCommands } from "./browserRetirement";
 import { requireBrowserUpload } from "./browserUploads";
 import { auditMira, type MiraContext, MiraFailure } from "./context";
 
-type Frame = ReturnType<typeof browserWorkerFrame>;
+type Frame = v.InferOutput<typeof browserPreviewSchema>;
 interface ConsoleRow {
     epoch: string;
     controller: "mira" | "human";
@@ -57,20 +58,20 @@ async function modelBusy(query: TransactionSQL, id: string) {
  * @param query - Host transaction holding the owning account lock.
  * @param accessId - Current owned grant.
  * @param frame - Already validated bounded worker observation.
- * @returns Completion after replacing the transient preview; page outlines are not retained.
+ * @returns Completion after replacing transient file controls; pixels and page outlines are not retained.
  */
 export async function saveBrowserPreview(
     query: TransactionSQL,
     accessId: string,
     frame: Frame
 ) {
-    await query`UPDATE mira_browser_consoles SET frame=${JSON.stringify({ ...frame, outline: "", complete: false })}::text::jsonb,frame_at=clock_timestamp() WHERE access_id=${accessId}`;
+    await query`UPDATE mira_browser_consoles SET frame=${JSON.stringify(v.parse(browserPreviewSchema, frame))}::text::jsonb,frame_at=clock_timestamp() WHERE access_id=${accessId}`;
 }
 /**
  * Read the latest bounded preview without issuing a browser operation or exposing private claims.
  * @param context - Signed-in owner, never an automation or model context.
  * @param input - Exact owned grant.
- * @returns Controller generation, busy state and recent image; no browser HTML is rendered.
+ * @returns Controller generation, busy state and recent file controls; no screenshot polling.
  */
 export async function readMiraBrowserConsole(
     context: MiraContext,
@@ -83,15 +84,15 @@ export async function readMiraBrowserConsole(
             console.frame &&
             console.frameAt &&
             Date.now() - console.frameAt.getTime() < 60_000
-                ? browserWorkerFrame(console.frame, access.policy!.origins)
+                ? v.parse(browserPreviewSchema, console.frame)
                 : null;
+        if (frame) browserUrl(frame.url, access.policy!.origins);
         return {
             epoch: console.epoch,
             controller: console.controller,
             busy: console.state !== "idle" || (await modelBusy(query, id)),
             preview: frame
                 ? {
-                      ...(frame.tabs ? { tabs: frame.tabs } : {}),
                       observationId: frame.observationId,
                       url: frame.url,
                       title: frame.title,
@@ -99,9 +100,6 @@ export async function readMiraBrowserConsole(
                           console.controller === "human" && console.fresh
                               ? frame.refs
                               : [],
-                      width: frame.width,
-                      height: frame.height,
-                      image: frame.content.content[0]!.data,
                       observedAt: console.frameAt!.toISOString(),
                   }
                 : null,
@@ -148,7 +146,7 @@ export async function transferMiraBrowserControl(
 export async function requireBrowserObservation(
     query: TransactionSQL,
     id: string,
-    operation: v.InferOutput<typeof miraBrowserHumanOperationSchema>
+    operation: BrowserCommand | v.InferOutput<typeof miraBrowserHumanOperationSchema>
 ) {
     if (
         operation.method !== "act" &&
@@ -162,7 +160,7 @@ export async function requireBrowserObservation(
     if (
         !row ||
         row.frame.observationId !== operation.input.observationId ||
-        ((operation.method === "upload" || operation.method === "download") &&
+        (operation.method !== "act" &&
             new URL(row.frame.url).origin !== operation.origin) ||
         !row.frame.refs.some(
             (item) =>
@@ -202,31 +200,12 @@ export async function enqueueMiraBrowserHumanCommand(
             (await modelBusy(query, request.id))
         )
             throw unavailable();
-        if (
-            (operation.method === "act" ||
-                operation.method === "upload" ||
-                operation.method === "download") &&
-            access.mode !== "control"
-        )
+        if (operation.method !== "observe" && access.mode !== "control")
             throw unavailable();
         if (operation.method === "download")
             await requireBrowserDownload(query, context.owner, request.id, operation);
         if (operation.method === "upload")
             await requireBrowserUpload(query, context.owner, request.id, operation);
-        let destination: string | null = null;
-        if (operation.method === "navigate") destination = operation.url;
-        if (operation.method === "tabs" && operation.input.action === "open")
-            destination = operation.input.url;
-        if (destination) {
-            try {
-                browserUrl(destination, access.policy!.origins);
-            } catch {
-                throw new MiraFailure(
-                    "BAD_REQUEST",
-                    "Choose a URL within the websites already approved for this run."
-                );
-            }
-        }
         await requireBrowserObservation(query, request.id, operation);
         const updated = await query<
             { accessId: string }[]

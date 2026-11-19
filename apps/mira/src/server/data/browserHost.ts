@@ -1,4 +1,3 @@
-import { unrestrictedBrowserSites } from "@homelab/contracts/miraBrowser";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
@@ -206,6 +205,7 @@ export async function openMiraBrowserSession(
             await confirmMiraBrowserProcessCleanup(host.client, claim, proof);
         },
     };
+    let displayContainerId: string | undefined;
     const session = await openBrowserSession(
         async (signal) => {
             const profile = await prepareMiraBrowserProfile(host.client, claim);
@@ -213,7 +213,6 @@ export async function openMiraBrowserSession(
             return (dependencies.open ?? openBrowserWorker)(
                 {
                     ...fixed,
-                    runBound: unrestrictedBrowserSites(access.policy.origins),
                     ...(profile ? { profile: { id: profile.id } } : {}),
                 },
                 {
@@ -228,15 +227,14 @@ export async function openMiraBrowserSession(
                 signal,
                 (input, lifetime) =>
                     openBrowserConnection(input, lifetime, {
-                        keepOpen: unrestrictedBrowserSites(access.policy.origins),
                         ...(profile ? { profile: profile.persistence } : {}),
-                        prepare: (input, lifetime) =>
-                            (dependencies.prepare ?? prepareBrowserContainer)(
-                                input,
-                                lifetime,
-                                undefined,
-                                journal
-                            ),
+                        prepare: async (input, lifetime) => {
+                            const lease = await (
+                                dependencies.prepare ?? prepareBrowserContainer
+                            )(input, lifetime, undefined, journal);
+                            displayContainerId = lease.id;
+                            return lease;
+                        },
                     })
             );
         },
@@ -249,5 +247,11 @@ export async function openMiraBrowserSession(
         },
         owner
     );
-    return { ...session, claim: { ...record.claim } };
+    return {
+        ...session,
+        claim: { ...record.claim },
+        display: displayContainerId
+            ? { processId: record.id, containerId: displayContainerId }
+            : undefined,
+    };
 }

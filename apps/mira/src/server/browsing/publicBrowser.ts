@@ -8,26 +8,21 @@ import {
     miraBrowserTabCommandSchema,
     unrestrictedBrowserSites,
 } from "@homelab/contracts/miraBrowser";
-import {
-    type CDPSession,
-    launch,
-    type Page,
-    type Target,
-    TargetType,
-} from "puppeteer-core";
+import { imageSize } from "image-size";
+import { type CDPSession, launch, type Page } from "puppeteer-core";
 import * as v from "valibot";
 
 import { publicBrowserNetwork } from "../config/environment";
-import type { openNativeBrowser } from "./native";
 import { type BrowserGrant, browserUrl } from "./policy";
 import { browserProfileDirectory } from "./profile";
 import { publicDocument, publicInput, publicOutline } from "./publicPage";
 import { publicDownload, publicUpload } from "./publicTransfers";
-import { browserUploadActionSchema, createBrowserUploads } from "./upload";
+import {
+    browserUploadActionSchema,
+    type BrowserUploadFile,
+    createBrowserUploads,
+} from "./upload";
 import { browserActionSchema } from "./wire";
-
-const width = 800,
-    height = 500;
 
 function browserNetworkMode(scope?: string) {
     if (scope === connectedBrowserScope) return "connected";
@@ -39,10 +34,7 @@ function browserNetworkMode(scope?: string) {
  * @param signal - Container lifetime; abort closes Chromium and discards all handles.
  * @returns The same bounded browser operations used by Chat and the human console.
  */
-export async function openPublicBrowser(
-    grant: BrowserGrant,
-    signal: AbortSignal
-): Promise<Awaited<ReturnType<typeof openNativeBrowser>>> {
+export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal) {
     signal.throwIfAborted();
     if (
         !publicBrowserNetwork(browserNetworkMode(grant.origins[0])) ||
@@ -66,17 +58,19 @@ export async function openPublicBrowser(
     const browser = await launch({
         ...(grant.savedProfile ? { userDataDir: savedDirectory } : {}),
         executablePath: grant.executable,
-        headless: true,
+        headless: false,
         pipe: true,
-        timeout: 12_000,
+        timeout: 30_000,
         protocolTimeout: 10_000,
         args: [
             "--no-sandbox",
             "--disable-dev-shm-usage",
             "--disable-extensions",
             "--disable-background-networking",
+            "--window-size=1280,800",
+            "--start-maximized",
         ],
-        defaultViewport: { width, height },
+        defaultViewport: null,
         signal,
     });
     let closing: Promise<void> | undefined;
@@ -87,9 +81,6 @@ export async function openPublicBrowser(
             await browser.close();
             if (directory) await rm(directory, { recursive: true, force: true });
         })());
-    const retire = () => {
-        void close().catch(() => {});
-    };
     const tabs = new Map<string, { page: Page; cdp: CDPSession }>();
     let selected = "";
     let observation:
@@ -108,59 +99,64 @@ export async function openPublicBrowser(
             directory = await mkdtemp(path.join(os.tmpdir(), "mira-public-transfer-"));
             uploads = await createBrowserUploads(directory);
         }
-        const context = grant.savedProfile
-            ? browser.defaultBrowserContext()
-            : await browser.createBrowserContext({
-                  downloadBehavior: { policy: "deny" },
-              });
-        if (grant.savedProfile) {
-            const control = await browser.target().createCDPSession();
-            try {
-                await control.send("Browser.setDownloadBehavior", { behavior: "deny" });
-            } finally {
-                await control.detach();
+        const context = browser.defaultBrowserContext();
+        const control = await browser.target().createCDPSession();
+        await control.send("Browser.setDownloadBehavior", { behavior: "deny" });
+        await control.detach();
+        const initialPages = await context.pages();
+        const synchronizeTabs = async () => {
+            for (const [id, tab] of tabs)
+                if (tab.page.isClosed() || !/^https?:\/\//u.test(tab.page.url())) {
+                    tabs.delete(id);
+                    await tab.cdp.detach().catch(() => {});
+                }
+            for (const page of await context.pages()) {
+                if ([...tabs.values()].some((tab) => tab.page === page)) continue;
+                try {
+                    browserUrl(page.url(), sites);
+                } catch {
+                    continue;
+                }
+                tabs.set(crypto.randomUUID(), {
+                    page,
+                    cdp: await page.createCDPSession(),
+                });
             }
-        }
-        // Saved profiles retain site data, never previous tabs or an active page.
-        for (const page of await context.pages()) await page.close();
-        let opening: Set<Target> | undefined;
-        context.on("targetcreated", (target) => {
-            if (target.type() !== TargetType.PAGE) return;
-            if (opening) opening.add(target);
-            else if (![...tabs.values()].some((tab) => tab.page.target() === target))
-                retire();
-        });
+            for (const [id, tab] of tabs) {
+                try {
+                    const focus = await tab.cdp.send("Runtime.evaluate", {
+                        expression: "document.hasFocus()",
+                        returnByValue: true,
+                    });
+                    if (focus.result.value === true) selected = id;
+                } catch {
+                    /* A closing tab is reconciled on the next observation. */
+                }
+            }
+            if (!tabs.has(selected)) selected = tabs.keys().next().value ?? "";
+        };
         const current = () => {
             const tab = tabs.get(selected);
-            if (!tab) throw new Error("No selected browser tab.");
+            if (!tab) throw new Error("Open a website in the browser first.");
             return tab;
         };
         const add = async (value: unknown) => {
             const url = browserUrl(value, sites);
             if (tabs.size >= 8) throw new Error("Close a browser tab first.");
-            opening = new Set<Target>();
             const page = await context.newPage();
-            page.on("dialog", (dialog) => {
-                void dialog.dismiss().catch(() => {});
-            });
             const id = crypto.randomUUID();
-            const cdp = await page.createCDPSession();
-            tabs.set(id, { page, cdp });
-            const unexpected = [...opening].some((target) => target !== page.target());
-            opening = undefined;
-            if (unexpected || closing)
-                throw new Error("An unexpected window invalidated the browser session.");
-            page.once("close", () => {
-                if (tabs.has(id)) retire();
-            });
+            tabs.set(id, { page, cdp: await page.createCDPSession() });
             selected = id;
-            await page.goto(url, { waitUntil: "domcontentloaded", timeout: 12_000 });
-            await publicDocument(cdp, sites);
+            await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+            await page.bringToFront();
+            await publicDocument(current().cdp, sites);
         };
         const observe = async (operation: AbortSignal, operator = false) => {
             operation.throwIfAborted();
             observation = undefined;
+            await synchronizeTabs();
             const { page, cdp } = current();
+            await page.bringToFront();
             const doc = await publicDocument(cdp, sites);
             const { outline, refs, handles } = await publicOutline(
                 cdp,
@@ -169,8 +165,13 @@ export async function openPublicBrowser(
                 operator && Boolean(grant.uploads)
             );
             const data = await page.screenshot({ type: "png", encoding: "base64" });
+            const { width, height } = imageSize(Buffer.from(data, "base64"));
+            const visibleTabs = [
+                [selected, current()] as const,
+                ...[...tabs].filter(([id]) => id !== selected),
+            ].slice(0, 8);
             const items = await Promise.all(
-                [...tabs].map(async ([id, tab]) => {
+                visibleTabs.map(async ([id, tab]) => {
                     const title = await tab.page.title();
                     return {
                         id,
@@ -242,10 +243,11 @@ export async function openPublicBrowser(
             return { cdp, doc, node, until: seen.until };
         };
         await add(grant.initialUrl);
+        for (const page of initialPages) await page.close();
         return {
             close,
             observe,
-            tabs: async (input, operation, operator) => {
+            tabs: async (input: unknown, operation: AbortSignal, operator = false) => {
                 operation.throwIfAborted();
                 observation = undefined;
                 const cmd = v.parse(miraBrowserTabCommandSchema, input);
@@ -253,8 +255,10 @@ export async function openPublicBrowser(
                 else if (cmd.action === "select" || cmd.action === "close") {
                     const tab = tabs.get(cmd.tabId);
                     if (!tab) throw new Error("Unknown browser tab.");
-                    if (cmd.action === "select") selected = cmd.tabId;
-                    else {
+                    if (cmd.action === "select") {
+                        selected = cmd.tabId;
+                        await tab.page.bringToFront();
+                    } else {
                         if (tabs.size === 1)
                             throw new Error("Keep one browser tab open.");
                         tabs.delete(cmd.tabId);
@@ -264,19 +268,19 @@ export async function openPublicBrowser(
                 }
                 return observe(operation, operator);
             },
-            navigate: async (value, operation) => {
+            navigate: async (value: unknown, operation: AbortSignal) => {
                 operation.throwIfAborted();
                 observation = undefined;
                 const { page, cdp } = current();
                 await page.goto(browserUrl(value, sites), {
                     waitUntil: "domcontentloaded",
-                    timeout: 12_000,
+                    timeout: 30_000,
                 });
                 operation.throwIfAborted();
                 const document = await publicDocument(cdp, sites);
                 return { url: document.url };
             },
-            act: async (input, operation) => {
+            act: async (input: unknown, operation: AbortSignal) => {
                 operation.throwIfAborted();
                 const action = v.parse(browserActionSchema, input);
                 const seen = observation;
@@ -301,7 +305,11 @@ export async function openPublicBrowser(
                 operation.throwIfAborted();
                 return { effect: "unverified" as const };
             },
-            upload: async (input, file, operation) => {
+            upload: async (
+                input: unknown,
+                file: BrowserUploadFile,
+                operation: AbortSignal
+            ) => {
                 const target = await transferTarget(input, "upload", operation);
                 if (!uploads) throw new Error("Uploads are unavailable.");
                 const staged = await uploads.stage(file, operation);
@@ -323,7 +331,7 @@ export async function openPublicBrowser(
                 operation.throwIfAborted();
                 return { effect: "unverified" as const };
             },
-            download: async (input, operation) => {
+            download: async (input: unknown, operation: AbortSignal) => {
                 const { cdp, doc, node } = await transferTarget(
                     input,
                     "download",

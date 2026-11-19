@@ -1,3 +1,4 @@
+export const browserDriverVersion = "chromium-live-1";
 import {
     miraBrowserActionSchema,
     miraBrowserTabCommandSchema,
@@ -117,6 +118,11 @@ const frameSchema = v.strictObject({
         ),
     }),
 });
+
+/** Metadata for operator file controls; live display pixels are never persisted here. */
+export const browserPreviewSchema = v.object(
+    v.pick(frameSchema, ["observationId", "url", "title", "refs"]).entries
+);
 
 /**
  * Validate host-owned origins and access mode while fixing the executable inside the image.

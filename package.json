@@ -24,6 +24,7 @@
         "@daytona/toolbox-api-client": "0.231.1",
         "@dnd-kit/react": "0.5.3",
         "@headlessui/react": "2.2.10",
+        "@novnc/novnc": "1.7.0",
         "@openai/codex": "0.169.0",
         "@simplewebauthn/browser": "14.0.0",
         "@simplewebauthn/server": "14.1.0",
@@ -64,6 +65,7 @@
     "devDependencies": {
         "@tailwindcss/typography": "0.5.20",
         "@types/bun": "1.4.4",
+        "@types/novnc__novnc": "1.6.0",
         "@types/oidc-provider": "9.13.1",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",

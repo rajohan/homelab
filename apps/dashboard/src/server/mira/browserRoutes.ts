@@ -1,6 +1,5 @@
 import {
     miraBrowserAccessListSchema,
-    miraBrowserAccessRequestSchema,
     miraBrowserAccessStopSchema,
     miraBrowserConsoleSchema,
     miraBrowserHumanCommandSchema,
@@ -10,7 +9,6 @@ import {
 } from "@homelab/contracts/miraBrowser";
 import {
     listMiraBrowserAccess,
-    requestMiraBrowserAccess,
     stopMiraBrowserAccess,
 } from "@homelab/mira/data/browserAccess";
 import {
@@ -99,11 +97,6 @@ export const miraBrowserRouter = trpc.router({
         .input(miraBrowserAccessListSchema)
         .query(({ ctx, input }) =>
             execute(ctx, false, (mira) => listMiraBrowserAccess(mira, input?.runId))
-        ),
-    request: trpc.procedure
-        .input(miraBrowserAccessRequestSchema)
-        .mutation(({ ctx, input }) =>
-            execute(ctx, true, (mira) => requestMiraBrowserAccess(mira, input))
         ),
     stop: trpc.procedure
         .input(miraBrowserAccessStopSchema)

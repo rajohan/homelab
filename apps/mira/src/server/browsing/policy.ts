@@ -35,16 +35,7 @@ export function browserGrant(input: unknown): BrowserGrant {
         browserUrl(grant.initialUrl, grant.origins);
         return grant;
     }
-    const origins = exactBrowserOrigins(grant.origins);
-    if (
-        (grant.uploads || grant.downloads) &&
-        (grant.mode !== "control" || origins.length !== 1)
-    )
-        throw new Error(
-            "Browser file transfers require control of exactly one approved origin."
-        );
-    browserUrl(grant.initialUrl, origins);
-    return { ...grant, origins };
+    throw new Error("Legacy exact-site browser sessions are no longer supported.");
 }
 
 /** Validate the immutable site list for an exact-site session or saved sign-in.
@@ -92,78 +83,6 @@ export function browserUrl(input: unknown, origins: readonly string[]): string {
         return url.href;
     if (!origins.includes(url.origin)) throw new Error("Browser origin is not allowed.");
     return url.href;
-}
-
-/**
- * Construct a browser-only ceiling for one fresh driver-owned profile.
- * @param input - Trusted local policy; generic desktop and existing-profile tools are absent.
- * @param uploadRoot - Private session staging root, never a product file-store mount or model path.
- * @param downloadRoot - Private session destination, inaccessible to model arguments.
- * @returns A bounded v3 manifest with an exact blank-page bootstrap and approved web origins.
- */
-export function browserManifest(
-    input: unknown,
-    uploadRoot?: string,
-    downloadRoot?: string
-) {
-    const grant = browserGrant(input);
-    if (unrestrictedBrowserSites(grant.origins))
-        throw new Error("The native driver requires exact website origins.");
-    if (
-        Boolean(grant.uploads) !== Boolean(uploadRoot) ||
-        (uploadRoot && !path.isAbsolute(uploadRoot))
-    )
-        throw new Error("Browser upload authority requires its private staging root.");
-    if (
-        Boolean(grant.downloads) !== Boolean(downloadRoot) ||
-        (downloadRoot && !path.isAbsolute(downloadRoot))
-    )
-        throw new Error("Browser download authority requires its private destination.");
-    return {
-        version: 3,
-        expires_after: "5m",
-        idle_timeout: "1m",
-        allow: {
-            tools: [
-                "start_session",
-                "end_session",
-                "list_windows",
-                "browser_prepare",
-                "get_browser_state",
-                "browser_navigate",
-                ...(grant.mode === "control" ? ["browser_click", "browser_type"] : []),
-                ...(grant.uploads ? ["browser_set_input_files"] : []),
-                ...(grant.downloads ? ["browser_download"] : []),
-            ],
-        },
-        resources: {
-            apps: [
-                {
-                    executable: grant.executable,
-                    launch: true,
-                    windows: "all",
-                    terminate: "driver_launched",
-                },
-            ],
-            browser: {
-                profiles: [{ kind: "isolated" }],
-                origins: ["about:blank", ...grant.origins],
-            },
-            desktop: { display: false },
-            ...(uploadRoot || downloadRoot
-                ? {
-                      files: {
-                          ...(uploadRoot
-                              ? { read: [{ dir: uploadRoot, recursive: true }] }
-                              : {}),
-                          ...(downloadRoot
-                              ? { write: [{ dir: downloadRoot, recursive: true }] }
-                              : {}),
-                      },
-                  }
-                : {}),
-        },
-    };
 }
 
 function webUrl(input: string): URL {

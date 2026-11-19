@@ -1,9 +1,7 @@
-import { unrestrictedBrowserSites } from "@homelab/contracts/miraBrowser";
 import { Effect } from "effect";
 
 import { browserWorkerEnvironment } from "../config/environment";
 import { serveBrowserWorker } from "./child";
-import { openNativeBrowser } from "./native";
 import { browserGrant } from "./policy";
 import { captureBrowserProfile, restoreBrowserProfile } from "./profileSnapshot";
 import { openPublicBrowser } from "./publicBrowser";
@@ -23,9 +21,7 @@ if (import.meta.main) {
                             ...browserGrant(input),
                             ...(saved ? { savedProfile: true } : {}),
                         });
-                        return unrestrictedBrowserSites(grant.origins)
-                            ? openPublicBrowser(grant, signal)
-                            : openNativeBrowser(grant, signal);
+                        return openPublicBrowser(grant, signal);
                     },
                     undefined,
                     saved
