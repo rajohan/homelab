@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.1](https://github.com/rajohan/homelab/compare/v0.21.0...v0.21.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **mira:** recover release preflight and improve browser and reviewer tools ([#244](https://github.com/rajohan/homelab/issues/244)) ([b662535](https://github.com/rajohan/homelab/commit/b6625357b458bc3ebbf119781c88b7a7e3d4a13c))
+
 ## [0.21.0](https://github.com/rajohan/homelab/compare/v0.20.3...v0.21.0) (2026-11-19)
 
 
