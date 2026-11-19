@@ -108,7 +108,12 @@ export const deploymentProgressSchema = v.strictObject({
 });
 export type DeploymentProgress = v.InferOutput<typeof deploymentProgressSchema>;
 export type DeploymentHostRequest = { target: ReleaseDeploymentHostTarget } & (
-    | { mode: "inspect"; release: DeploymentRelease; allowCurrent?: boolean }
+    | {
+          mode: "inspect";
+          release: DeploymentRelease;
+          allowCurrent?: boolean;
+          drained?: boolean;
+      }
     | { mode: "status"; id: string }
     | {
           mode: "submit";
