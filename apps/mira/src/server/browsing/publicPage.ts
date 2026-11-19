@@ -13,7 +13,11 @@ export async function publicDocument(cdp: CDPSession, origins: readonly string[]
     const {
         frameTree: { frame },
     } = await cdp.send("Page.getFrameTree");
-    return { id: frame.id, loader: frame.loaderId, url: browserUrl(frame.url, origins) };
+    return {
+        id: frame.id,
+        loader: frame.loaderId,
+        url: browserUrl(frame.url + (frame.urlFragment ?? ""), origins),
+    };
 }
 
 /** Read bounded accessibility text and retain exact backend nodes for one observation.

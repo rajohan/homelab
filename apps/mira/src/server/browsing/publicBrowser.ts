@@ -172,25 +172,32 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
                 return null;
             }
         };
-        const observe = async (operation: AbortSignal, operator = false) => {
+        const capture = async (
+            operation: AbortSignal,
+            operator: boolean,
+            retry: boolean
+        ) => {
             operation.throwIfAborted();
             observation = undefined;
             await synchronizeTabs();
             const { page, cdp } = current();
             const doc = webUrl(page.url()) ? await publicDocument(cdp, sites) : null;
-            const { outline, refs, handles } = doc
+            // The accessibility tree and tab titles can disappear on a redirect.
+            // Native pixels remain useful when Chromium cannot provide element refs.
+            const pageOutline = doc
                 ? await publicOutline(
                       cdp,
                       doc.id,
                       grant.mode === "control",
                       operator && Boolean(grant.uploads)
-                  )
-                : {
-                      outline:
-                          "Chromium controls or an internal page are visible. Use the screenshot for native input; no website element refs are available.",
-                      refs: [],
-                      handles: new Map<string, number>(),
-                  };
+                  ).catch(() => null)
+                : null;
+            const { outline, refs, handles } = pageOutline ?? {
+                outline:
+                    "Use the Chromium screenshot for native input. Website element refs are unavailable.",
+                refs: [],
+                handles: new Map<string, number>(),
+            };
             const { data, width, height, mediaType } =
                 await browserDesktopFrame(operation);
             const visibleTabs = [
@@ -199,7 +206,7 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
             ].slice(0, 8);
             const items = await Promise.all(
                 visibleTabs.map(async ([id, tab]) => {
-                    const title = await tab.page.title();
+                    const title = await tab.page.title().catch(() => "");
                     return {
                         id,
                         url: webUrl(tab.page.url()),
@@ -209,28 +216,34 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
             );
             const end = webUrl(page.url()) ? await publicDocument(cdp, sites) : null;
             operation.throwIfAborted();
-            if (end?.loader !== doc?.loader || end?.url !== doc?.url)
-                throw new Error("The browser document changed during observation.");
+            const stable =
+                end?.loader === doc?.loader &&
+                end?.url === doc?.url &&
+                items[0]?.url === (doc?.url ?? null);
+            if (!stable && retry) return null;
             const observationId = crypto.randomUUID();
-            observation = {
-                id: observationId,
-                until: performance.now() + (operator ? 60_000 : 10_000),
-                operator,
-                loader: doc?.loader ?? null,
-                url: doc?.url ?? null,
-                tabId: selected,
-                width,
-                height,
-                nodes: handles,
-                refs,
-            };
+            if (stable)
+                observation = {
+                    id: observationId,
+                    until: performance.now() + (operator ? 60_000 : 10_000),
+                    operator,
+                    loader: doc?.loader ?? null,
+                    url: doc?.url ?? null,
+                    tabId: selected,
+                    width,
+                    height,
+                    nodes: handles,
+                    refs,
+                };
             return {
                 observationId,
-                url: doc?.url ?? null,
-                title: items.find((item) => item.id === selected)!.title,
-                outline,
+                url: items[0]!.url,
+                title: items[0]!.title,
+                outline: stable
+                    ? outline
+                    : "The page is navigating. Observe again before using input.",
                 complete: false,
-                refs,
+                refs: stable ? refs : [],
                 width,
                 height,
                 tabs: { selectedId: selected, items },
@@ -238,6 +251,12 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
                     content: [{ type: "image" as const, mediaType, data }],
                 },
             };
+        };
+        const observe = async (operation: AbortSignal, operator = false) => {
+            // A navigation during a read invalidates the frame. Reacquire before
+            // exposing any pixels or actionable handles. Never repeat input.
+            const first = await capture(operation, operator, true);
+            return first ?? (await capture(operation, operator, false))!;
         };
         const transferTarget = async (
             input: unknown,
