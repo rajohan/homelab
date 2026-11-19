@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.2](https://github.com/rajohan/homelab/compare/v0.21.1...v0.21.2) (2026-11-19)
+
+
+### Dependencies
+
+* **deps:** use stable Bun and refresh Homelab source dependencies ([#246](https://github.com/rajohan/homelab/issues/246)) ([19637f4](https://github.com/rajohan/homelab/commit/19637f465a7263d1fd9ac0d20db5a387a5a596e4))
+
 ## [0.21.1](https://github.com/rajohan/homelab/compare/v0.21.0...v0.21.1) (2026-11-19)
 
 
