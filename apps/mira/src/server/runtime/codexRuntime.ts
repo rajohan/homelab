@@ -1,3 +1,5 @@
+import { setTimeout as delay } from "node:timers/promises";
+
 import type { MiraActivity, MiraModel } from "@homelab/contracts/mira";
 import type { MiraSkillId } from "@homelab/contracts/miraSkills";
 import * as v from "valibot";
@@ -415,6 +417,34 @@ export class CodexRuntime {
     }
 
     /**
+     * Subscribe this client to a verified child once Codex has persisted its rollout.
+     * @param threadId - Child already bound to this parent and registered for cleanup.
+     * @param signal - Parent turn lifetime, including teardown.
+     */
+    private async attachReviewer(threadId: string, signal: AbortSignal): Promise<void> {
+        for (let pause = 25; ; pause = Math.min(1000, pause * 2)) {
+            signal.throwIfAborted();
+            try {
+                const attached = v.parse(
+                    threadSchema,
+                    await this.connection.request("thread/resume", {
+                        threadId,
+                        excludeTurns: true,
+                    })
+                );
+                if (attached.thread.id !== threadId || attached.cwd !== this.workspace)
+                    throw new Error("Unexpected reviewer attachment.");
+                return;
+            } catch (error) {
+                // A started child can be visible to thread/read before its rollout exists.
+                if (!(error instanceof RuntimeResponseError && error.threadMissing))
+                    throw error;
+                await delay(pause, undefined, { signal });
+            }
+        }
+    }
+
+    /**
      * Inspect only the persisted context belonging to this established private thread.
      * @param threadId - Registered provider reference from the owned conversation.
      * @returns Read-only native checkpoint and visual-size metadata.
@@ -604,21 +634,10 @@ export class CodexRuntime {
                                 );
                                 owned.resolve(true);
                                 await register(item.agentThreadId);
-                                // Attach this stdio client to receive the child's dynamic
-                                // requests. A metadata read alone does not subscribe it.
-                                const attached = v.parse(
-                                    threadSchema,
-                                    await this.connection.request("thread/resume", {
-                                        threadId: item.agentThreadId,
-                                        excludeTurns: true,
-                                    })
+                                return this.attachReviewer(
+                                    item.agentThreadId,
+                                    controller.signal
                                 );
-                                if (
-                                    attached.thread.id !== item.agentThreadId ||
-                                    attached.cwd !== this.workspace
-                                )
-                                    throw new Error("Unexpected reviewer attachment.");
-                                return;
                             }
                         );
                         void ready.catch(() => owned.resolve(false));
