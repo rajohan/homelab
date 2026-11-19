@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/rajohan/homelab/compare/v0.21.2...v0.22.0) (2026-11-19)
+
+
+### Features
+
+* **mira:** preserve browser handover, add chat emoji and handle SSH connection refusals ([#248](https://github.com/rajohan/homelab/issues/248)) ([ffc4c6d](https://github.com/rajohan/homelab/commit/ffc4c6ded02480f477b271605c480977f1df926b))
+
 ## [0.21.2](https://github.com/rajohan/homelab/compare/v0.21.1...v0.21.2) (2026-11-19)
 
 
