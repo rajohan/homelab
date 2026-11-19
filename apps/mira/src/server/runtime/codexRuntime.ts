@@ -54,6 +54,7 @@ interface ActiveTurn {
     images: number;
     contextMaintenance: boolean;
     onActivity?: ((activity: MiraActivity) => void) | undefined;
+    reviewers: Map<string, { ready: Promise<void>; controller: AbortController }>;
 }
 
 /** A single-turn Codex adapter with explicit tools and no implicit approval grants. */
@@ -341,6 +342,9 @@ export class CodexRuntime {
                 config: {
                     web_search: this.webSearch ? "live" : "disabled",
                     "features.sleep_tool": this.webSearch,
+                    "features.multi_agent": this.webSearch,
+                    "features.multi_agent_v2": this.webSearch,
+                    "features.multi_agent_v2_dynamic_tools": this.webSearch,
                     "features.image_generation": this.imageGeneration,
                 },
                 approvalPolicy: "untrusted",
@@ -391,6 +395,9 @@ export class CodexRuntime {
                 config: {
                     web_search: this.webSearch ? "live" : "disabled",
                     "features.sleep_tool": this.webSearch,
+                    "features.multi_agent": this.webSearch,
+                    "features.multi_agent_v2": this.webSearch,
+                    "features.multi_agent_v2_dynamic_tools": this.webSearch,
                     "features.image_generation": this.imageGeneration,
                 },
                 approvalPolicy: "untrusted",
@@ -487,6 +494,7 @@ export class CodexRuntime {
             onDelta?: (delta: string, messageId?: string) => void;
             onMessage?: (text: string, messageId: string, completed: boolean) => void;
             onStarted?: (turnId: string) => Promise<void>;
+            onReviewerStarted?: (threadId: string) => Promise<void>;
             attachments?: RuntimeInput[];
             onActivity?: (activity: MiraActivity) => void;
             onImage?: (image: GeneratedImage) => Promise<void>;
@@ -515,6 +523,7 @@ export class CodexRuntime {
             images: this.contextSizes.get(threadId)?.count ?? 0,
             contextMaintenance: false,
             onActivity: options.onActivity,
+            reviewers: new Map(),
         };
         void active.acknowledged.promise.catch(() => {});
         this.active = active;
@@ -529,6 +538,96 @@ export class CodexRuntime {
         const completion = Promise.withResolvers<TurnResult>();
         // The notification can arrive before the turn/start response.
         const unsubscribe = this.connection.subscribe((event) => {
+            // V2 reports agent activity on the parent. Child turn notifications need
+            // not be subscribed on this connection, so verify the live turn at dispatch.
+            if (
+                options.onReviewerStarted &&
+                this.webSearch &&
+                (event.method === "item/started" || event.method === "item/completed")
+            ) {
+                const activity = v.safeParse(
+                    v.object({
+                        threadId: v.literal(threadId),
+                        turnId: v.string(),
+                        item: v.object({
+                            type: v.literal("subAgentActivity"),
+                            kind: v.picklist([
+                                "started",
+                                "completed",
+                                "interrupted",
+                                "interacted",
+                            ]),
+                            agentThreadId: v.pipe(v.string(), v.uuid()),
+                        }),
+                    }),
+                    event.params
+                );
+                if (activity.success) {
+                    const { item, turnId } = activity.output;
+                    if (
+                        item.agentThreadId === threadId ||
+                        (active.id && turnId !== active.id)
+                    )
+                        return;
+                    if (
+                        item.kind === "started" &&
+                        !active.reviewers.has(item.agentThreadId) &&
+                        !active.completed &&
+                        !controller.signal.aborted
+                    ) {
+                        const register = options.onReviewerStarted;
+                        const ready = active.acknowledged.promise.then(
+                            async (parentTurn) => {
+                                if (parentTurn !== turnId)
+                                    throw new Error("Reviewer belongs to another turn.");
+                                const metadata = await this.connection.request(
+                                    "thread/read",
+                                    {
+                                        threadId: item.agentThreadId,
+                                        includeTurns: false,
+                                    }
+                                );
+                                v.parse(
+                                    v.object({
+                                        thread: v.object({
+                                            id: v.literal(item.agentThreadId),
+                                            parentThreadId: v.literal(threadId),
+                                            cwd: v.literal(this.workspace),
+                                            modelProvider: v.literal("openai"),
+                                        }),
+                                    }),
+                                    metadata
+                                );
+                                await register(item.agentThreadId);
+                                // Attach this stdio client to receive the child's dynamic
+                                // requests. A metadata read alone does not subscribe it.
+                                const attached = v.parse(
+                                    threadSchema,
+                                    await this.connection.request("thread/resume", {
+                                        threadId: item.agentThreadId,
+                                        excludeTurns: true,
+                                    })
+                                );
+                                if (
+                                    attached.thread.id !== item.agentThreadId ||
+                                    attached.cwd !== this.workspace
+                                )
+                                    throw new Error("Unexpected reviewer attachment.");
+                                return;
+                            }
+                        );
+                        void ready.catch(() => {});
+                        active.reviewers.set(item.agentThreadId, {
+                            ready,
+                            controller: new AbortController(),
+                        });
+                    }
+                    if (item.kind === "completed" || item.kind === "interrupted") {
+                        active.reviewers.get(item.agentThreadId)?.controller.abort();
+                    }
+                    return;
+                }
+            }
             if (event.method === "item/started") {
                 const item = v.safeParse(
                     v.object({
@@ -751,6 +850,13 @@ export class CodexRuntime {
             clearTimeout(deadline);
             unsubscribe();
             controller.abort();
+            await Promise.allSettled(
+                [...active.reviewers].map(async ([id, reviewer]) => {
+                    reviewer.controller.abort();
+                    await reviewer.ready;
+                    await this.connection.request("thread/delete", { threadId: id });
+                })
+            );
             active.acknowledged.reject(new Error("Mira turn did not start."));
             options.signal?.removeEventListener("abort", abort);
             this.connection.signal.removeEventListener("abort", disconnect);
@@ -937,11 +1043,36 @@ export class CodexRuntime {
         const active = this.active;
         if (!active) throw new Error("No active Mira run.");
         const acknowledgedId = await active.acknowledged.promise;
+        const reviewer = active.reviewers.get(call.threadId);
+        if (reviewer) {
+            await reviewer.ready;
+            reviewer.controller.signal.throwIfAborted();
+            const turns = await this.connection.request("thread/turns/list", {
+                threadId: call.threadId,
+                limit: 1,
+                itemsView: "notLoaded",
+            });
+            v.parse(
+                v.object({
+                    data: v.tuple([
+                        v.object({
+                            id: v.literal(call.turnId),
+                            status: v.literal("inProgress"),
+                        }),
+                    ]),
+                }),
+                turns
+            );
+        }
+        const callId = reviewer ? `${call.threadId}:${call.callId}` : call.callId;
         if (
-            !active ||
-            active.threadId !== call.threadId ||
-            acknowledgedId !== call.turnId ||
-            active.calls.has(call.callId)
+            this.active !== active ||
+            active.completed ||
+            active.controller.signal.aborted ||
+            (reviewer
+                ? reviewer.controller.signal.aborted
+                : active.threadId !== call.threadId || acknowledgedId !== call.turnId) ||
+            active.calls.has(callId)
         )
             throw new Error("Tool call does not belong to the active run.");
         if (active.calls.size >= runtimeToolCallLimit)
@@ -965,18 +1096,24 @@ export class CodexRuntime {
                 ],
             };
         const tool = this.threads
-            .get(call.threadId)
+            .get(active.threadId)
             ?.find((entry) => entry.name === call.tool);
-        if (!tool) throw new Error("Tool is not registered for this run.");
-        active.calls.add(call.callId);
-        const turnSignal = AbortSignal.any([signal, active.controller.signal]);
+        if (!tool || (reviewer && tool.readOnly !== true))
+            throw new Error("Tool is not registered for this run.");
+        active.calls.add(callId);
+        const turnSignal = AbortSignal.any([
+            signal,
+            active.controller.signal,
+            ...(reviewer ? [reviewer.controller.signal] : []),
+        ]);
         turnSignal.throwIfAborted();
         try {
             active.onActivity?.({ phase: "tool", tool: tool.name });
             const result = await tool.execute(call.arguments, turnSignal, {
-                callId: call.callId,
+                callId,
                 threadId: call.threadId,
                 turnId: call.turnId,
+                ...(reviewer ? { reviewer: true } : {}),
             });
             turnSignal.throwIfAborted();
             const contentItems = runtimeContentItems(result);
