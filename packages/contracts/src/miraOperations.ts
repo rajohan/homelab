@@ -22,14 +22,21 @@ export const miraHostProposalSchema = v.strictObject({
 });
 export type MiraHostCommand = v.InferOutput<typeof miraHostCommandSchema>;
 
-export const miraHostInspectionSchema = v.strictObject({
-    target,
-    inspect: v.picklist([
-        "identity",
-        "health",
-        "services",
-        "disk",
-        "containers",
-        "github_identity",
-    ]),
-});
+export const miraHostInspectionSchema = v.variant("inspect", [
+    v.strictObject({
+        target,
+        inspect: v.picklist([
+            "identity",
+            "health",
+            "services",
+            "disk",
+            "containers",
+            "github_identity",
+        ]),
+    }),
+    v.strictObject({
+        target: v.literal("main"),
+        inspect: v.literal("github_pr_status"),
+        number: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2_147_483_647)),
+    }),
+]);

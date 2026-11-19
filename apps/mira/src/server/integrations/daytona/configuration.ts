@@ -142,10 +142,24 @@ export function daytonaOriginalBindingHash(
         queueTimeout: 2,
         bunVersion: "1.4.4",
     });
+    const previousCanaries = [
+        ["1.4.4-canary.20261108.1", "2596ac5d391d47804c93a42bdbe615804aa62387"],
+        ["1.4.4-canary.20261118.1", "4ce14ba8b150c3c7315284f3df8480eb4158b38a"],
+    ] as const;
     if (
         recordedHash !== daytonaBindingHash(binding) &&
         recordedHash !== legacy &&
-        recordedHash !== bindingHash(binding, stableBunPolicy)
+        recordedHash !== bindingHash(binding, stableBunPolicy) &&
+        !previousCanaries.some(
+            ([bunVersion, bunRevision]) =>
+                recordedHash ===
+                bindingHash(binding, {
+                    ...stableBunPolicy,
+                    version: 3,
+                    bunVersion,
+                    bunRevision,
+                })
+        )
     )
         throw new Error("Unknown Daytona attempt ownership policy.");
     return recordedHash;
