@@ -298,7 +298,6 @@ export async function serveBrowserLive(options: {
                             currentViewer.abort.signal,
                         ]);
                         signal.throwIfAborted();
-                        invalidated.add(accessId);
                         const result = await entry.clipboard(pending.command, signal);
                         signal.throwIfAborted();
                         const current = await authority(pending.identity);

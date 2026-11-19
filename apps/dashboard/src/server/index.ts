@@ -103,7 +103,7 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
                 const principal = await authentication.operationPrincipal(incoming);
                 const passiveHeaders = new Headers(incoming.headers);
                 passiveHeaders.set("x-homelab-passive", "1");
-                const passive = new Request(incoming, { headers: passiveHeaders });
+                const passive = new Request(incoming.url, { headers: passiveHeaders });
                 if (clipboard)
                     return await browserClipboardRequest(incoming, {
                         operations,
