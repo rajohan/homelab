@@ -1,8 +1,10 @@
 import type { MiraAttachment } from "@homelab/contracts/mira";
 import { Button, IconButton, Textarea } from "@homelab/ui";
 import { Monitor, Send, Settings2, Square } from "lucide-react";
+import { useRef } from "react";
 
 import { AttachmentPicker } from "./AttachmentPicker";
+import { ChatEmojiPicker } from "./ChatEmojiPicker";
 import { MiraVoice } from "./MiraVoice";
 import type { MiraVoiceConnection } from "./voiceConnection";
 import { VoiceStatus } from "./VoiceStatus";
@@ -48,6 +50,7 @@ export function ChatComposer({
     readonly onComputer?: (() => void) | undefined;
     readonly onSettings?: (() => void) | undefined;
 }) {
+    const field = useRef<HTMLTextAreaElement>(null);
     const placeholder = active ? "Add guidance while Mira works…" : "Message Mira…";
     // Cancellation remains part of a terminal run's history, not a composer lock.
     const blocked = active && (stopping || stopPending || !steerable);
@@ -71,6 +74,11 @@ export function ChatComposer({
                     disabled={sending || blocked}
                     controls={
                         <>
+                            <ChatEmojiPicker
+                                field={field}
+                                onText={onText}
+                                disabled={sending}
+                            />
                             <MiraVoice voice={voice} />
                             {onComputer && (
                                 <IconButton
@@ -109,6 +117,7 @@ export function ChatComposer({
                     }
                 >
                     <Textarea
+                        ref={field}
                         aria-label="Message Mira"
                         rows={4}
                         value={text}

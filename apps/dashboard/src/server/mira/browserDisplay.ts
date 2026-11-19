@@ -13,7 +13,7 @@ const uuid = v.pipe(v.string(), v.uuid());
 export interface BrowserDisplaySocket {
     directory: string;
     hostId: string;
-    identity: { owner: string; accessId: string; epoch: string };
+    identity: { owner: string; accessId: string; epoch: string | null; inputOnly?: true };
     verify: () => Promise<void>;
     socket?: Socket;
     timer?: ReturnType<typeof setTimeout>;
@@ -49,7 +49,8 @@ export async function prepareBrowserDisplay(
     const identity = {
         owner: principal.id,
         accessId: v.parse(uuid, url.searchParams.get("id")),
-        epoch: v.parse(uuid, url.searchParams.get("epoch")),
+        epoch: v.parse(v.nullable(uuid), url.searchParams.get("epoch")),
+        ...(url.searchParams.get("input") === "1" ? { inputOnly: true as const } : {}),
     };
     const mira = {
         client: operations.client,

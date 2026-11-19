@@ -5,6 +5,7 @@ import {
 } from "@headlessui/react";
 import { type ReactNode, type Ref, useImperativeHandle, useRef } from "react";
 
+import { cn } from "../../lib/classNames";
 import { buttonStyles } from "../Button/buttonStyles";
 
 export interface PopoverControl {
@@ -21,7 +22,13 @@ export function Popover({
     trigger,
     children,
     controlRef,
+    anchor = "bottom end",
+    panelClassName,
+    disabled = false,
 }: {
+    readonly anchor?: "top start" | "bottom end";
+    readonly panelClassName?: string;
+    readonly disabled?: boolean;
     readonly label: string;
     readonly trigger: ReactNode;
     readonly children: ReactNode | ((controls: { close: () => void }) => ReactNode);
@@ -39,6 +46,8 @@ export function Popover({
         <HeadlessPopover>
             <PopoverButton
                 ref={triggerRef}
+                disabled={disabled}
+                type="button"
                 aria-label={label}
                 title={label}
                 className={buttonStyles({
@@ -49,9 +58,12 @@ export function Popover({
                 {trigger}
             </PopoverButton>
             <PopoverPanel
-                anchor={{ to: "bottom end", gap: 8, padding: 8 }}
+                anchor={{ to: anchor, gap: 8, padding: 8 }}
                 transition
-                className="z-40 flex w-[min(34rem,calc(100vw-1rem))] flex-col overflow-hidden! rounded-xl border border-primary-700 bg-primary-800 p-4 text-primary-50 shadow-2xl shadow-black/50 transition duration-150 data-closed:opacity-0 motion-reduce:transition-none sm:p-5"
+                className={cn(
+                    "z-40 flex w-[min(34rem,calc(100vw-1rem))] flex-col overflow-hidden! rounded-xl border border-primary-700 bg-primary-800 p-4 text-primary-50 shadow-2xl shadow-black/50 transition duration-150 data-closed:opacity-0 motion-reduce:transition-none sm:p-5",
+                    panelClassName
+                )}
             >
                 {({ close }) => (
                     <>{typeof children === "function" ? children({ close }) : children}</>

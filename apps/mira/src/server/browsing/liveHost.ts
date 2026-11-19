@@ -73,7 +73,8 @@ export async function serveBrowserLive(options: {
         await unlink(socketPath);
     }
     const entries = new Map<string, Entry>();
-    const viewers = new Map<string, Viewer>();
+    const views = new Map<string, Viewer>();
+    const controls = new Map<string, Viewer>();
     const invalidated = new Set<string>();
     const clipboard = new Map<
         string,
@@ -106,6 +107,7 @@ export async function serveBrowserLive(options: {
     };
     const accept = async (socket: Socket, identity: Identity) => {
         const { row, entry } = await authority(identity);
+        const viewers = identity.epoch === null ? views : controls;
         const previous = viewers.get(identity.accessId);
         if (previous) {
             if (previous.identity.epoch === identity.epoch && !previous.socket.destroyed)
@@ -151,7 +153,7 @@ export async function serveBrowserLive(options: {
             opening = openBrowserVnc(
                 options.socketPath,
                 entry.containerId,
-                !row.control,
+                row.control ? (identity.inputOnly ? "input" : "control") : "view",
                 signal
             );
             display = await opening;
@@ -198,9 +200,10 @@ export async function serveBrowserLive(options: {
                     owner: request.owner,
                     accessId: request.accessId,
                     epoch: request.epoch,
+                    ...(request.inputOnly ? { inputOnly: true as const } : {}),
                 };
                 if ("clipboard" in request) {
-                    const viewer = viewers.get(identity.accessId);
+                    const viewer = controls.get(identity.accessId);
                     if (
                         !viewer?.control ||
                         viewer.socket.destroyed ||
@@ -261,8 +264,9 @@ export async function serveBrowserLive(options: {
             entries.set(accessId, entry);
         },
         synchronize: async (accessId: string) => {
-            const viewer = viewers.get(accessId);
-            if (viewer) {
+            for (const viewers of [views, controls]) {
+                const viewer = viewers.get(accessId);
+                if (!viewer) continue;
                 let valid = false;
                 try {
                     const current = await authority(viewer.identity);
@@ -280,7 +284,7 @@ export async function serveBrowserLive(options: {
             const pending = clipboard.get(accessId);
             if (pending) {
                 clipboard.delete(accessId);
-                const currentViewer = viewers.get(accessId);
+                const currentViewer = controls.get(accessId);
                 const perform = async () => {
                     try {
                         const { row, entry } = await authority(pending.identity);
@@ -327,8 +331,9 @@ export async function serveBrowserLive(options: {
             entries.delete(accessId);
             clipboard.get(accessId)?.socket.destroy();
             clipboard.delete(accessId);
-            const viewer = viewers.get(accessId);
-            if (viewer) {
+            for (const viewers of [views, controls]) {
+                const viewer = viewers.get(accessId);
+                if (!viewer) continue;
                 await viewer.stop();
                 viewers.delete(accessId);
             }
@@ -338,7 +343,7 @@ export async function serveBrowserLive(options: {
             options.signal.removeEventListener("abort", stop);
             stop();
             await Promise.allSettled(
-                [...viewers.values()].map((viewer) => viewer.stop())
+                [...views.values(), ...controls.values()].map((viewer) => viewer.stop())
             );
             await new Promise<void>((resolve) => server.close(() => resolve()));
             await unlink(socketPath).catch(() => {});

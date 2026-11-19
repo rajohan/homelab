@@ -3,7 +3,7 @@ import RFB from "@novnc/novnc";
 import { Maximize, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { BrowserClipboard } from "./BrowserClipboard";
+import { BrowserInputLayer } from "./BrowserInputLayer";
 
 /** Display the current Chromium window and route direct input only during operator control.
  * @returns A live, keyboard-focusable browser viewport with explicit connection recovery.
@@ -18,6 +18,7 @@ export function BrowserLiveView({
     readonly control: boolean;
 }) {
     const container = useRef<HTMLDivElement>(null);
+    const viewport = useRef<HTMLDivElement>(null);
     const [attempt, setAttempt] = useState(0);
     const [state, setState] = useState<"connecting" | "connected" | "disconnected">(
         "connecting"
@@ -30,11 +31,10 @@ export function BrowserLiveView({
         const url = new URL("/api/mira/browser/display", location.href);
         url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
         url.searchParams.set("id", accessId);
-        url.searchParams.set("epoch", epoch);
         const display = new RFB(target, url.href);
         display.scaleViewport = true;
-        display.viewOnly = !control;
-        display.focusOnClick = control;
+        display.viewOnly = true;
+        display.focusOnClick = false;
         display.background = "var(--color-primary-950)";
         const preserveEscape = (event: KeyboardEvent) => {
             if (event.key === "Escape") event.stopPropagation();
@@ -73,45 +73,46 @@ export function BrowserLiveView({
             target.removeEventListener("keydown", preserveEscape);
             display.disconnect();
         };
-    }, [accessId, epoch, control, attempt]);
+    }, [accessId, attempt]);
     return (
         <section aria-label="Live Chromium browser" className="space-y-2">
-            <div className="relative overflow-hidden rounded-lg border border-primary-700 bg-primary-950">
-                <div
-                    ref={container}
-                    role="application"
-                    aria-label="Remote Chromium window"
-                    className="aspect-8/5 min-h-48 w-full sm:aspect-auto sm:h-[min(68dvh,50rem)] sm:min-h-64"
-                />
-                {state !== "connected" && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-primary-950 p-6 text-center">
-                        <output className="text-sm text-primary-200">
-                            {state === "connecting"
-                                ? "Connecting to Chromium…"
-                                : "Browser display disconnected."}
-                        </output>
-                        {state === "disconnected" && (
-                            <Button
-                                variant="secondary"
-                                onClick={() => {
-                                    setState("connecting");
-                                    setAttempt((value) => value + 1);
-                                }}
-                            >
-                                <RefreshCw size={14} aria-hidden="true" /> Reconnect
-                                display
-                            </Button>
-                        )}
-                    </div>
+            <div
+                ref={viewport}
+                className="group/browser grid bg-primary-950 [&:fullscreen]:grid-rows-[minmax(0,1fr)_auto]"
+            >
+                <div className="relative col-start-1 row-start-1 overflow-hidden rounded-lg border border-primary-700 bg-primary-950">
+                    <div
+                        ref={container}
+                        aria-label="Remote Chromium window"
+                        inert={control}
+                        className="aspect-8/5 min-h-48 w-full group-[:fullscreen]/browser:h-full group-[:fullscreen]/browser:min-h-0 sm:aspect-auto sm:h-[min(68dvh,50rem)] sm:min-h-64"
+                    />
+                    {state !== "connected" && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-primary-950 p-6 text-center">
+                            <output className="text-sm text-primary-200">
+                                {state === "connecting"
+                                    ? "Connecting to Chromium…"
+                                    : "Browser display disconnected."}
+                            </output>
+                            {state === "disconnected" && (
+                                <Button
+                                    variant="secondary"
+                                    onClick={() => {
+                                        setState("connecting");
+                                        setAttempt((value) => value + 1);
+                                    }}
+                                >
+                                    <RefreshCw size={14} aria-hidden="true" /> Reconnect
+                                    display
+                                </Button>
+                            )}
+                        </div>
+                    )}
+                </div>
+                {control && state === "connected" && (
+                    <BrowserInputLayer key={epoch} accessId={accessId} epoch={epoch} />
                 )}
             </div>
-            <BrowserClipboard
-                key={`${accessId}:${epoch}:${control}:${state}`}
-                target={container}
-                accessId={accessId}
-                epoch={epoch}
-                enabled={control && state === "connected"}
-            />
             <div className="flex items-center justify-between gap-3">
                 <p className="text-sm text-primary-300">
                     {control
@@ -121,7 +122,7 @@ export function BrowserLiveView({
                 <Button
                     variant="ghost"
                     onClick={() => {
-                        void container.current?.requestFullscreen().catch(() => {});
+                        void viewport.current?.requestFullscreen().catch(() => {});
                     }}
                 >
                     <Maximize size={14} aria-hidden="true" /> Full screen

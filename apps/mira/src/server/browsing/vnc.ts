@@ -14,14 +14,14 @@ const idSchema = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
 /** Attach a fixed VNC server to the already-owned Chromium display over Docker's private pipe.
  * @param socketPath - Host-owned Docker socket.
  * @param containerId - Immutable container ID of the initialized session.
- * @param viewOnly - Enforced by the VNC server, independently of the web client's settings.
+ * @param mode - The server enforces viewing, input-only, or legacy combined operation.
  * @param signal - Revocation of this viewer; no browser or TCP port is exposed.
  * @returns A binary RFB stream and completion after the fixed exec process exits.
  */
 export async function openBrowserVnc(
     socketPath: string,
     containerId: string,
-    viewOnly: boolean,
+    mode: "view" | "input" | "control",
     signal: AbortSignal
 ) {
     v.parse(idSchema, containerId);
@@ -34,12 +34,7 @@ export async function openBrowserVnc(
         AttachStdout: true,
         AttachStderr: false,
         Tty: false,
-        Cmd: [
-            "/usr/bin/python3",
-            "-I",
-            "/opt/mira-browser/vnc.py",
-            viewOnly ? "view" : "control",
-        ],
+        Cmd: ["/usr/bin/python3", "-I", "/opt/mira-browser/vnc.py", mode],
     });
     if (created.status !== 201)
         throw new BrowserDisplayUnavailable("Browser display could not be attached.");

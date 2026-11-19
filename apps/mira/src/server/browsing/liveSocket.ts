@@ -7,7 +7,8 @@ const uuid = v.pipe(v.string(), v.uuid());
 export const browserLiveIdentitySchema = v.strictObject({
     owner: uuid,
     accessId: uuid,
-    epoch: uuid,
+    epoch: v.nullable(uuid),
+    inputOnly: v.optional(v.literal(true)),
 });
 
 export const browserLiveRequestSchema = v.union([
