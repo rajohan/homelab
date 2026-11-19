@@ -152,3 +152,20 @@ When qualifying or reconnecting the pinned outbound bridge, preserve each proxy
 endpoint's fixed address, com.docker.network.endpoint.ifname=external and
 gw_priority=1. Confirm both proxy routes with real Chromium before declaring
 the network healthy; a healthy container alone does not verify external routing.
+
+### Model control of the same window
+
+Model observations capture the full isolated Chromium desktop with scrot directly
+to memory, including tabs, menus and the address bar. Native model input uses
+xdotool with fixed executables and validated argument arrays: pointer movement,
+single/double/right clicks, dragging, wheel input, key combinations and literal
+text at the current caret. Text goes through stdin to a short-lived clipboard owner inside the isolated desktop, never shell interpolation. Native paste supports Unicode and releases that private selection after delivery; it never reads or connects to the operator\'s PC clipboard.
+These tools are Debian packages in the managed Main image.
+
+Each native action consumes a fresh observation, checks control ownership and
+the same selected document, and validates coordinates against the captured
+dimensions. Website refs remain available for precise element actions. Internal
+Chromium pages have no website URL or element refs, but remain visible and
+operable through the native window. The model receives neither a shell nor a
+CDP endpoint. Password extraction, operating human security confirmations and
+unconfirmed file transfers remain outside the model tool contract.

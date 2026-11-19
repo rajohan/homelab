@@ -45,7 +45,7 @@ Drizzle ORM and Kit are kept together at the official `1.0.0-rc.5` release publi
 ## Native and system dependencies
 
 The browser uses `puppeteer-core` and `@novnc/novnc` from the root manifest and lockfile; Dependabot covers their versions and the noVNC type declarations. Windows input retains `@trycua/cua-driver` and its platform libraries. There is no separate browser CLI download or unmanaged installer.
-Chromium, x11vnc, Xvfb/Openbox and Python come from Debian packages in the Main Dockerfile. The existing release job refreshes that package layer using `PACKAGES_WEEK`; the weekly cache key takes effect when a release is built, rather than scheduling an independent deployment. Dependabot monitors both
+Chromium, x11vnc, Xvfb/Openbox, xdotool, scrot, xclip and Python come from Debian packages in the Main Dockerfile. The existing release job refreshes that package layer using `PACKAGES_WEEK`; the weekly cache key takes effect when a release is built, rather than scheduling an independent deployment. Dependabot monitors both
 application and proxy base images. Installed images update through Homelab releases.
 Windows build-tool pins are centralized in `package.json` under `config.windows`,
 including their checksum, publisher and official update feed. Skill source versions,

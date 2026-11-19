@@ -173,7 +173,8 @@ export async function openBrowserWorker(
                     previous.id !== action.observationId ||
                     now() - previous.time < 0 ||
                     now() - previous.time >= previous.maxAge ||
-                    !previous.refs.get(action.ref)?.includes(action.action)
+                    ("ref" in action &&
+                        !previous.refs.get(action.ref)?.includes(action.action))
                 )
                     throw new Error(
                         "Browser input requires a fresh permitted observation."

@@ -1,12 +1,9 @@
 import {
     type MiraBrowserProfile,
-    miraBrowserProfileCreateSchema,
     miraBrowserProfileDeleteSchema,
 } from "@homelab/contracts/miraBrowser";
 import * as v from "valibot";
 
-import { exactBrowserOrigins } from "../browsing/policy";
-import { browserNetworkForOwner } from "../config/environment";
 import { lockBrowserOwner } from "./browserAccess";
 import { auditMira, type MiraContext, MiraFailure } from "./context";
 
@@ -34,53 +31,6 @@ export async function listMiraBrowserProfiles(
         FROM mira_browser_profiles p WHERE p.owner=${context.owner} AND p.state<>'deleted'
         ORDER BY p.created_at,p.id LIMIT 4`;
     return rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
-}
-
-/**
- * Create an account-owned isolated profile with immutable approved website origins.
- * @returns The newly allocated profile identity; browser storage is created on its first use.
- */
-export async function createMiraBrowserProfile(context: MiraContext, input: unknown) {
-    human(context);
-    const request = v.parse(miraBrowserProfileCreateSchema, input);
-    if (request.homeNetwork && !browserNetworkForOwner(context.owner))
-        throw new MiraFailure(
-            "FORBIDDEN",
-            "Home network profiles require an installed operator network."
-        );
-    let origins: string[];
-    try {
-        origins = exactBrowserOrigins(request.origins);
-    } catch {
-        throw new MiraFailure(
-            "BAD_REQUEST",
-            "Choose unique exact HTTP(S) origins without paths or credentials."
-        );
-    }
-    return context.client.begin(async (query) => {
-        await lockBrowserOwner(query, context.owner);
-        const [counts] = await query<
-            { count: number }[]
-        >`SELECT count(*)::int AS count FROM mira_browser_profiles WHERE owner=${context.owner} AND state<>'deleted'`;
-        if (counts!.count >= 4)
-            throw new MiraFailure(
-                "PRECONDITION_FAILED",
-                "Delete an unused browser profile before creating another. Four profiles are allowed per account."
-            );
-        await query`SELECT pg_advisory_xact_lock(hashtextextended('mira:browser:profile-capacity',0))`;
-        const [slot] = await query<
-            { slot: number }[]
-        >`SELECT slot FROM generate_series(0,15) AS slot WHERE NOT EXISTS(SELECT 1 FROM mira_browser_profiles p WHERE p.quota_slot=slot) ORDER BY slot LIMIT 1`;
-        if (!slot)
-            throw new MiraFailure(
-                "PRECONDITION_FAILED",
-                "Saved browser profile storage is fully reserved. Delete an unused profile before creating another."
-            );
-        const id = Bun.randomUUIDv7();
-        await query`INSERT INTO mira_browser_profiles(id,owner,name,origins,home_network,quota_slot) VALUES(${id},${context.owner},${request.name},${JSON.stringify(origins)}::text::jsonb,${Boolean(request.homeNetwork)},${slot.slot})`;
-        await auditMira(query, context, "browser.profile_created", id);
-        return { id };
-    });
 }
 
 /**

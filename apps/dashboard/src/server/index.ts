@@ -95,10 +95,13 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
                         403
                     );
                 const principal = await authentication.operationPrincipal(incoming);
+                const passiveHeaders = new Headers(incoming.headers);
+                passiveHeaders.set("x-homelab-passive", "1");
+                const passive = new Request(incoming, { headers: passiveHeaders });
                 const data = await prepareBrowserDisplay(incoming, {
                     operations,
                     principal,
-                    verifyHuman: () => authentication.operationPrincipal(incoming, true),
+                    verifyHuman: () => authentication.operationPrincipal(passive),
                 });
                 return host.upgrade(incoming, { data })
                     ? undefined

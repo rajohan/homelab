@@ -6,6 +6,9 @@ import * as v from "valibot";
 import { browserDockerFrames } from "./attach";
 import { browserDockerRequest } from "./docker";
 
+/** A display attachment failed without leaving an active input process. */
+export class BrowserDisplayUnavailable extends Error {}
+
 const idSchema = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
 
 /** Attach a fixed VNC server to the already-owned Chromium display over Docker's private pipe.
@@ -22,7 +25,8 @@ export async function openBrowserVnc(
     signal: AbortSignal
 ) {
     v.parse(idSchema, containerId);
-    signal.throwIfAborted();
+    if (signal.aborted)
+        throw new BrowserDisplayUnavailable("Browser display was cancelled.");
     const docker = browserDockerRequest(socketPath);
     const created = await docker("POST", `/containers/${containerId}/exec`, {
         User: "1000:1000",
@@ -37,9 +41,11 @@ export async function openBrowserVnc(
             viewOnly ? "view" : "control",
         ],
     });
-    if (created.status !== 201) throw new Error("Browser display could not be attached.");
+    if (created.status !== 201)
+        throw new BrowserDisplayUnavailable("Browser display could not be attached.");
     const execId = v.parse(v.object({ Id: idSchema }), created.body).Id;
-    signal.throwIfAborted();
+    if (signal.aborted)
+        throw new BrowserDisplayUnavailable("Browser display was cancelled.");
     const wire = await new Promise<Duplex>((resolve, reject) => {
         const body = JSON.stringify({ Detach: false, Tty: false });
         const outgoing = request({
@@ -57,7 +63,6 @@ export async function openBrowserVnc(
         const finish = () => {
             settled = true;
             clearTimeout(timer);
-            signal.removeEventListener("abort", fail);
         };
         const fail = () => {
             if (settled) return;
@@ -72,7 +77,7 @@ export async function openBrowserVnc(
             fail();
         });
         outgoing.on("upgrade", (response, socket, head) => {
-            if (settled || signal.aborted || response.statusCode !== 101) {
+            if (settled || response.statusCode !== 101) {
                 socket.destroy();
                 fail();
                 return;
@@ -81,9 +86,18 @@ export async function openBrowserVnc(
             if (head.length > 0) socket.unshift(head);
             resolve(socket);
         });
-        signal.addEventListener("abort", fail, { once: true });
-        if (signal.aborted) fail();
-        else outgoing.end(body);
+        // Finish acquiring the private pipe even if the viewer closes meanwhile,
+        // then deliver EOF and confirm exec exit before admitting another controller.
+        outgoing.end(body);
+    }).catch(async (error: unknown) => {
+        const result = await docker("GET", `/exec/${execId}/json`);
+        if (
+            result.status === 404 ||
+            (result.status === 200 &&
+                !v.parse(v.object({ Running: v.boolean() }), result.body).Running)
+        )
+            throw new BrowserDisplayUnavailable("Browser display attachment ended.");
+        throw error;
     });
     const stream = new Duplex({
         read() {
@@ -120,26 +134,28 @@ export async function openBrowserVnc(
     signal.addEventListener("abort", stop, { once: true });
     stream.once("close", () => signal.removeEventListener("abort", stop));
     if (signal.aborted) stop();
-    return {
-        stream,
-        close: async () => {
-            stream.destroy();
-            // A controller handover waits for the input process to stop.
-            for (let attempt = 0; attempt < 100; attempt++) {
-                const result = await docker("GET", `/exec/${execId}/json`);
-                if (result.status === 404) {
-                    wire.destroy();
-                    return;
-                }
-                if (result.status !== 200) break;
-                if (!v.parse(v.object({ Running: v.boolean() }), result.body).Running) {
-                    wire.destroy();
-                    return;
-                }
-                await Bun.sleep(100);
+    const close = async () => {
+        stream.destroy();
+        // A controller handover waits for the input process to stop.
+        for (let attempt = 0; attempt < 100; attempt++) {
+            const result = await docker("GET", `/exec/${execId}/json`);
+            if (result.status === 404) {
+                wire.destroy();
+                return;
             }
-            wire.destroy();
-            throw new Error("Browser display input did not stop.");
-        },
+            if (result.status !== 200) break;
+            if (!v.parse(v.object({ Running: v.boolean() }), result.body).Running) {
+                wire.destroy();
+                return;
+            }
+            await Bun.sleep(100);
+        }
+        wire.destroy();
+        throw new Error("Browser display input did not stop.");
     };
+    if (signal.aborted) {
+        await close();
+        throw new BrowserDisplayUnavailable("Browser display was cancelled.");
+    }
+    return { stream, close };
 }

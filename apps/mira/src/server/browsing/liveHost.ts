@@ -7,7 +7,7 @@ import * as v from "valibot";
 
 import { readMiraBrowserLive } from "../data/browserLive";
 import { browserLiveIdentitySchema, browserLiveSocket } from "./liveSocket";
-import { openBrowserVnc } from "./vnc";
+import { BrowserDisplayUnavailable, openBrowserVnc } from "./vnc";
 
 type Identity = v.InferOutput<typeof browserLiveIdentitySchema>;
 type Entry = {
@@ -106,7 +106,11 @@ export async function serveBrowserLive(options: {
                 (stopping ??= Promise.resolve().then(async () => {
                     abort.abort();
                     socket.destroy();
-                    display ??= await opening;
+                    try {
+                        display ??= await opening;
+                    } catch (error) {
+                        if (!(error instanceof BrowserDisplayUnavailable)) throw error;
+                    }
                     await display?.close();
                     if (row.control) invalidated.add(identity.accessId);
                     return;
@@ -213,12 +217,12 @@ export async function serveBrowserLive(options: {
         },
         unregister: async (accessId: string) => {
             entries.delete(accessId);
-            invalidated.delete(accessId);
             const viewer = viewers.get(accessId);
             if (viewer) {
                 await viewer.stop();
                 viewers.delete(accessId);
             }
+            invalidated.delete(accessId);
         },
         close: async () => {
             options.signal.removeEventListener("abort", stop);

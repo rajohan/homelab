@@ -88,7 +88,7 @@ const actionsSchema = v.pipe(
 const frameSchema = v.strictObject({
     tabs: v.optional(miraBrowserTabsSchema),
     observationId,
-    url: address,
+    url: v.nullable(address),
     title: bounded(2048),
     outline: bounded(64 * 1024),
     complete: v.boolean(),
@@ -110,7 +110,7 @@ const frameSchema = v.strictObject({
             v.array(
                 v.strictObject({
                     type: v.literal("image"),
-                    mediaType: v.literal("image/png"),
+                    mediaType: v.picklist(["image/png", "image/jpeg"]),
                     data: bounded(3 * 1024 * 1024),
                 })
             ),
@@ -139,11 +139,13 @@ export function browserWorkerGrant(input: unknown) {
  * Validate an untrusted worker observation before exposing text, refs or pixels to the caller.
  * @param input - Exactly one worker result, without native target IDs or diagnostics.
  * @param origins - The immutable host-approved origin ceiling for this connection.
- * @returns A bounded PNG observation with unique actionable refs and matching dimensions.
+ * @returns A bounded image observation with unique actionable refs and matching dimensions.
  */
 export function browserWorkerFrame(input: unknown, origins: readonly string[]) {
     const frame = v.parse(frameSchema, input);
-    browserUrl(frame.url, origins);
+    if (frame.url !== null) browserUrl(frame.url, origins);
+    else if (frame.refs.length > 0)
+        throw new Error("Non-website observations cannot contain page refs.");
     if (frame.tabs) {
         const { items, selectedId } = frame.tabs;
         if (
@@ -151,7 +153,7 @@ export function browserWorkerFrame(input: unknown, origins: readonly string[]) {
             items.find((tab) => tab.id === selectedId)?.url !== frame.url
         )
             throw new Error("Invalid browser tab inventory.");
-        for (const tab of items) browserUrl(tab.url, origins);
+        for (const tab of items) if (tab.url !== null) browserUrl(tab.url, origins);
     }
     runtimeContentItems(frame.content);
     const dimensions = imageSize(Buffer.from(frame.content.content[0]!.data, "base64"));

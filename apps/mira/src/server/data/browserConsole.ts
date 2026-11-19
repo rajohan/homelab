@@ -86,12 +86,12 @@ export async function readMiraBrowserConsole(
             Date.now() - console.frameAt.getTime() < 60_000
                 ? v.parse(browserPreviewSchema, console.frame)
                 : null;
-        if (frame) browserUrl(frame.url, access.policy!.origins);
+        if (frame?.url) browserUrl(frame.url, access.policy!.origins);
         return {
             epoch: console.epoch,
             controller: console.controller,
             busy: console.state !== "idle" || (await modelBusy(query, id)),
-            preview: frame
+            preview: frame?.url
                 ? {
                       observationId: frame.observationId,
                       url: frame.url,
@@ -141,7 +141,7 @@ export async function transferMiraBrowserControl(
  * @param query - Account-locked transaction.
  * @param id - Current grant identity.
  * @param operation - Already parsed input operation.
- * @returns Completion only for a fresh observed ref permitting the requested action.
+ * @returns Completion only for a fresh observation and, when present, a ref permitting the action.
  */
 export async function requireBrowserObservation(
     query: TransactionSQL,
@@ -157,21 +157,26 @@ export async function requireBrowserObservation(
     const [row] = await query<
         { frame: Frame }[]
     >`SELECT frame FROM mira_browser_consoles WHERE access_id=${id} AND frame IS NOT NULL AND frame_at>clock_timestamp()-(CASE WHEN controller='human' THEN interval '60 seconds' ELSE interval '10 seconds' END)`;
+    if (!row || row.frame.observationId !== operation.input.observationId)
+        throw new MiraFailure(
+            "PRECONDITION_FAILED",
+            "Request a fresh browser observation."
+        );
+    if (!("ref" in operation.input)) return;
+    const targetRef = operation.input.ref;
+    let targetAction: "click" | "type" | "upload" = "click";
+    if (operation.method === "upload") targetAction = "upload";
+    else if ("action" in operation.input) targetAction = operation.input.action;
     if (
-        !row ||
-        row.frame.observationId !== operation.input.observationId ||
+        !row.frame.url ||
         (operation.method !== "act" &&
             new URL(row.frame.url).origin !== operation.origin) ||
         !row.frame.refs.some(
             (item) =>
-                item.ref === operation.input.ref &&
+                item.ref === targetRef &&
                 (operation.method === "download"
                     ? item.role === "link" && item.actions.includes("click")
-                    : item.actions.includes(
-                          operation.method === "upload"
-                              ? "upload"
-                              : operation.input.action
-                      ))
+                    : item.actions.includes(targetAction))
         )
     )
         throw new MiraFailure(

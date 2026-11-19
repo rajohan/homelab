@@ -23,14 +23,14 @@ ARG APP
 # Debian packages are updated by the managed image rebuild; JavaScript uses the root lockfile.
 ARG PACKAGES_WEEK
 RUN if [ "$APP" = homelab ]; then echo "$PACKAGES_WEEK" >/dev/null && apt-get update && apt-get install -y --no-install-recommends \
-    openssh-client git ca-certificates python3 chromium x11vnc xvfb openbox xauth x11-utils \
+    openssh-client git ca-certificates python3 chromium x11vnc xvfb openbox xauth x11-utils xdotool scrot xclip \
     libxkbcommon0 libwayland-client0 libdbus-1-3 libatspi2.0-0 && rm -rf /var/lib/apt/lists/*; fi
 WORKDIR /app
 ENV NODE_ENV=production HOMELAB_MIRA_SANDBOX_PROFILE=homelab-check-v2
 COPY --from=build --chown=bun:bun /output/ ./
 COPY --from=build /browser/ /opt/mira-browser/
 COPY --from=build /tools/ /opt/homelab/
-COPY deploy/browser/start.sh deploy/browser/vnc.py deploy/browser/proxy-policy.json /opt/mira-browser/
+COPY deploy/browser/start.sh deploy/browser/vnc.py deploy/browser/capture.py deploy/browser/proxy-policy.json /opt/mira-browser/
 COPY deploy/browser/worker.sh /usr/local/bin/mira-browser
 COPY deploy/start.sh /usr/local/bin/homelab
 RUN chmod 0755 /usr/local/bin/mira-browser /usr/local/bin/homelab && \

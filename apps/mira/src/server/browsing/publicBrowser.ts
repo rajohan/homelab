@@ -8,11 +8,11 @@ import {
     miraBrowserTabCommandSchema,
     unrestrictedBrowserSites,
 } from "@homelab/contracts/miraBrowser";
-import { imageSize } from "image-size";
 import { type CDPSession, launch, type Page } from "puppeteer-core";
 import * as v from "valibot";
 
 import { publicBrowserNetwork } from "../config/environment";
+import { browserDesktopFrame, browserDesktopInput } from "./desktop";
 import { type BrowserGrant, browserUrl } from "./policy";
 import { browserProfileDirectory } from "./profile";
 import { publicDocument, publicInput, publicOutline } from "./publicPage";
@@ -88,8 +88,11 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
               id: string;
               until: number;
               operator: boolean;
-              loader: string;
-              url: string;
+              loader: string | null;
+              url: string | null;
+              tabId: string;
+              width: number;
+              height: number;
               nodes: Map<string, number>;
               refs: Awaited<ReturnType<typeof publicOutline>>["refs"];
           }
@@ -106,33 +109,39 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
         const initialPages = await context.pages();
         const synchronizeTabs = async () => {
             for (const [id, tab] of tabs)
-                if (tab.page.isClosed() || !/^https?:\/\//u.test(tab.page.url())) {
+                if (tab.page.isClosed()) {
                     tabs.delete(id);
                     await tab.cdp.detach().catch(() => {});
                 }
             for (const page of await context.pages()) {
                 if ([...tabs.values()].some((tab) => tab.page === page)) continue;
-                try {
-                    browserUrl(page.url(), sites);
-                } catch {
-                    continue;
-                }
                 tabs.set(crypto.randomUUID(), {
                     page,
                     cdp: await page.createCDPSession(),
                 });
             }
+            let focused: string | undefined;
+            const visible: string[] = [];
             for (const [id, tab] of tabs) {
                 try {
                     const focus = await tab.cdp.send("Runtime.evaluate", {
-                        expression: "document.hasFocus()",
+                        expression:
+                            "({focused: document.hasFocus(), visible: document.visibilityState === 'visible'})",
                         returnByValue: true,
                     });
-                    if (focus.result.value === true) selected = id;
+                    const state = v.parse(
+                        v.object({ focused: v.boolean(), visible: v.boolean() }),
+                        focus.result.value
+                    );
+                    if (state.focused) focused = id;
+                    if (state.visible) visible.push(id);
                 } catch {
                     /* A closing tab is reconciled on the next observation. */
                 }
             }
+            if (focused) selected = focused;
+            else if (!visible.includes(selected) && visible.length > 0)
+                selected = visible.at(-1)!;
             if (!tabs.has(selected)) selected = tabs.keys().next().value ?? "";
         };
         const current = () => {
@@ -151,21 +160,34 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
             await page.bringToFront();
             await publicDocument(current().cdp, sites);
         };
+        const webUrl = (value: string) => {
+            try {
+                return browserUrl(value, sites);
+            } catch {
+                return null;
+            }
+        };
         const observe = async (operation: AbortSignal, operator = false) => {
             operation.throwIfAborted();
             observation = undefined;
             await synchronizeTabs();
             const { page, cdp } = current();
-            await page.bringToFront();
-            const doc = await publicDocument(cdp, sites);
-            const { outline, refs, handles } = await publicOutline(
-                cdp,
-                doc.id,
-                grant.mode === "control",
-                operator && Boolean(grant.uploads)
-            );
-            const data = await page.screenshot({ type: "png", encoding: "base64" });
-            const { width, height } = imageSize(Buffer.from(data, "base64"));
+            const doc = webUrl(page.url()) ? await publicDocument(cdp, sites) : null;
+            const { outline, refs, handles } = doc
+                ? await publicOutline(
+                      cdp,
+                      doc.id,
+                      grant.mode === "control",
+                      operator && Boolean(grant.uploads)
+                  )
+                : {
+                      outline:
+                          "Chromium controls or an internal page are visible. Use the screenshot for native input; no website element refs are available.",
+                      refs: [],
+                      handles: new Map<string, number>(),
+                  };
+            const { data, width, height, mediaType } =
+                await browserDesktopFrame(operation);
             const visibleTabs = [
                 [selected, current()] as const,
                 ...[...tabs].filter(([id]) => id !== selected),
@@ -175,28 +197,31 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
                     const title = await tab.page.title();
                     return {
                         id,
-                        url: browserUrl(tab.page.url(), sites),
+                        url: webUrl(tab.page.url()),
                         title: title.slice(0, 2048),
                     };
                 })
             );
-            const end = await publicDocument(cdp, sites);
+            const end = webUrl(page.url()) ? await publicDocument(cdp, sites) : null;
             operation.throwIfAborted();
-            if (end.loader !== doc.loader || end.url !== doc.url)
+            if (end?.loader !== doc?.loader || end?.url !== doc?.url)
                 throw new Error("The browser document changed during observation.");
             const observationId = crypto.randomUUID();
             observation = {
                 id: observationId,
                 until: performance.now() + (operator ? 60_000 : 10_000),
                 operator,
-                loader: doc.loader,
-                url: doc.url,
+                loader: doc?.loader ?? null,
+                url: doc?.url ?? null,
+                tabId: selected,
+                width,
+                height,
                 nodes: handles,
                 refs,
             };
             return {
                 observationId,
-                url: doc.url,
+                url: doc?.url ?? null,
                 title: items.find((item) => item.id === selected)!.title,
                 outline,
                 complete: false,
@@ -205,9 +230,7 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
                 height,
                 tabs: { selectedId: selected, items },
                 content: {
-                    content: [
-                        { type: "image" as const, mediaType: "image/png" as const, data },
-                    ],
+                    content: [{ type: "image" as const, mediaType, data }],
                 },
             };
         };
@@ -220,6 +243,7 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
             const action = v.parse(browserUploadActionSchema, input);
             const seen = observation;
             observation = undefined;
+            await synchronizeTabs();
             const { cdp } = current();
             const doc = await publicDocument(cdp, sites);
             const node = seen?.nodes.get(action.ref);
@@ -228,6 +252,7 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
                 grant.mode !== "control" ||
                 !grant[kind === "upload" ? "uploads" : "downloads"] ||
                 !seen?.operator ||
+                selected !== seen.tabId ||
                 !node ||
                 seen.id !== action.observationId ||
                 performance.now() >= seen.until ||
@@ -250,6 +275,7 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
             tabs: async (input: unknown, operation: AbortSignal, operator = false) => {
                 operation.throwIfAborted();
                 observation = undefined;
+                await synchronizeTabs();
                 const cmd = v.parse(miraBrowserTabCommandSchema, input);
                 if (cmd.action === "open") await add(cmd.url);
                 else if (cmd.action === "select" || cmd.action === "close") {
@@ -271,6 +297,7 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
             navigate: async (value: unknown, operation: AbortSignal) => {
                 operation.throwIfAborted();
                 observation = undefined;
+                await synchronizeTabs();
                 const { page, cdp } = current();
                 await page.goto(browserUrl(value, sites), {
                     waitUntil: "domcontentloaded",
@@ -285,23 +312,33 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
                 const action = v.parse(browserActionSchema, input);
                 const seen = observation;
                 observation = undefined;
-                const { cdp } = current();
-                const doc = await publicDocument(cdp, sites);
-                const node = seen?.nodes.get(action.ref);
+                await synchronizeTabs();
+                const { page, cdp } = current();
+                const doc = webUrl(page.url()) ? await publicDocument(cdp, sites) : null;
                 if (
                     grant.mode !== "control" ||
                     !seen ||
-                    !node ||
                     seen.id !== action.observationId ||
                     performance.now() >= seen.until ||
-                    doc.loader !== seen.loader ||
-                    doc.url !== seen.url ||
-                    !seen.refs
-                        .find((item) => item.ref === action.ref)
-                        ?.actions.includes(action.action)
+                    selected !== seen.tabId ||
+                    (doc?.loader ?? null) !== seen.loader ||
+                    (doc?.url ?? null) !== seen.url
                 )
                     throw new Error("Request a fresh observation with control access.");
-                await publicInput(cdp, doc.id, node, action);
+                if ("ref" in action) {
+                    const node = seen.nodes.get(action.ref);
+                    if (
+                        !doc ||
+                        !node ||
+                        !seen.refs
+                            .find((item) => item.ref === action.ref)
+                            ?.actions.includes(action.action)
+                    )
+                        throw new Error(
+                            "Choose an allowed element from the current observation."
+                        );
+                    await publicInput(cdp, doc.id, node, action);
+                } else await browserDesktopInput(action, seen, operation);
                 operation.throwIfAborted();
                 return { effect: "unverified" as const };
             },
