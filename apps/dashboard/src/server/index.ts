@@ -1,3 +1,5 @@
+import type { Server } from "bun";
+
 import index from "../index.html";
 import { authenticateAutomation } from "./automation/authentication";
 import { privateComputerAddress } from "./config/computer";
@@ -20,6 +22,11 @@ import {
 } from "./http/responses";
 import { createDashboardAuthentication } from "./identity/authentication";
 import { agentMailReceiverHeartbeat, agentMailWebhookReceiver } from "./mira/agentmail";
+import {
+    browserDisplayHandlers,
+    type BrowserDisplaySocket,
+    prepareBrowserDisplay,
+} from "./mira/browserDisplay";
 import {
     computerRequestMaximumBytes,
     miraComputerReceiver,
@@ -67,9 +74,39 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
     const receiveAgentMail = agentMailWebhookReceiver(operations);
     const stopAgentMailHeartbeat = agentMailReceiverHeartbeat(operations);
 
-    async function api(incoming: Request): Promise<Response> {
+    async function api(
+        incoming: Request,
+        host: Server<BrowserDisplaySocket>
+    ): Promise<Response | undefined> {
         try {
             const incomingPath = new URL(incoming.url).pathname;
+            if (incomingPath === "/api/mira/browser/display") {
+                if (
+                    !authentication ||
+                    !configuration ||
+                    incoming.method !== "GET" ||
+                    incoming.headers.get("origin") !== configuration.origin ||
+                    incoming.headers.get("upgrade")?.toLowerCase() !== "websocket" ||
+                    incoming.headers.has("authorization")
+                )
+                    return json(
+                        "FORBIDDEN",
+                        "Browser display requires a same-origin session.",
+                        403
+                    );
+                const principal = await authentication.operationPrincipal(incoming);
+                const passiveHeaders = new Headers(incoming.headers);
+                passiveHeaders.set("x-homelab-passive", "1");
+                const passive = new Request(incoming, { headers: passiveHeaders });
+                const data = await prepareBrowserDisplay(incoming, {
+                    operations,
+                    principal,
+                    verifyHuman: () => authentication.operationPrincipal(passive),
+                });
+                return host.upgrade(incoming, { data })
+                    ? undefined
+                    : json("UNAVAILABLE", "Browser display could not connect.", 503);
+            }
             if (
                 incomingPath === "/api/mira/computers" ||
                 incomingPath.startsWith("/api/mira/computers/")
@@ -213,7 +250,7 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
             "referrer-policy": "no-referrer",
             ...(asset.loader === "html" ? { "cache-control": "no-store" } : {}),
         });
-    const server = Bun.serve({
+    const server = Bun.serve<BrowserDisplaySocket>({
         hostname,
         port: options.port ?? bindOptions.port,
         development,
@@ -233,6 +270,7 @@ export function startDashboardServer(options: DashboardServerOptions = {}) {
             "/*": index,
         },
         fetch: dashboardNotFound,
+        websocket: browserDisplayHandlers,
     });
     const stop = server.stop.bind(server);
     server.stop = async (closeActiveConnections?: boolean) => {

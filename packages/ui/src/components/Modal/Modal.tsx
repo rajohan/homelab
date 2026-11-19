@@ -30,7 +30,7 @@ export function Modal({
     description?: string;
     titleAccessory?: ReactNode;
     dismissible?: boolean;
-    size?: "md" | "wide";
+    size?: "md" | "wide" | "screen";
 }) {
     return (
         <Dialog
@@ -50,7 +50,9 @@ export function Modal({
                         transition
                         className={cn(
                             "flex max-h-[calc(100dvh-2rem)] w-full min-w-0 flex-col overflow-hidden rounded-xl border border-primary-700 bg-primary-800 text-primary-50 shadow-2xl shadow-black/50 transition duration-200 data-closed:translate-y-2 data-closed:opacity-0 motion-reduce:transition-none sm:max-h-[calc(100dvh-4rem)]",
-                            size === "wide" ? "max-w-5xl" : "max-w-lg"
+                            { screen: "max-w-none", wide: "max-w-5xl", md: "max-w-lg" }[
+                                size
+                            ]
                         )}
                     >
                         <div className="flex shrink-0 items-start justify-between gap-3 rounded-t-xl border-b border-primary-700 bg-primary-900/40 px-5 py-4">

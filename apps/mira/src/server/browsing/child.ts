@@ -1,13 +1,11 @@
 import type { Readable, Writable } from "node:stream";
 
-import { unrestrictedBrowserSites } from "@homelab/contracts/miraBrowser";
 import * as v from "valibot";
 
 import { BrowserDownloadTransfer } from "./downloadTransfer";
-import { browserDriverVersion } from "./driver";
-import { openNativeBrowser } from "./native";
 import { browserUrl } from "./policy";
 import { browserProfileParts, BrowserProfileTransfer } from "./profileTransfer";
+import { openPublicBrowser } from "./publicBrowser";
 import { BrowserUploadTransfer } from "./uploadTransfer";
 
 /** Fixed tmpfs callbacks available only to the host-marked saved-profile worker. */
@@ -16,6 +14,7 @@ export interface BrowserWorkerProfile {
     capture: () => Promise<string>;
 }
 import {
+    browserDriverVersion,
     browserWorkerExecutable,
     browserWorkerFrame,
     browserWorkerGrant,
@@ -34,7 +33,7 @@ import {
 export function serveBrowserWorker(
     input: Readable,
     output: Writable,
-    open: typeof openNativeBrowser = openNativeBrowser,
+    open: typeof openPublicBrowser = openPublicBrowser,
     forceExit: () => void = () => {
         process.kill(process.pid, "SIGKILL");
     },
@@ -55,8 +54,7 @@ export function serveBrowserWorker(
     let restored = false;
     let port: Awaited<ReturnType<typeof open>> | undefined;
     let grant: ReturnType<typeof browserWorkerGrant> | undefined;
-    const lifetime = setTimeout(() => stop(), 300_000);
-    let idle = setTimeout(() => stop(), 60_000);
+    const startup = setTimeout(() => stop(), 60_000);
     const stop = () => {
         if (stopped) return;
         stopped = true;
@@ -64,8 +62,7 @@ export function serveBrowserWorker(
         upload.clear();
         download.clear();
         buffer = Buffer.alloc(0);
-        clearTimeout(lifetime);
-        clearTimeout(idle);
+        clearTimeout(startup);
         input.off("data", receive);
         input.destroy();
         if (!profile) output.destroy();
@@ -151,7 +148,7 @@ export function serveBrowserWorker(
                 initializationFailed = true;
                 throw error;
             }
-            if (unrestrictedBrowserSites(grant.origins)) clearTimeout(lifetime);
+            clearTimeout(startup);
             result = { version: 1, driver: browserDriverVersion };
         } else {
             if (!port || !grant) throw new Error("Browser worker is not initialized.");
@@ -269,11 +266,8 @@ export function serveBrowserWorker(
         const line = buffer.subarray(0, end);
         buffer = Buffer.alloc(0);
         busy = true;
-        clearTimeout(idle);
         active = handle(line).finally(() => {
             busy = false;
-            if (!stopped && !(grant && unrestrictedBrowserSites(grant.origins)))
-                idle = setTimeout(stop, 60_000);
         });
         void active.catch(stop);
     };

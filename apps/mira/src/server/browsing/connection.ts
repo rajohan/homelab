@@ -31,7 +31,6 @@ interface Dependencies {
     attach?: typeof attachBrowserContainer;
     requestTimeoutMs?: number;
     profile?: BrowserProfilePersistence;
-    keepOpen?: boolean;
 }
 
 /** A single-flight JSONL channel whose retirement includes confirmed process-tree cleanup. */
@@ -41,9 +40,6 @@ class BrowserConnection {
     private readonly owner: AbortSignal;
     private readonly timeoutMs: number;
     private readonly controller = new AbortController();
-    private readonly lifetime: ReturnType<typeof setTimeout>;
-    private readonly keepOpen: boolean;
-    private idle: ReturnType<typeof setTimeout>;
     private closing: Promise<void> | undefined;
     private failure: Error | undefined;
     private pending: Pending | undefined;
@@ -65,17 +61,14 @@ class BrowserConnection {
      * @param owner - Permanent host cancellation.
      * @param timeoutMs - Validated request deadline from the host factory.
      * @param profile - Private persistence selected by the trusted host, never by a model request.
-     * @param keepOpen - Keep temporary broad browsing available while the outer host lease is valid.
      */
     constructor(
         stream: Duplex,
         lease: Lease,
         owner: AbortSignal,
         timeoutMs: number,
-        profile?: BrowserProfilePersistence,
-        keepOpen = false
+        profile?: BrowserProfilePersistence
     ) {
-        this.keepOpen = keepOpen;
         this.stream = stream;
         this.lease = lease;
         this.owner = owner;
@@ -101,12 +94,6 @@ class BrowserConnection {
         stream.on("error", this.ended);
         stream.on("end", this.ended);
         stream.on("close", this.ended);
-        this.lifetime = setTimeout(this.disconnected, 300_000);
-        this.idle = setTimeout(this.disconnected, 60_000);
-        if (keepOpen) clearTimeout(this.lifetime);
-        this.lifetime.unref();
-        if (this.keepOpen) clearTimeout(this.idle);
-        this.idle.unref();
         owner.addEventListener("abort", this.disconnected, { once: true });
         lease.signal.addEventListener("abort", this.disconnected, { once: true });
         if (owner.aborted || lease.signal.aborted) this.retire();
@@ -153,7 +140,6 @@ class BrowserConnection {
         const line = JSON.stringify({ id, body }) + "\n";
         if (Buffer.byteLength(line) > 64 * 1024 || this.stream.writableLength > 64 * 1024)
             throw new Error("The browser request exceeds its limit.");
-        clearTimeout(this.idle);
         return new Promise((resolve, reject) => {
             const onAbort = () => this.retire();
             const cancel = () => operation.removeEventListener("abort", onAbort);
@@ -223,9 +209,6 @@ class BrowserConnection {
         this.pending = undefined;
         clearTimeout(pending.timer);
         pending.cancel();
-        this.idle = setTimeout(this.disconnected, 60_000);
-        if (this.keepOpen) clearTimeout(this.idle);
-        this.idle.unref();
         pending.resolve(reply.result);
     }
 
@@ -236,8 +219,6 @@ class BrowserConnection {
         );
         this.closing = Promise.resolve().then(() => this.lease.close());
         this.controller.abort();
-        clearTimeout(this.lifetime);
-        clearTimeout(this.idle);
         this.owner.removeEventListener("abort", this.disconnected);
         this.lease.signal.removeEventListener("abort", this.disconnected);
         if (this.checkpoint) {
@@ -304,8 +285,7 @@ export async function openBrowserConnection(
             lease,
             signal,
             timeout,
-            dependencies.profile,
-            dependencies.keepOpen
+            dependencies.profile
         );
         connection.signal.throwIfAborted();
         await lease.start();

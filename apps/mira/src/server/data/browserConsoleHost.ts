@@ -32,12 +32,7 @@ export async function claimBrowserHumanCommand(client: SQL, claim: BrowserComman
         )
             throw new MiraFailure("FORBIDDEN", "Browser operator authority expired.");
         const operation = v.parse(miraBrowserHumanOperationSchema, row.payload);
-        if (
-            (operation.method === "act" ||
-                operation.method === "upload" ||
-                operation.method === "download") &&
-            access.mode !== "control"
-        )
+        if (operation.method !== "observe" && access.mode !== "control")
             throw new MiraFailure("FORBIDDEN", "Browser access is view-only.");
         if (operation.method === "download")
             await requireBrowserDownload(query, context.owner, accessId, operation);
@@ -96,11 +91,7 @@ export async function finishBrowserHumanCommand(
             WHERE access_id=${accessId} AND controller='human' AND epoch=${command.epoch} AND command_id=${command.id} AND state='claimed' AND expires_at>clock_timestamp()
             RETURNING access_id AS "accessId"`;
         if (updated.length !== 1) return false;
-        if (
-            (command.operation.method === "observe" ||
-                command.operation.method === "tabs") &&
-            "content" in parsed
-        )
+        if (command.operation.method === "observe" && "content" in parsed)
             await saveBrowserPreview(query, accessId, parsed);
         return true;
     });

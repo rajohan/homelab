@@ -8,7 +8,6 @@ import {
     BrowserDownloadReceiver,
     browserDownloadTotal,
 } from "./downloadTransfer";
-import { browserDriverVersion } from "./driver";
 import { browserUrl } from "./policy";
 import {
     browserUploadActionSchema,
@@ -16,7 +15,12 @@ import {
     browserUploadFileSchema,
 } from "./upload";
 import { browserUploadParts } from "./uploadTransfer";
-import { browserActionSchema, browserWorkerFrame, browserWorkerGrant } from "./wire";
+import {
+    browserActionSchema,
+    browserDriverVersion,
+    browserWorkerFrame,
+    browserWorkerGrant,
+} from "./wire";
 
 /**
  * Bind the fixed worker protocol to a container and a trusted host-owned browser grant.
@@ -169,7 +173,8 @@ export async function openBrowserWorker(
                     previous.id !== action.observationId ||
                     now() - previous.time < 0 ||
                     now() - previous.time >= previous.maxAge ||
-                    !previous.refs.get(action.ref)?.includes(action.action)
+                    ("ref" in action &&
+                        !previous.refs.get(action.ref)?.includes(action.action))
                 )
                     throw new Error(
                         "Browser input requires a fresh permitted observation."

@@ -76,7 +76,7 @@ transaction, and application availability publishes only on transitions. See [no
 ## Runtime and delivery
 
 One root manifest and lockfile supply dependencies. Auth has its own deployable
-image. Main services share one image with Chromium and the package-managed CUA SDK;
+image. Main services share one image with Chromium, x11vnc and the bundled browser worker;
 browser sessions and code execution still use their existing resource boundaries.
 The small network proxy retains its separate image and existing network scopes.
 

@@ -31,7 +31,7 @@ export const miraBrowserTabsSchema = v.strictObject({
         v.array(
             v.strictObject({
                 id,
-                url: address,
+                url: v.nullable(address),
                 title: v.pipe(v.string(), v.maxLength(2048)),
             })
         ),
@@ -40,19 +40,6 @@ export const miraBrowserTabsSchema = v.strictObject({
     ),
 });
 export type MiraBrowserTabs = v.InferOutput<typeof miraBrowserTabsSchema>;
-export const miraBrowserAccessRequestSchema = v.strictObject({
-    runId: id,
-    origins: v.pipe(v.array(address), v.minLength(1), v.maxLength(16)),
-    initialUrl: address,
-    mode: v.picklist(["view", "control"]),
-    profileId: v.optional(id),
-    network: v.optional(v.picklist(["public", "home"])),
-});
-export const miraBrowserProfileCreateSchema = v.strictObject({
-    homeNetwork: v.optional(v.boolean()),
-    name: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(80)),
-    origins: v.pipe(v.array(address), v.minLength(1), v.maxLength(16)),
-});
 export const miraBrowserProfileDeleteSchema = v.strictObject({ id });
 export interface MiraBrowserProfile {
     homeNetwork?: boolean;
@@ -76,7 +63,124 @@ export interface MiraBrowserAccessSummary {
 }
 
 const ref = v.pipe(v.string(), v.regex(/^p[0-9]{1,16}:[0-9]{1,6}$/));
+export const miraBrowserKeys = [
+    "BackSpace",
+    "Tab",
+    "Return",
+    "Escape",
+    "space",
+    "Delete",
+    "Home",
+    "End",
+    "Left",
+    "Right",
+    "Up",
+    "Down",
+    "Page_Up",
+    "Page_Down",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p",
+    "q",
+    "r",
+    "s",
+    "t",
+    "u",
+    "v",
+    "w",
+    "x",
+    "y",
+    "z",
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F7",
+    "F8",
+    "F9",
+    "F10",
+    "F11",
+    "F12",
+] as const;
+export const miraBrowserModifiers = ["ctrl", "alt", "shift", "super"] as const;
+const coordinate = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(8191));
+const delta = v.pipe(v.number(), v.integer(), v.minValue(-2400), v.maxValue(2400));
 export const miraBrowserActionSchema = v.variant("action", [
+    v.strictObject({
+        action: v.literal("click_at"),
+        observationId: id,
+        x: coordinate,
+        y: coordinate,
+        button: v.optional(v.picklist(["left", "middle", "right"]), "left"),
+        count: v.optional(v.picklist([1, 2]), 1),
+    }),
+    v.strictObject({
+        action: v.literal("move"),
+        observationId: id,
+        x: coordinate,
+        y: coordinate,
+    }),
+    v.strictObject({
+        action: v.literal("drag"),
+        observationId: id,
+        x: coordinate,
+        y: coordinate,
+        toX: coordinate,
+        toY: coordinate,
+    }),
+    v.strictObject({
+        action: v.literal("scroll"),
+        observationId: id,
+        x: coordinate,
+        y: coordinate,
+        deltaX: delta,
+        deltaY: delta,
+    }),
+    v.strictObject({
+        action: v.literal("key"),
+        observationId: id,
+        key: v.picklist(miraBrowserKeys),
+        modifiers: v.optional(
+            v.pipe(v.array(v.picklist(miraBrowserModifiers)), v.maxLength(4)),
+            []
+        ),
+    }),
+    v.strictObject({
+        action: v.literal("type_text"),
+        observationId: id,
+        text: v.pipe(
+            v.string(),
+            v.minLength(1),
+            v.maxLength(4000),
+            v.check((text) => text.isWellFormed() && !text.includes("\0"))
+        ),
+    }),
+
     v.strictObject({ action: v.literal("click"), observationId: id, ref }),
     v.strictObject({
         action: v.literal("type"),
@@ -112,9 +216,6 @@ export const miraBrowserDownloadNameSchema = v.pipe(
 );
 export const miraBrowserHumanOperationSchema = v.variant("method", [
     v.strictObject({ method: v.literal("observe") }),
-    v.strictObject({ method: v.literal("tabs"), input: miraBrowserTabCommandSchema }),
-    v.strictObject({ method: v.literal("navigate"), url: address }),
-    v.strictObject({ method: v.literal("act"), input: miraBrowserActionSchema }),
     v.strictObject({
         method: v.literal("download"),
         input: v.strictObject({ observationId: id, ref }),
@@ -135,7 +236,6 @@ export const miraBrowserHumanCommandSchema = v.strictObject({
     operation: miraBrowserHumanOperationSchema,
 });
 export interface MiraBrowserPreview {
-    tabs?: MiraBrowserTabs;
     observationId: string;
     url: string;
     title: string;
@@ -145,9 +245,6 @@ export interface MiraBrowserPreview {
         label: string;
         actions: ("click" | "type" | "upload")[];
     }[];
-    width: number;
-    height: number;
-    image: string;
     observedAt: string;
 }
 export interface MiraBrowserConsole {

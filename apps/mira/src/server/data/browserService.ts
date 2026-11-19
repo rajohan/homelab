@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
+import { serveBrowserLive } from "../browsing/liveHost";
 import { lockBrowserOwner } from "./browserAccess";
 import {
     claimMiraBrowserCommand,
@@ -57,6 +58,15 @@ export async function runMiraBrowserHost(
     const open = dependencies.open ?? openMiraBrowserSession;
     const recover = dependencies.recover ?? recoverMiraBrowserProcesses;
     let nextRecovery = 0;
+    const display = options.filesDirectory
+        ? await serveBrowserLive({
+              client,
+              directory: options.filesDirectory,
+              hostId: config.hostId,
+              socketPath: config.socketPath,
+              signal: lifetime,
+          })
+        : undefined;
     const execute = async (
         candidate: Awaited<ReturnType<typeof pendingMiraBrowsers>>[number]
     ) => {
@@ -71,8 +81,16 @@ export async function runMiraBrowserHost(
         try {
             session = await open(context, candidate.id, config, lifetime);
             const current = session;
+            if (current.display)
+                display?.register(candidate.id, {
+                    ...current.display,
+                    owner: candidate.owner,
+                    signal: current.signal,
+                });
             const running = AbortSignal.any([lifetime, current.signal]);
             while (!running.aborted) {
+                if (await display?.synchronize(candidate.id))
+                    await current.observe(running);
                 const started = performance.now();
                 const humanCommand = await claimBrowserHumanCommand(
                     client,
@@ -86,6 +104,10 @@ export async function runMiraBrowserHost(
                     await delay(100, undefined, { signal: running });
                     continue;
                 }
+                // Claiming holds modelBusy, so control cannot change between this
+                // final display shutdown and dispatch of a model command.
+                if (await display?.synchronize(candidate.id))
+                    await current.observe(running);
                 const remaining = command.validForMs - (performance.now() - started);
                 if (remaining <= 0)
                     throw new Error("Browser command expired before dispatch.");
@@ -183,6 +205,7 @@ export async function runMiraBrowserHost(
                       })
                     : Promise.resolve(),
                 session?.close() ?? Promise.resolve(),
+                display?.unregister(candidate.id) ?? Promise.resolve(),
             ]);
             cleanupFailed = results.some((result) => result.status === "rejected");
         }
@@ -223,5 +246,6 @@ export async function runMiraBrowserHost(
         controller.abort();
         await Promise.allSettled(tasks.values());
         health.active = 0;
+        await display?.close();
     }
 }

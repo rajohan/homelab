@@ -2,12 +2,9 @@ import { randomUUID } from "node:crypto";
 
 import {
     connectedBrowserScope,
-    internetBrowserScope,
-    miraBrowserAccessRequestSchema,
     miraBrowserAccessStopSchema,
     type MiraBrowserAccessSummary,
     publicBrowserScope,
-    unrestrictedBrowserSites,
 } from "@homelab/contracts/miraBrowser";
 import type { TransactionSQL } from "bun";
 import * as v from "valibot";
@@ -24,27 +21,6 @@ import {
     type MiraQuery,
     miraTransaction,
 } from "./context";
-
-/**
- * Validate a human-selected profile inside the same owner lock as grant admission.
- * @returns Completion only for an active owned profile whose sites include the requested origins.
- */
-async function requireBrowserProfile(
-    query: TransactionSQL,
-    owner: string,
-    id: string,
-    origins: string[],
-    homeNetwork: boolean
-) {
-    const [profile] = await query<
-        { origins: string[] }[]
-    >`SELECT origins FROM mira_browser_profiles WHERE id=${id} AND owner=${owner} AND home_network=${homeNetwork} AND state='active'`;
-    if (!profile || origins.some((origin) => !profile.origins.includes(origin)))
-        throw new MiraFailure(
-            "FORBIDDEN",
-            "Choose an available owned profile and only its approved websites."
-        );
-}
 
 type Policy = Pick<
     ReturnType<typeof browserWorkerGrant>,
@@ -132,24 +108,6 @@ export async function readBrowserAccess(
     return row;
 }
 
-/**
- * Reserve one immutable browser policy for a running owned manual job.
- * @param context - Freshly verified human context; a model cannot create grants.
- * @param input - Exact run, approved HTTP(S) origins, initial URL and view/control mode.
- * @returns Public metadata without host tokens, worker leases or executable configuration.
- */
-export async function requestMiraBrowserAccess(
-    context: MiraContext,
-    input: unknown
-): Promise<MiraBrowserAccessSummary> {
-    human(context);
-    return reserveBrowserAccess(
-        context,
-        v.parse(miraBrowserAccessRequestSchema, input),
-        false
-    );
-}
-
 /** Start the configured browser for requested manual work without a separate website grant.
  * @param context - Fenced tool actor. The database supplies all permission and ownership decisions.
  * @param initialUrl - Requested document.
@@ -171,39 +129,25 @@ export async function requestPublicBrowser(
             origins: [publicBrowserScope],
             mode: "control",
         },
-        true,
         profile === "saved"
     );
 }
 
 async function reserveBrowserAccess(
     context: MiraContext,
-    request: v.InferOutput<typeof miraBrowserAccessRequestSchema>,
-    delegated: boolean,
+    request: {
+        runId: string;
+        initialUrl: string;
+        origins: string[];
+        mode: "view" | "control";
+    },
     savedProfile = false
 ): Promise<MiraBrowserAccessSummary> {
     let policy: Policy;
     try {
-        const installed = browserNetworkForOwner(context.owner);
-        const connected =
-            request.network === "home" ||
-            (installed &&
-                (delegated || (request.network === undefined && !request.profileId)));
-        if (connected && !installed)
-            throw new Error("Home browsing is not configured for this account.");
-        if (
-            request.origins.some(
-                (x) => x === connectedBrowserScope || x === internetBrowserScope
-            )
-        )
-            throw new Error("The network is selected by the server.");
+        const connected = browserNetworkForOwner(context.owner);
         const parsed = browserWorkerGrant({
-            origins:
-                installed &&
-                (request.network || connected) &&
-                unrestrictedBrowserSites(request.origins)
-                    ? [connected ? connectedBrowserScope : internetBrowserScope]
-                    : request.origins,
+            origins: connected ? [connectedBrowserScope] : request.origins,
             initialUrl: request.initialUrl,
             mode: request.mode,
         });
@@ -223,7 +167,7 @@ async function reserveBrowserAccess(
     }
     return context.client.begin(async (query) => {
         await lockBrowserOwner(query, context.owner);
-        if (delegated) {
+        {
             if (!(await miraManualRunAllowed(query, context)))
                 throw new MiraFailure(
                     "FORBIDDEN",
@@ -256,19 +200,6 @@ async function reserveBrowserAccess(
             }
             policy.mode = "control";
         }
-        if (request.profileId && unrestrictedBrowserSites(policy.origins))
-            throw new MiraFailure(
-                "BAD_REQUEST",
-                "Saved profiles require specific websites."
-            );
-        if (request.profileId)
-            await requireBrowserProfile(
-                query,
-                context.owner,
-                request.profileId,
-                policy.origins,
-                Boolean(policy.connected)
-            );
         const previous = await query<
             { id: string }[]
         >`SELECT id FROM mira_browser_access WHERE owner=${context.owner} AND state='pending'`;
@@ -288,7 +219,7 @@ async function reserveBrowserAccess(
         const [run] = await query<
             { lease: string; expiresAt: Date | null; controls: unknown }[]
         >`
-            SELECT r.lease_token AS lease,CASE WHEN ${unrestrictedBrowserSites(policy.origins)} THEN NULL ELSE least(clock_timestamp()+interval '5 minutes',r.started_at+nullif(r.budget_seconds,0)*interval '1 second') END AS "expiresAt",
+            SELECT r.lease_token AS lease,NULL::timestamptz AS "expiresAt",
                 jsonb_build_array(coalesce(u.version,1),b.version,a.version,s.version,CASE WHEN a.schedule->>'event'='agentmail' THEN i.version END) AS controls
             FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner
             LEFT JOIN mira_switches u ON u.owner=r.owner AND u.key='autonomy'
@@ -299,7 +230,7 @@ async function reserveBrowserAccess(
             WHERE r.id=${request.runId} AND r.owner=${context.owner} AND r.manual AND r.state='running' AND NOT r.cancel_requested
                 AND r.lease_expires_at>clock_timestamp() AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())
                 AND (NOT ${Boolean(policy.connected)} OR r.automation_id IS NULL)
-                AND (NOT ${delegated} OR (r.lease_token=${context.run?.leaseToken ?? null} AND r.automation_id IS NULL AND r.task_id IS NULL AND c.archived_at IS NULL))
+                AND (r.lease_token=${context.run?.leaseToken ?? null} AND r.automation_id IS NULL AND r.task_id IS NULL AND c.archived_at IS NULL)
                 AND c.deleted_at IS NULL AND coalesce(u.enabled,true) AND b.enabled
                 AND (r.automation_id IS NULL OR (a.deleted_at IS NULL AND s.enabled AND
                     (a.schedule->>'event' IS DISTINCT FROM 'agentmail' OR i.enabled))) FOR SHARE OF r`;
@@ -315,12 +246,12 @@ async function reserveBrowserAccess(
                   policy.origins,
                   Boolean(policy.connected)
               )
-            : request.profileId;
+            : undefined;
         const id = Bun.randomUUIDv7();
         const [inserted] = await query<{ id: string }[]>`
             WITH timing AS MATERIALIZED(SELECT clock_timestamp() AS at)
             INSERT INTO mira_browser_access(id,owner,run_id,run_lease,controls,mode,policy,profile_id,expires_at,created_at)
-            SELECT ${id},${context.owner},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${policy.mode},${JSON.stringify({ ...policy, ...(delegated ? { delegated: true } : {}) })}::text::jsonb,${profileId ?? null},
+            SELECT ${id},${context.owner},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${policy.mode},${JSON.stringify({ ...policy, delegated: true })}::text::jsonb,${profileId ?? null},
                 ${run.expiresAt}::timestamptz,timing.at FROM timing WHERE (${run.expiresAt}::timestamptz IS NULL OR ${run.expiresAt}::timestamptz>timing.at) RETURNING id`;
         if (!inserted)
             throw new MiraFailure(

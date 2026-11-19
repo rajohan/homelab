@@ -148,11 +148,7 @@ export function browserHostEnvironment(
 export function browserWorkerEnvironment(): boolean {
     const marker = process.env.MIRA_BROWSER_PROFILE;
     if (marker === undefined) return false;
-    if (
-        marker !== "saved" ||
-        process.env.CUA_DRIVER_BROWSER_PROFILE_ROOT !== "/var/lib/mira-browser-profile"
-    )
-        throw new Error("Invalid saved browser profile environment.");
+    if (marker !== "saved") throw new Error("Invalid saved browser profile environment.");
     return true;
 }
 

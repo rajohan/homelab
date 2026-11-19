@@ -13,7 +13,6 @@ export const browserEngineConfigurationSchema = v.strictObject({
     imageId,
     egress: v.optional(browserSlotSchema),
     profile: v.optional(browserProfileSchema),
-    runBound: v.optional(v.boolean()),
 });
 const inspection = v.object({
     Id: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
