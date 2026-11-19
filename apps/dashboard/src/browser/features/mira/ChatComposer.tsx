@@ -1,6 +1,6 @@
 import type { MiraAttachment } from "@homelab/contracts/mira";
-import { Button, IconButton, Textarea } from "@homelab/ui";
-import { Monitor, Send, Settings2, Square } from "lucide-react";
+import { Button, Textarea } from "@homelab/ui";
+import { ArrowUp, Square } from "lucide-react";
 import { useRef } from "react";
 
 import { AttachmentPicker } from "./AttachmentPicker";
@@ -29,8 +29,6 @@ export function ChatComposer({
     onStop,
     onSend,
     onBrowse,
-    onSettings,
-    onComputer,
 }: {
     readonly voice: MiraVoiceConnection;
     readonly text: string;
@@ -47,8 +45,6 @@ export function ChatComposer({
     readonly onStop: () => void;
     readonly onSend: () => void;
     readonly onBrowse: () => void;
-    readonly onComputer?: (() => void) | undefined;
-    readonly onSettings?: (() => void) | undefined;
 }) {
     const field = useRef<HTMLTextAreaElement>(null);
     const placeholder = active ? "Add guidance while Mira works…" : "Message Mira…";
@@ -57,14 +53,14 @@ export function ChatComposer({
     const canSend = Boolean(text.trim()) && !blocked && !uploading && !sending;
     return (
         <form
-            className="shrink-0 border-t border-primary-700 p-3 sm:p-4"
+            className="mx-auto max-h-[50dvh] w-full max-w-3xl shrink-0 overflow-y-auto px-2 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-4 [@media(max-height:28rem)]:py-1"
             onSubmit={(event) => {
                 event.preventDefault();
                 if (canSend) onSend();
             }}
         >
             <VoiceStatus voice={voice} />
-            <div className="rounded-xl border border-primary-600 bg-primary-950 p-2 focus-within:border-accent-400">
+            <div className="rounded-2xl border border-primary-600 bg-primary-900 p-2 focus-within:border-accent-400">
                 <AttachmentPicker
                     compact
                     value={attachments}
@@ -80,20 +76,6 @@ export function ChatComposer({
                                 disabled={sending}
                             />
                             <MiraVoice voice={voice} />
-                            {onComputer && (
-                                <IconButton
-                                    icon={Monitor}
-                                    label="Computer access"
-                                    onClick={onComputer}
-                                />
-                            )}
-                            {onSettings && (
-                                <IconButton
-                                    icon={Settings2}
-                                    label="Chat settings"
-                                    onClick={onSettings}
-                                />
-                            )}
                         </>
                     }
                     actions={
@@ -110,7 +92,7 @@ export function ChatComposer({
                                 </Button>
                             )}
                             <Button type="submit" busy={sending} disabled={!canSend}>
-                                <Send size={16} aria-hidden="true" />
+                                <ArrowUp size={18} aria-hidden="true" />
                                 Send
                             </Button>
                         </>
@@ -119,7 +101,7 @@ export function ChatComposer({
                     <Textarea
                         ref={field}
                         aria-label="Message Mira"
-                        rows={4}
+                        rows={1}
                         value={text}
                         onChange={(event) => onText(event.target.value)}
                         maxLength={32_000}
@@ -129,7 +111,7 @@ export function ChatComposer({
                                 ? "Draft a message for when this run finishes…"
                                 : placeholder
                         }
-                        className="field-sizing-content max-h-[min(28dvh,18rem)] min-h-[clamp(5rem,15dvh,8rem)] resize-none border-0 bg-transparent p-2 shadow-none data-focus:ring-0"
+                        className="field-sizing-content max-h-[min(28dvh,18rem)] min-h-11 resize-none border-0 bg-transparent p-2 text-base shadow-none data-focus:ring-0 [@media(max-height:28rem)]:min-h-9"
                         onKeyDown={(event) => {
                             if (
                                 event.key === "Enter" &&

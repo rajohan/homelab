@@ -78,7 +78,9 @@ export function Shell() {
                 <div
                     className={`flex min-w-0 flex-col ${compactNavigation ? "lg:pl-18" : "lg:pl-60 xl:pl-64"} ${chatWorkspace ? "h-full min-h-0" : "min-h-dvh"}`}
                 >
-                    <header className="sticky top-0 z-20 flex h-20 shrink-0 items-center justify-between gap-3 border-b border-primary-700 bg-primary-950/95 px-4 backdrop-blur-sm sm:px-5">
+                    <header
+                        className={`sticky top-0 z-20 flex ${chatWorkspace ? "h-14" : "h-20"} shrink-0 items-center justify-between gap-3 border-b border-primary-700 bg-primary-950/95 px-4 backdrop-blur-sm sm:px-5`}
+                    >
                         <div className="flex min-w-0 items-center gap-3">
                             <IconButton
                                 icon={Menu}
@@ -131,7 +133,7 @@ export function Shell() {
                         </div>
                     </header>
                     <main
-                        className={`mx-auto w-full max-w-400 min-w-0 flex-1 p-4 sm:p-5 ${chatWorkspace ? "flex min-h-0 flex-col overflow-hidden" : ""}`}
+                        className={`mx-auto w-full max-w-400 min-w-0 flex-1 ${chatWorkspace ? "flex min-h-0 flex-col overflow-hidden sm:p-3 xl:p-5" : "p-4 sm:p-5"}`}
                         id="main-content"
                         tabIndex={-1}
                     >

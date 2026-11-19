@@ -9,13 +9,13 @@ import { NewConversationButton } from "./NewConversationButton";
  */
 export function ChatWelcome() {
     return (
-        <Card className="hidden min-h-0 items-center justify-center lg:flex">
+        <Card className="chat-split:flex hidden min-h-0 items-center justify-center rounded-none border-0 bg-primary-950 shadow-none">
             <div className="flex max-w-sm flex-col items-center gap-5 px-6 py-10 text-center">
                 <div className="flex size-14 items-center justify-center rounded-2xl bg-accent-900/30 text-accent-300">
                     <MessageSquare size={28} aria-hidden="true" />
                 </div>
                 <div className="space-y-2">
-                    <h2 className="text-xl font-semibold text-primary-50">
+                    <h2 className="text-2xl font-semibold tracking-tight text-primary-50">
                         Talk to Mira
                     </h2>
                     <p className="text-sm leading-6 text-primary-400">

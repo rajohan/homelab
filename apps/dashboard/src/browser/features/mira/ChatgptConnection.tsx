@@ -7,7 +7,9 @@ import { useOperation } from "../operations/useOperation";
 /** Show verified ChatGPT health and the native device-code login inside the existing dashboard.
  * @returns Current status, an owned one-time code and an explicit success acknowledgement.
  */
-export function ChatgptConnection() {
+export function ChatgptConnection({
+    alertsOnly = false,
+}: { readonly alertsOnly?: boolean } = {}) {
     const client = useQueryClient();
     const status = useQuery({
         queryKey: ["operations", "mira", "chatgpt"],
@@ -45,6 +47,15 @@ export function ChatgptConnection() {
     const busy = start.isPending || cancel.isPending;
     const needsSignIn =
         connection?.state === "disconnected" || connection?.state === "expired";
+    if (
+        alertsOnly &&
+        !needsSignIn &&
+        !active &&
+        !start.error &&
+        !cancel.error &&
+        !login?.message
+    )
+        return null;
     return (
         <div className="shrink-0 space-y-2 border-b border-primary-700 px-4 py-2 text-xs text-primary-300">
             <output className="block">

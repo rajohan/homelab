@@ -1,3 +1,12 @@
 @import "../../../packages/ui/src/styles/index.css";
 @source "./browser";
 @source not "./browser/**/*.test.tsx";
+
+/* Reserve space for both a usable history rail and the active conversation. */
+@custom-variant chat-split {
+    @media (min-height: 28rem) {
+        @container chat-workspace (min-width: 50rem) {
+            @slot;
+        }
+    }
+}

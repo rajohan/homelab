@@ -5,12 +5,10 @@ import {
     LoadingState,
     queryRefresh,
     SearchInput,
-    SectionHeader,
     Switch,
 } from "@homelab/ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { MessageSquare } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
@@ -71,9 +69,11 @@ export function ConversationList({
     const hasMore = history.data ? history.hasNextPage : !!latest.data?.nextCursor;
     return (
         <Card
-            className={`flex min-h-0 w-full flex-col gap-4 p-4 sm:p-4 ${embedded ? "border-0 bg-transparent p-0 shadow-none sm:p-0" : ""}`}
+            className={`chat-split:border-r flex min-h-0 w-full flex-col gap-3 rounded-none border-0 bg-primary-900 p-4 shadow-none sm:p-4 ${embedded ? "border-0 bg-transparent p-0 shadow-none sm:p-0" : ""}`}
         >
-            <SectionHeader title="Conversations" icon={MessageSquare} />
+            <h2 className="text-lg font-semibold tracking-tight text-primary-50">
+                Conversations
+            </h2>
             <NewConversationButton fullWidth onSelect={onSelect} />
             <SearchInput
                 label="Search conversations"
@@ -89,7 +89,7 @@ export function ConversationList({
             {latest.isPending && <LoadingState label="Loading conversations…" />}
             <nav
                 aria-label="Conversations"
-                className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain p-0.5"
+                className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain p-0.5"
             >
                 {conversations.map((chat) => (
                     <Link
@@ -98,11 +98,13 @@ export function ConversationList({
                         params={{ conversationId: chat.id }}
                         onClick={onSelect}
                         aria-current={selected === chat.id ? "page" : undefined}
-                        className={`block rounded-lg border px-3 py-2.5 text-sm wrap-anywhere transition ${selected === chat.id ? "border-accent-500 bg-primary-900/80 text-primary-50" : "border-primary-700 bg-primary-900/40 text-primary-300 hover:border-primary-500 hover:text-primary-100"}`}
+                        className={`flex min-h-11 items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors ${selected === chat.id ? "bg-primary-700 text-primary-50" : "text-primary-300 hover:bg-primary-800 hover:text-primary-50"}`}
                     >
-                        <span className="block truncate font-medium">{chat.title}</span>
+                        <span className="line-clamp-2 min-w-0 font-medium wrap-anywhere">
+                            {chat.title}
+                        </span>
                         <time
-                            className="mt-1 block text-xs text-primary-400"
+                            className="shrink-0 text-xs text-primary-400 tabular-nums"
                             dateTime={chat.updatedAt}
                         >
                             {new Intl.DateTimeFormat("en-GB", {

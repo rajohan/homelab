@@ -181,7 +181,7 @@ export function AttachmentPicker({
             <div
                 className={
                     compact
-                        ? "order-last -mx-2 flex min-w-0 flex-wrap items-center gap-1 border-t border-primary-700 px-2 pt-2"
+                        ? "order-last flex min-w-0 flex-wrap items-center gap-0.5"
                         : "flex flex-col gap-2 min-[30rem]:flex-row"
                 }
             >
@@ -209,7 +209,7 @@ export function AttachmentPicker({
                     <div
                         className={
                             compact
-                                ? "ml-auto flex w-full shrink-0 items-center gap-2 @min-[18rem]/attachment-picker:w-auto [&>button]:flex-1 @min-[18rem]/attachment-picker:[&>button]:flex-none"
+                                ? "ml-auto flex max-w-full flex-wrap items-center justify-end gap-1"
                                 : "ml-auto flex shrink-0 items-center gap-2"
                         }
                     >

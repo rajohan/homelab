@@ -29,34 +29,36 @@ export function Mira() {
             className={`@container/chat-workspace flex min-h-0 flex-1 flex-col gap-4 ${conversationId ? "" : "overflow-y-auto"}`}
         >
             {!conversationId && (
-                <PageHeader
-                    title="Chat"
-                    description="Chat, plan work and keep your tasks and context together."
-                    actions={
-                        <>
-                            <Button
-                                variant="secondary"
-                                onClick={() => setLibrary("memory")}
-                            >
-                                <Brain size={16} aria-hidden="true" />
-                                Memory
-                            </Button>
-                            <Button
-                                variant="secondary"
-                                onClick={() => setLibrary("files")}
-                            >
-                                <Files size={16} aria-hidden="true" />
-                                Files
-                            </Button>
-                        </>
-                    }
-                />
+                <div className="px-3 pt-3 sm:p-0">
+                    <PageHeader
+                        title="Chat"
+
+                        actions={
+                            <>
+                                <Button
+                                    variant="secondary"
+                                    onClick={() => setLibrary("memory")}
+                                >
+                                    <Brain size={16} aria-hidden="true" />
+                                    Memory
+                                </Button>
+                                <Button
+                                    variant="secondary"
+                                    onClick={() => setLibrary("files")}
+                                >
+                                    <Files size={16} aria-hidden="true" />
+                                    Files
+                                </Button>
+                            </>
+                        }
+                    />
+                </div>
             )}
             <div
-                className={`grid min-w-0 flex-1 gap-4 @min-[56rem]/chat-workspace:grid-cols-[16rem_minmax(0,1fr)] ${conversationId ? "min-h-0" : "min-h-96"}`}
+                className={`chat-split:grid-cols-[clamp(14rem,22%,18rem)_minmax(0,1fr)] grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden bg-primary-950 sm:rounded-xl sm:border sm:border-primary-700 ${conversationId ? "min-h-0" : "min-h-80"}`}
             >
                 <div
-                    className={`min-h-0 ${conversationId ? "hidden @min-[56rem]/chat-workspace:flex" : "flex"}`}
+                    className={`min-h-0 ${conversationId ? "chat-split:flex hidden" : "flex"}`}
                 >
                     <ConversationList selected={conversationId} />
                 </div>
