@@ -596,11 +596,14 @@ export function createMiraTools(
             ...definition
         }) => ({
             ...definition,
+            readOnly: readOnly === true,
             description: confirmation
                 ? `${definition.description} Requested manual task changes apply directly. Automatic runs retain their separate policies. Inspect the returned state before reporting a change as applied.`
                 : definition.description,
             execute: async (input, signal, call) => {
                 signal.throwIfAborted();
+                if (call.reviewer && !readOnly)
+                    throw new Error("Reviewers can only read current run context.");
                 if (!readOnly && !recovery) {
                     // Persist the fence across router reconstruction. Read-only diagnosis
                     // and access-revoking cleanup never clear an uncertain action.

@@ -15,6 +15,7 @@ import {
     deploymentDigest,
     type DeploymentHost,
     deploymentHost,
+    DeploymentHostRefusal,
     type DeploymentObservation,
     deploymentObservationSchema,
     deploymentPlanSchema,
@@ -343,6 +344,44 @@ export async function coordinateDeployment(options: {
                     );
                     return;
                 }
+            }
+            // Verify before persisting submission so a rejected preflight releases the queue.
+            try {
+                const current = v.parse(
+                    deploymentObservationSchema,
+                    await host(
+                        connection,
+                        {
+                            mode: "inspect",
+                            target: hostTarget,
+                            release: plan.release,
+                            drained: true,
+                        },
+                        AbortSignal.any([options.signal, AbortSignal.timeout(30_000)])
+                    )
+                );
+                if (deploymentDigest(current) !== deploymentDigest(expected))
+                    throw new DeploymentHostRefusal("confirmation_changed");
+            } catch (error) {
+                if (options.signal.aborted) return;
+                if (!(error instanceof DeploymentHostRefusal)) {
+                    await write(
+                        claim.state,
+                        "preflight_retry",
+                        "Host verification is temporarily unavailable. It will be checked again before any installation is submitted.",
+                        false,
+                        progress
+                    );
+                    return;
+                }
+                await write(
+                    "failed",
+                    "preflight",
+                    "Host verification failed before submission. No installation was started on this host. Check its configuration and prepare a new deployment.",
+                    true,
+                    progress
+                );
+                return;
             }
             // Persist each host boundary: losing SSH never repeats either installation.
             if (progress) progress.submitted = true;

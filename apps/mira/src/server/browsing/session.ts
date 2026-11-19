@@ -175,6 +175,10 @@ export async function openBrowserSession(
     return {
         signal,
         closed: completion.promise,
+        clipboard: (input: unknown, operation: AbortSignal) => {
+            const command = structuredClone(input);
+            return run("control", operation, (s) => active.clipboard(command, s));
+        },
         observe: (operation: AbortSignal, operator = false) =>
             run("view", operation, (s) => active.observe(s, operator)),
         tabs: (input: unknown, operation: AbortSignal, operator = false) => {

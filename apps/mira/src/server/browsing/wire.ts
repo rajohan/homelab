@@ -4,6 +4,7 @@ import {
     miraBrowserTabCommandSchema,
     miraBrowserTabsSchema,
 } from "@homelab/contracts/miraBrowser";
+import { browserClipboardCommandSchema } from "@homelab/contracts/miraBrowserClipboard";
 import { imageSize } from "image-size";
 import * as v from "valibot";
 
@@ -34,6 +35,10 @@ export const browserWorkerRequestSchema = v.strictObject({
         v.maxValue(Number.MAX_SAFE_INTEGER)
     ),
     body: v.variant("method", [
+        v.strictObject({
+            method: v.literal("clipboard"),
+            params: browserClipboardCommandSchema,
+        }),
         v.strictObject({
             method: v.literal("profile"),
             params: browserProfilePartSchema,

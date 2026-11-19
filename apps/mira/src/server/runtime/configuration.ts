@@ -93,6 +93,8 @@ export const disabledRuntimeFeatures = [
     "browser_use",
     "browser_use_external",
     "multi_agent",
+    "multi_agent_v2",
+    "multi_agent_v2_dynamic_tools",
     "image_generation",
     "view_image",
     "workspace_dependencies",

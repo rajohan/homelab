@@ -154,6 +154,12 @@ export function serveBrowserWorker(
             if (!port || !grant) throw new Error("Browser worker is not initialized.");
             owner.signal.throwIfAborted();
             switch (command.method) {
+                case "clipboard": {
+                    if (grant.mode !== "control")
+                        throw new Error("Browser access is view-only.");
+                    result = await port.clipboard(command.params, owner.signal);
+                    break;
+                }
                 case "downloadBegin": {
                     if (!grant.downloads)
                         throw new Error("Browser downloads are unavailable.");

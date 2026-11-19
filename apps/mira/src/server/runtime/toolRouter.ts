@@ -24,25 +24,29 @@ export function createMiraToolRouter<Result extends RuntimeToolResult>(
     return [
         {
             name: "mira_tools_list",
+            readOnly: true,
             description:
                 "Discover the current Mira tools, their argument schemas and capabilities. Check this registry before using tools in each turn; integrations and permissions can change between turns.",
             inputSchema: { type: "object", properties: {}, additionalProperties: false },
-            execute: (input, signal) => {
+            execute: (input, signal, call) => {
                 signal.throwIfAborted();
                 v.parse(v.strictObject({}), input);
                 return Promise.resolve(
                     JSON.stringify(
-                        tools.map(({ name, description, inputSchema }) => ({
-                            name,
-                            description,
-                            inputSchema,
-                        }))
+                        tools
+                            .filter((tool) => !call.reviewer || tool.readOnly === true)
+                            .map(({ name, description, inputSchema }) => ({
+                                name,
+                                description,
+                                inputSchema,
+                            }))
                     )
                 );
             },
         },
         {
             name: "mira_tool_call",
+            readOnly: true,
             description:
                 "Invoke a tool returned by mira_tools_list using its exact argument schema. The server enforces current permissions and records the actual tool outcome. Discovery never grants extra authority. In code mode, mixed text and images arrive as a string containing newline-separated data:image/ URLs. Split that string on newlines and pass each complete data:image/ URL line individually to image(); display only the other lines with text(). Never print the encoded image bytes.",
             inputSchema: {
@@ -64,7 +68,7 @@ export function createMiraToolRouter<Result extends RuntimeToolResult>(
                     input
                 );
                 const tool = registry.get(parsed.name);
-                if (!tool)
+                if (!tool || (call.reviewer && tool.readOnly !== true))
                     throw new Error("This tool is not available in the current run.");
                 return tool.execute(parsed.arguments, signal, call);
             },

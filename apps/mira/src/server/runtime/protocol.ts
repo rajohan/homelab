@@ -77,12 +77,13 @@ export const toolCallSchema = v.object({
 });
 export interface RuntimeTool<Result extends RuntimeToolResult = string> {
     name: string;
+    readOnly?: boolean;
     description: string;
     inputSchema: Record<string, unknown>;
     execute: (
         input: unknown,
         signal: AbortSignal,
-        call: { callId: string; threadId: string; turnId: string }
+        call: { callId: string; threadId: string; turnId: string; reviewer?: boolean }
     ) => Promise<Result>;
 }
 export interface TurnResult {

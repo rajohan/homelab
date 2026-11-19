@@ -8,6 +8,7 @@ from contextlib import contextmanager
 import copy
 import fcntl
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -301,8 +302,13 @@ def browser_slots(target, bindings, observed):
             raise Refusal("browser_proxy_verification")
         cmd = data.get("Config", {}).get("Cmd") or []
         mode = binding.get("network")
-        if (mode and (len(cmd) != 4 or cmd[0] != mode)) or (not mode and cmd):
+        if (mode and (len(cmd) not in ((4, 5) if mode == "connected" else (4,)) or cmd[0] != mode)) or (not mode and cmd):
             raise Refusal("browser_proxy_verification")
+        if mode == "connected" and len(cmd) == 5 and cmd[4]:
+            try:
+                ipaddress.IPv4Address(cmd[4])
+            except (ValueError, TypeError):
+                raise Refusal("browser_proxy_verification") from None
         slots.append({"networkId": binding["networkId"], "proxyId": proxy["id"], "proxyImageId": proxy["imageId"], **({"network":mode} if mode else {})})
     return slots
 
@@ -770,7 +776,7 @@ def main():
     signal.signal(signal.SIGALRM, expired)
     signal.alarm(90)
     if request["mode"] == "inspect":
-        result = inspect(request["target"], request["release"], request.get("allowCurrent") is True)
+        result = inspect(request["target"], request["release"], request.get("allowCurrent") is True, request.get("drained") is True)
     elif request["mode"] == "status":
         result = status(request["target"], request["id"])
     elif request["mode"] == "submit":

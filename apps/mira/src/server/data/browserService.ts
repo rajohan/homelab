@@ -86,6 +86,7 @@ export async function runMiraBrowserHost(
                     ...current.display,
                     owner: candidate.owner,
                     signal: current.signal,
+                    clipboard: current.clipboard,
                 });
             const running = AbortSignal.any([lifetime, current.signal]);
             while (!running.aborted) {

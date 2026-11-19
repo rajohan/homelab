@@ -285,7 +285,9 @@ export async function executeMiraTurn(
             .update(permissionPolicyHash)
             .update(miraSkillCatalogHash)
             .update(JSON.stringify(nativeSkills))
-            .update(`native-images:${nativeImages}:sleep:${chatSearch}`)
+            .update(
+                `native-images:${nativeImages}:sleep:${chatSearch}:read-only-reviewers:1`
+            )
             .digest("hex");
 
         record = await readMiraTurnInput(
@@ -480,6 +482,15 @@ export async function executeMiraTurn(
                     attachments: continuation ? [] : attachments.inputs,
                     timeoutMs:
                         deadlineAt === null ? null : Math.max(1, deadlineAt - Date.now()),
+                    onReviewerStarted: async (childId) => {
+                        if (!chatSearch)
+                            throw new Error("Reviewers require a manual Chat run.");
+                        const rows = await client<
+                            { id: string }[]
+                        >`UPDATE mira_conversations SET provider_retired_threads=CASE WHEN provider_retired_threads @> ${JSON.stringify([childId])}::text::jsonb THEN provider_retired_threads ELSE provider_retired_threads || ${JSON.stringify([childId])}::text::jsonb END,provider_purge_retry_at=NULL WHERE id=${run.conversationId} AND owner=${run.owner} AND provider_thread=${threadId} AND EXISTS (SELECT 1 FROM mira_runs WHERE id=${run.id} AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp()) RETURNING id`;
+                        if (!rows[0])
+                            throw new Error("Reviewer registration lost its run lease.");
+                    },
                     onStarted: async (turnId) => {
                         await client.begin(async (query) => {
                             const accepted = await query<

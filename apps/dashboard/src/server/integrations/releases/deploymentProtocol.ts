@@ -108,7 +108,12 @@ export const deploymentProgressSchema = v.strictObject({
 });
 export type DeploymentProgress = v.InferOutput<typeof deploymentProgressSchema>;
 export type DeploymentHostRequest = { target: ReleaseDeploymentHostTarget } & (
-    | { mode: "inspect"; release: DeploymentRelease; allowCurrent?: boolean }
+    | {
+          mode: "inspect";
+          release: DeploymentRelease;
+          allowCurrent?: boolean;
+          drained?: boolean;
+      }
     | { mode: "status"; id: string }
     | {
           mode: "submit";
@@ -149,6 +154,16 @@ export function deploymentDigest(value: unknown): string {
         .digest("hex");
 }
 
+/** A definitive host refusal before the caller's requested operation can proceed. */
+export class DeploymentHostRefusal extends Error {
+    /** Retain only the validated, nonsecret host reason code.
+     * @param code - Fixed protocol refusal or changed-confirmation marker.
+     */
+    constructor(code: string) {
+        super(`Deployment host refused: ${code}`);
+    }
+}
+
 /**
  * Invoke the fixed host protocol over existing pinned SSH trust and bound its receipt.
  * @param connection - Operator-owned SSH authority.
@@ -173,11 +188,28 @@ export const deploymentHost: DeploymentHost = async (connection, request, signal
             if (size > 65_536) throw new Error("Deployment receipt exceeded its limit");
             chunks.push(chunk);
         }
-        if ((await child.exited) !== 0)
+        const exitCode = await child.exited;
+        signal.throwIfAborted();
+        const response: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        if (exitCode !== 0) {
+            const refusal = v.safeParse(
+                v.strictObject({
+                    ok: v.literal(false),
+                    code: v.pipe(v.string(), v.regex(/^[a-z_]{1,64}$/)),
+                }),
+                response
+            );
+            if (
+                exitCode === 1 &&
+                refusal.success &&
+                !["request_expired", "operation_failed"].includes(refusal.output.code)
+            )
+                throw new DeploymentHostRefusal(refusal.output.code);
             throw new Error("Deployment host operation failed");
+        }
         const result = v.parse(
             v.strictObject({ ok: v.literal(true), result: v.unknown() }),
-            JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown
+            response
         );
         return result.result;
     } finally {

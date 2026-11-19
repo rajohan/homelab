@@ -18,6 +18,7 @@ export interface BrowserDisplaySocket {
     socket?: Socket;
     timer?: ReturnType<typeof setTimeout>;
     closed: boolean;
+    control: boolean;
 }
 
 function close(ws: ServerWebSocket<BrowserDisplaySocket>) {
@@ -75,6 +76,7 @@ export async function prepareBrowserDisplay(
         identity,
         verify,
         closed: false,
+        control: initial.control,
     };
 }
 
