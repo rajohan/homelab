@@ -58,7 +58,7 @@ export function Shell() {
     return (
         <JobActivityContext value={revealActivity}>
             <div
-                className={`${chatWorkspace ? "h-dvh overflow-hidden" : "min-h-dvh"} bg-primary-900 text-primary-50`}
+                className={`${chatWorkspace ? "h-dvh overflow-hidden" : "min-h-dvh"} bg-primary-950 text-primary-50`}
             >
                 <a
                     className="fixed top-3 left-3 z-50 -translate-y-24 rounded-lg bg-accent-700 px-4 py-3 text-sm font-semibold text-white focus:translate-y-0"
@@ -67,7 +67,7 @@ export function Shell() {
                     Skip to content
                 </a>
                 <aside
-                    className={`fixed inset-y-0 left-0 hidden flex-col border-r border-primary-700 bg-primary-950 lg:flex ${compactNavigation ? "w-18" : "w-60 xl:w-64"}`}
+                    className={`fixed inset-y-0 left-0 hidden flex-col border-r border-primary-700 bg-primary-900 lg:flex ${compactNavigation ? "w-18" : "w-52"}`}
                 >
                     <Sidebar compact={compactNavigation} />
                 </aside>
@@ -76,9 +76,9 @@ export function Shell() {
                     onClose={() => setNavigationPath(undefined)}
                 />
                 <div
-                    className={`flex min-w-0 flex-col ${compactNavigation ? "lg:pl-18" : "lg:pl-60 xl:pl-64"} ${chatWorkspace ? "h-full min-h-0" : "min-h-dvh"}`}
+                    className={`flex min-w-0 flex-col ${compactNavigation ? "lg:pl-18" : "lg:pl-52"} ${chatWorkspace ? "h-full min-h-0" : "min-h-dvh"}`}
                 >
-                    <header className="sticky top-0 z-20 flex h-20 shrink-0 items-center justify-between gap-3 border-b border-primary-700 bg-primary-950/95 px-4 backdrop-blur-sm sm:px-5">
+                    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-primary-700 bg-primary-950/95 px-4 backdrop-blur-sm sm:px-5">
                         <div className="flex min-w-0 items-center gap-3">
                             <IconButton
                                 icon={Menu}

@@ -72,3 +72,5 @@ export { SyntaxSource } from "./components/Markdown/SyntaxSource";
 
 export { TextFilePreview } from "./components/Markdown/TextFilePreview";
 export { fileTypeIcon, fileTypeIcons } from "./lib/fileTypeIcon";
+export { SummaryStrip } from "./components/SectionHeader/SummaryStrip";
+export { ReadingBar } from "./components/Meter/ReadingBar";

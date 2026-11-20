@@ -8,7 +8,6 @@ import {
     ErrorNotice,
     formatDateTime,
     LoadingState,
-    queryRefresh,
     SectionHeader,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
@@ -17,6 +16,7 @@ import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { workerOverviewQuery } from "./workerOverviewQuery";
 
 /**
  * Display durable worker control, all queue counts and the live process inventory.
@@ -27,12 +27,7 @@ export function WorkerPanel() {
         version: number;
         paused: boolean;
     }>();
-    const query = useQuery({
-        queryKey: ["operations", "worker"],
-        queryFn: ({ signal }) => api.worker.overview.query(undefined, { signal }),
-        ...queryRefresh("fast"),
-        retry: false,
-    });
+    const query = useQuery(workerOverviewQuery);
     const toggle = useOperation((input: { version: number; paused: boolean }, signal) =>
         api.worker.setPaused.mutate(input, { signal })
     );
@@ -59,7 +54,7 @@ export function WorkerPanel() {
                     }
                 />
                 <div className="col-span-full space-y-4">
-                    {query.isPending && <LoadingState label="Loading worker status…" />}
+                    {query.isPending && <LoadingState label="Loading worker statusâ€¦" />}
                     {query.isError && <ErrorNotice error={query.error} />}
                     {data && (
                         <>

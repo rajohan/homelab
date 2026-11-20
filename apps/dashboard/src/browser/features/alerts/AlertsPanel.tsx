@@ -7,7 +7,6 @@ import {
     ErrorNotice,
     formatDateTime,
     LoadingState,
-    queryRefresh,
     SectionHeader,
     Select,
 } from "@homelab/ui";
@@ -16,10 +15,10 @@ import { Link } from "@tanstack/react-router";
 import { BellRing } from "lucide-react";
 import { useState } from "react";
 
-import { api } from "../../api/client";
 import { MetricStat } from "../infrastructure/MetricStat";
 import { ObservationBadge } from "../operations/ObservationBadge";
 import { IncidentDetails } from "./IncidentDetails";
+import { incidentOptions } from "./incidentQueries";
 import { IncidentStatus } from "./IncidentStatus";
 
 /**
@@ -30,22 +29,7 @@ export function AlertsPanel({ compact = false }: { readonly compact?: boolean })
     const [state, setState] = useState<"current" | "resolved">("current");
     const [selected, setSelected] = useState<Incident | null>(null);
     const [sort, setSort] = useState<TableSort | null>(null);
-    const query = useInfiniteQuery({
-        queryKey: ["operations", "alerts", state, ...(sort ? [sort] : [])],
-        initialPageParam: {},
-        queryFn: ({ pageParam, signal }) =>
-            api.alerts.list.query(
-                { state, ...pageParam, ...(sort ? { sort } : {}) },
-                { signal }
-            ),
-        getNextPageParam: (page) => {
-            if (sort)
-                return page.nextSortCursor ? { cursor: page.nextSortCursor } : undefined;
-            return page.nextCursor ? { before: page.nextCursor } : undefined;
-        },
-        ...queryRefresh("fast"),
-        retry: false,
-    });
+    const query = useInfiniteQuery(incidentOptions(state, sort));
     const data = query.data?.pages[0];
     const rows = query.data?.pages.flatMap((page) => page.incidents) ?? [];
     const unavailable =
@@ -76,22 +60,22 @@ export function AlertsPanel({ compact = false }: { readonly compact?: boolean })
                     />
                 }
             />
-            {query.isPending && <LoadingState label="Loading incidents…" />}
+            {query.isPending && <LoadingState label="Loading incidentsâ€¦" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {data && (
                 <>
                     <dl className="grid grid-cols-3 gap-3">
                         <MetricStat
                             label="Active"
-                            value={unavailable ? "—" : count("active")}
+                            value={unavailable ? "â€”" : count("active")}
                         />
                         <MetricStat
                             label="Suppressed"
-                            value={unavailable ? "—" : count("suppressed")}
+                            value={unavailable ? "â€”" : count("suppressed")}
                         />
                         <MetricStat
                             label="Resolved"
-                            value={data.capturedAt ? count("resolved") : "—"}
+                            value={data.capturedAt ? count("resolved") : "â€”"}
                         />
                     </dl>
                     {!compact && (
@@ -132,7 +116,7 @@ export function AlertsPanel({ compact = false }: { readonly compact?: boolean })
                                     render: (row) =>
                                         [row.host, row.service]
                                             .filter(Boolean)
-                                            .join(" · ") || "Not reported",
+                                            .join(" Â· ") || "Not reported",
                                 },
                                 {
                                     id: "state",
@@ -160,7 +144,7 @@ export function AlertsPanel({ compact = false }: { readonly compact?: boolean })
                                 hasMore: query.hasNextPage,
                                 loading: query.isFetching,
                                 error: query.isError ? query.error : undefined,
-                                loadingLabel: "Loading more incidents…",
+                                loadingLabel: "Loading more incidentsâ€¦",
                                 onLoadMore: () =>
                                     void (query.isRefetchError
                                         ? query.refetch()

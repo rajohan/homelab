@@ -18,7 +18,7 @@ export function SectionHeader({
 }: {
     readonly title: ReactNode;
     readonly description?: string;
-    readonly icon: LucideIcon;
+    readonly icon?: LucideIcon;
     readonly actions?: ReactNode;
     readonly badge?: ReactNode;
     readonly compactActions?: boolean;
@@ -34,7 +34,7 @@ export function SectionHeader({
                 )}
             >
                 <div className="flex min-w-0 flex-1 gap-3">
-                    <SectionIcon icon={Icon} className="mt-0.5" />
+                    {Icon && <SectionIcon icon={Icon} className="mt-0.5" />}
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                             <h2 className="text-base font-semibold wrap-anywhere text-primary-50">

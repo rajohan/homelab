@@ -5,7 +5,6 @@ import {
     ErrorNotice,
     formatDateTime,
     LoadingState,
-    queryRefresh,
     SectionHeader,
     Select,
 } from "@homelab/ui";
@@ -14,13 +13,13 @@ import { Link } from "@tanstack/react-router";
 import { PackageCheck } from "lucide-react";
 import { useState } from "react";
 
-import { api } from "../../api/client";
 import { MetricStat } from "../infrastructure/MetricStat";
 import { ObservationBadge } from "../operations/ObservationBadge";
 import { AutomaticUpdates } from "./AutomaticUpdates";
 import { RestartStatus } from "./RestartStatus";
 import { SoftwareUpdates } from "./SoftwareUpdates";
 import { UpdateBatchAction } from "./UpdateBatchAction";
+import { updateInventoryQuery } from "./updateInventoryQuery";
 
 /**
  * Present update observations separately from confirmed manual and opt-in automatic installation.
@@ -28,12 +27,7 @@ import { UpdateBatchAction } from "./UpdateBatchAction";
  */
 export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }) {
     const [selection, setSelection] = useState("");
-    const query = useQuery({
-        queryKey: ["operations", "updates"],
-        queryFn: ({ signal }) => api.updates.inventory.query(undefined, { signal }),
-        ...queryRefresh("normal"),
-        retry: false,
-    });
+    const query = useQuery(updateInventoryQuery);
     const sources = query.data ?? [];
     const options = sources.flatMap((item) => {
         const categories = item.report?.coveredKinds.includes("runtime")
@@ -41,7 +35,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
             : (["software"] as const);
         return categories.map((category) => ({
             value: JSON.stringify([item.id, category]),
-            label: category === "toolchains" ? `${item.label} · Toolchains` : item.label,
+            label: category === "toolchains" ? `${item.label} Â· Toolchains` : item.label,
             source: item.id,
             category,
         }));
@@ -79,7 +73,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                     )
                 }
             />
-            {query.isPending && <LoadingState label="Loading update inventory…" />}
+            {query.isPending && <LoadingState label="Loading update inventoryâ€¦" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {query.data && (
                 <>
@@ -96,7 +90,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                                   : (item.report?.available ?? 0)),
                                           0
                                       )
-                                    : "—"
+                                    : "â€”"
                             }
                         />
                         <MetricStat
@@ -111,7 +105,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                                   : (item.report?.security ?? 0)),
                                           0
                                       )
-                                    : "—"
+                                    : "â€”"
                             }
                         />
                         <MetricStat
@@ -120,7 +114,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                 sources.length > 0 && !query.isError
                                     ? sources.filter((item) => item.stale || !item.report)
                                           .length
-                                    : "—"
+                                    : "â€”"
                             }
                         />
                     </dl>
@@ -150,7 +144,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                                 !item.stale &&
                                                 item.report
                                                     ? item.report.available
-                                                    : "—",
+                                                    : "â€”",
                                         },
                                         {
                                             id: "coverage",
@@ -158,7 +152,7 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                                 row.report?.coveredKinds.join(" "),
                                             label: "Checks",
                                             render: (item) =>
-                                                item.report?.coveredKinds.join(" · ") ??
+                                                item.report?.coveredKinds.join(" Â· ") ??
                                                 "Not reported",
                                         },
                                         {

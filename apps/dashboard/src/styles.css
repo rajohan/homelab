@@ -1,3 +1,7 @@
 @import "../../../packages/ui/src/styles/index.css";
 @source "./browser";
 @source not "./browser/**/*.test.tsx";
+
+@theme {
+    --color-workspace-accent: #8acbd6;
+}

@@ -5,7 +5,6 @@ import {
     ErrorNotice,
     formatDateTime,
     LoadingState,
-    queryRefresh,
     SearchInput,
     SectionHeader,
 } from "@homelab/ui";
@@ -14,9 +13,9 @@ import { Link } from "@tanstack/react-router";
 import { Archive } from "lucide-react";
 import { useState } from "react";
 
-import { api } from "../../api/client";
 import { MetricStat } from "../infrastructure/MetricStat";
 import { ObservationBadge } from "../operations/ObservationBadge";
+import { backupInventoryQuery } from "./backupInventoryQuery";
 import { BackupStatus } from "./BackupStatus";
 
 /**
@@ -25,12 +24,7 @@ import { BackupStatus } from "./BackupStatus";
  */
 export function BackupsPanel({ compact = false }: { readonly compact?: boolean }) {
     const [search, setSearch] = useState("");
-    const query = useQuery({
-        queryKey: ["operations", "backups"],
-        queryFn: ({ signal }) => api.backups.inventory.query(undefined, { signal }),
-        ...queryRefresh("normal"),
-        retry: false,
-    });
+    const query = useQuery(backupInventoryQuery);
     const data = query.data;
     const stale = !data?.configured || query.isError || (data?.stale ?? true);
     const rows = data?.inventory?.backups ?? [];
@@ -40,7 +34,7 @@ export function BackupsPanel({ compact = false }: { readonly compact?: boolean }
     const count = (states: readonly string[]) =>
         rows.filter((row) => states.includes(row.state)).length;
     let unknownCount: number | string = count(["unknown"]);
-    if (stale) unknownCount = rows.length > 0 ? rows.length : "—";
+    if (stale) unknownCount = rows.length > 0 ? rows.length : "â€”";
     return (
         <Card className="space-y-4">
             <SectionHeader
@@ -55,18 +49,18 @@ export function BackupsPanel({ compact = false }: { readonly compact?: boolean }
                     />
                 }
             />
-            {query.isPending && <LoadingState label="Loading backup status…" />}
+            {query.isPending && <LoadingState label="Loading backup statusâ€¦" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {data && (
                 <>
                     <dl className="grid grid-cols-3 gap-3">
                         <MetricStat
                             label="Healthy"
-                            value={stale ? "—" : count(["healthy"])}
+                            value={stale ? "â€”" : count(["healthy"])}
                         />
                         <MetricStat
                             label="Needs attention"
-                            value={stale ? "—" : count(["failed", "overdue"])}
+                            value={stale ? "â€”" : count(["failed", "overdue"])}
                         />
                         <MetricStat label="Unknown" value={unknownCount} />
                     </dl>
@@ -74,7 +68,7 @@ export function BackupsPanel({ compact = false }: { readonly compact?: boolean }
                         <SearchInput
                             label="Search backups"
                             clearLabel="Clear backup search"
-                            placeholder="Find a host or backup task…"
+                            placeholder="Find a host or backup taskâ€¦"
                             value={search}
                             onChange={setSearch}
                         />

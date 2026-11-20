@@ -1,20 +1,17 @@
 import {
-    buttonStyles,
-    Card,
     DataTable,
     ErrorNotice,
     formatMetric,
     LoadingState,
+    ReadingBar,
     SectionHeader,
 } from "@homelab/ui";
-import { Link } from "@tanstack/react-router";
-import { Server } from "lucide-react";
 
-import { MetricStat } from "../infrastructure/MetricStat";
 import { ResourceStatus } from "../infrastructure/ResourceStatus";
 import { ResourceUsage } from "../infrastructure/ResourceUsage";
 import { useInfrastructure } from "../infrastructure/useInfrastructure";
 import { ObservationBadge } from "../operations/ObservationBadge";
+import { OverviewLink } from "./OverviewLink";
 
 /**
  * Summarize monitoring without adding host and guest allocations or shared storage together.
@@ -25,65 +22,27 @@ export function InfrastructureHealth() {
     const hosts =
         inventory?.hosts.filter((host) => host.kind === "node" || host.kind === "host") ??
         [];
-    const applications = inventory?.applications ?? [];
-    const probes = inventory?.services.filter((item) => item.kind === "probe") ?? [];
     return (
-        <Card className="space-y-4">
+        <section className="min-w-0 space-y-3">
             <SectionHeader
-                title="Infrastructure health"
-                description="Hosts, applications and end-to-end service checks."
-                icon={Server}
-                actions={
+                title="Hosts"
+                compactActions
+                badge={
                     <ObservationBadge
                         configured={configured}
                         available={Boolean(inventory)}
                         stale={stale}
                     />
                 }
+                actions={<OverviewLink to="/infrastructure">Infrastructure</OverviewLink>}
             />
-            {query.isPending && <LoadingState label="Loading infrastructure…" />}
+            {query.isPending && <LoadingState label="Loading infrastructureâ€¦" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {inventory && (
                 <>
-                    <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                        <MetricStat
-                            label="Hosts / guests"
-                            value={
-                                stale
-                                    ? "—"
-                                    : `${inventory.hosts.filter((host) => host.state === "healthy").length} / ${inventory.hosts.length}`
-                            }
-                        />
-                        <MetricStat
-                            label="Healthy applications"
-                            value={
-                                stale
-                                    ? "—"
-                                    : `${applications.filter((item) => item.state === "healthy").length} / ${applications.length}`
-                            }
-                        />
-                        <MetricStat
-                            label="Failed checks"
-                            value={
-                                stale
-                                    ? "—"
-                                    : probes.filter((item) => item.state === "unhealthy")
-                                          .length
-                            }
-                        />
-                        <MetricStat
-                            label="Unknown applications"
-                            value={
-                                stale
-                                    ? "—"
-                                    : applications.filter(
-                                          (item) => item.state === "unknown"
-                                      ).length
-                            }
-                        />
-                    </dl>
                     {hosts.length > 0 && (
                         <DataTable
+                            className="rounded-none border-x-0"
                             label="Physical host resources"
                             compact
                             rows={hosts}
@@ -110,11 +69,19 @@ export function InfrastructureHealth() {
                                     id: "cpu",
                                     sortValue: (row) => (stale ? null : row.cpuPercent),
                                     label: "CPU",
-                                    render: (host) =>
-                                        formatMetric(
-                                            stale ? null : host.cpuPercent,
-                                            "percent"
-                                        ),
+                                    render: (host) => (
+                                        <div className="space-y-1.5">
+                                            <span className="tabular-nums">
+                                                {formatMetric(
+                                                    stale ? null : host.cpuPercent,
+                                                    "percent"
+                                                )}
+                                            </span>
+                                            <ReadingBar
+                                                percent={stale ? null : host.cpuPercent}
+                                            />
+                                        </div>
+                                    ),
                                 },
                                 {
                                     id: "memory",
@@ -126,7 +93,7 @@ export function InfrastructureHealth() {
                                         <ResourceUsage
                                             singleLine
                                             used={stale ? null : host.memoryUsed}
-                                            total={host.memoryTotal}
+                                            total={stale ? null : host.memoryTotal}
                                         />
                                     ),
                                 },
@@ -140,12 +107,9 @@ export function InfrastructureHealth() {
                     No infrastructure observation is available.
                 </p>
             )}
-            <Link
-                to="/infrastructure"
-                className={buttonStyles({ variant: "secondary", className: "w-full" })}
-            >
-                View infrastructure
-            </Link>
-        </Card>
+            {inventory && hosts.length === 0 && (
+                <p className="text-sm text-primary-400">No physical hosts reported.</p>
+            )}
+        </section>
     );
 }
