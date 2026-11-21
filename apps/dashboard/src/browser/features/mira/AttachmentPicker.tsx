@@ -103,8 +103,8 @@ export function AttachmentPicker({
                 <ul
                     className={
                         open
-                            ? "max-h-[min(42dvh,24rem)] space-y-2 overflow-y-auto"
-                            : "grid max-h-36 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2"
+                            ? "max-h-[min(42dvh,24rem)] space-y-2 overflow-y-auto pe-3"
+                            : "grid max-h-36 grid-cols-1 gap-2 overflow-y-auto pe-3 sm:grid-cols-2"
                     }
                 >
                     {value.map((file) => (
@@ -133,7 +133,17 @@ export function AttachmentPicker({
             {remaining.length > 0 && !upload.isPending && (
                 <ActionGroup>
                     <Button
-                        variant="secondary"
+                        variant="danger"
+                        disabled={disabled}
+                        onClick={() => {
+                            setRemaining([]);
+                            upload.reset();
+                        }}
+                    >
+                        Discard failed uploads
+                    </Button>
+                    <Button
+                        variant="primary"
                         disabled={disabled}
                         onClick={() => {
                             if (uploading.current) return;
@@ -142,16 +152,6 @@ export function AttachmentPicker({
                         }}
                     >
                         Retry upload
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        disabled={disabled}
-                        onClick={() => {
-                            setRemaining([]);
-                            upload.reset();
-                        }}
-                    >
-                        Discard failed uploads
                     </Button>
                 </ActionGroup>
             )}
@@ -181,7 +181,7 @@ export function AttachmentPicker({
             <div
                 className={
                     compact
-                        ? "order-last -mx-2 flex min-w-0 flex-wrap items-center gap-1 border-t border-primary-700 px-2 pt-2"
+                        ? "order-last flex min-w-0 flex-wrap items-center gap-0.5"
                         : "flex flex-col gap-2 min-[30rem]:flex-row"
                 }
             >
@@ -209,7 +209,7 @@ export function AttachmentPicker({
                     <div
                         className={
                             compact
-                                ? "ml-auto flex w-full shrink-0 items-center gap-2 @min-[18rem]/attachment-picker:w-auto [&>button]:flex-1 @min-[18rem]/attachment-picker:[&>button]:flex-none"
+                                ? "ml-auto flex max-w-full flex-wrap items-center justify-end gap-1"
                                 : "ml-auto flex shrink-0 items-center gap-2"
                         }
                     >

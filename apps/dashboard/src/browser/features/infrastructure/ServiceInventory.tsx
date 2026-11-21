@@ -1,5 +1,12 @@
 import type { ServiceMetric } from "@homelab/contracts/infrastructure";
-import { Card, DataTable, SectionHeader, Select } from "@homelab/ui";
+import {
+    SearchInput,
+    SectionPanel,
+    Select,
+    SortControl,
+    useInventorySort,
+    VirtualList,
+} from "@homelab/ui";
 import { Activity } from "lucide-react";
 import { useState } from "react";
 
@@ -7,62 +14,87 @@ import { ResourceStatus } from "./ResourceStatus";
 
 /**
  * Distinguish end-to-end probes, native services and telemetry collection health.
- * @returns A bounded service table with explicit check categories.
+ * @returns A bounded service list with explicit check categories.
  */
 export function ServiceInventory({
     services,
+    stale,
 }: {
+    readonly stale: boolean;
     readonly services: readonly ServiceMetric[];
 }) {
     const [kind, setKind] = useState("probe");
+    const [search, setSearch] = useState("");
+    const checks = services.filter((row) => row.kind === kind);
+    const matching = checks.filter((row) =>
+        `${row.name} ${row.host}`.toLowerCase().includes(search.toLowerCase())
+    );
+    const { ordered, control } = useInventorySort(matching, [
+        { label: "Check", value: (row) => row.name },
+        { label: "Host / component", value: (row) => row.host },
+        { label: "Status", value: (row) => (stale ? null : row.state) },
+    ]);
     return (
-        <Card className="space-y-4">
-            <SectionHeader
-                title="Service checks"
-                description="Exporter reachability is separate from application health and end-to-end checks."
-                icon={Activity}
-                actions={
-                    <div className="w-full shrink-0 min-[30rem]:w-56">
-                        <Select
-                            label="Check type"
-                            value={kind}
-                            onChange={setKind}
-                            options={[
-                                { value: "probe", label: "End-to-end probes" },
-                                { value: "service", label: "Native services" },
-                                { value: "exporter", label: "Metrics exporters" },
-                            ]}
-                        />
-                    </div>
-                }
+        <SectionPanel
+            title="Service checks"
+            description="Exporter reachability is separate from application health and end-to-end checks."
+            icon={Activity}
+            actions={
+                <div className="flex flex-wrap items-center gap-2">
+                    <Select
+                        compact
+                        icon={Activity}
+                        label="Check type"
+                        value={kind}
+                        onChange={(value) => {
+                            setKind(value);
+                            setSearch("");
+                        }}
+                        options={[
+                            { value: "probe", label: "End-to-end probes" },
+                            { value: "service", label: "Native services" },
+                            { value: "exporter", label: "Metrics exporters" },
+                        ]}
+                    />
+                    {matching.length > 1 && (
+                        <SortControl label="service checks" {...control} />
+                    )}
+                </div>
+            }
+        >
+            <SearchInput
+                value={search}
+                onChange={setSearch}
+                label="Search service checks"
+                placeholder="Find a check or host…"
             />
-            <DataTable
-                label="Service checks"
-                compact
-                rows={services.filter((row) => row.kind === kind)}
-                getKey={(row) => row.id}
-                columns={[
-                    {
-                        id: "name",
-                        sortValue: (row) => row.name,
-                        label: "Check",
-                        mobile: "title",
-                        render: (row) => row.name,
-                    },
-                    {
-                        id: "host",
-                        sortValue: (row) => row.host,
-                        label: "Host / component",
-                        render: (row) => row.host,
-                    },
-                    {
-                        id: "state",
-                        sortValue: (row) => row.state,
-                        label: "Status",
-                        render: (row) => <ResourceStatus state={row.state} />,
-                    },
-                ]}
-            />
-        </Card>
+            {ordered.length > 0 ? (
+                <VirtualList
+                    label="Service check results"
+                    rows={ordered}
+                    getKey={(row) => row.id}
+                    itemClassName="border-b border-primary-700/70 py-2.5"
+                    renderItem={(row) => (
+                        <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                            <div className="min-w-0">
+                                <p className="text-sm font-medium wrap-anywhere">
+                                    {row.name}
+                                </p>
+                                <p className="text-xs wrap-anywhere text-primary-400">
+                                    {row.host}
+                                </p>
+                            </div>
+                            <ResourceStatus state={stale ? "unknown" : row.state} />
+                        </div>
+                    )}
+                />
+            ) : (
+                <p className="text-sm text-primary-400">
+                    {search
+                        ? "No matching checks."
+                        : "No checks reported in this category."}
+                </p>
+            )}
+        </SectionPanel>
     );
 }

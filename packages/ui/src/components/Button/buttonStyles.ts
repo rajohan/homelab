@@ -1,7 +1,7 @@
 import { cn } from "../../lib/classNames";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
-export type ButtonSize = "sm" | "md" | "lg";
+export type ButtonSize = "sm" | "md" | "lg" | "field";
 
 const variants: Record<ButtonVariant, string> = {
     primary: "bg-accent-700 text-white hover:bg-accent-800 active:bg-accent-900",
@@ -13,6 +13,7 @@ const variants: Record<ButtonVariant, string> = {
 const sizes: Record<ButtonSize, string> = {
     sm: "min-h-11 px-3 py-2 text-sm sm:min-h-9",
     md: "min-h-11 px-4 py-2.5 text-sm sm:min-h-10",
+    field: "min-h-form-control px-4 py-2 text-sm leading-6",
     lg: "min-h-12 px-5 py-3 text-base",
 };
 

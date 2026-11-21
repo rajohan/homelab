@@ -1,10 +1,9 @@
 import {
-    Card,
     ErrorNotice,
     LoadingState,
     queryRefresh,
     SearchInput,
-    SectionHeader,
+    SectionPanel,
     Select,
     VirtualList,
 } from "@homelab/ui";
@@ -45,12 +44,43 @@ export function MaintenancePanel() {
             api.jobs.run.mutate(input, { signal })
     );
     return (
-        <Card className="@container/restarts space-y-4">
-            <SectionHeader
-                title="Restarts"
-                description="Review service impact and verify recovery after a confirmed restart."
-                icon={RotateCw}
-            />
+        <SectionPanel
+            className="@container/restarts"
+            title="Restarts"
+            description="Review service impact and verify recovery after a confirmed restart."
+            icon={RotateCw}
+        >
+            <div className="grid gap-3 @min-[32rem]/restarts:grid-cols-2 @min-[52rem]/restarts:grid-cols-[minmax(0,1fr)_12rem_12rem]">
+                <SearchInput
+                    className="@min-[32rem]/restarts:col-span-2 @min-[52rem]/restarts:col-span-1"
+                    label="Search restart targets"
+                    placeholder="Search hosts or services…"
+                    value={search}
+                    maxLength={160}
+                    onChange={setSearch}
+                />
+                <Select<RequirementFilter>
+                    label="Restart requirement"
+                    value={requirement}
+                    onChange={setRequirement}
+                    options={[
+                        { value: "all", label: "All statuses" },
+                        { value: "required", label: "Restart required" },
+                        { value: "unknown", label: "Requirement unknown" },
+                        { value: "not-required", label: "No restart required" },
+                    ]}
+                />
+                <Select<RestartLocationFilter>
+                    label="Restart location"
+                    value={location}
+                    onChange={setLocation}
+                    options={[
+                        { value: "all", label: "All restart locations" },
+                        { value: "dashboard", label: "In dashboard" },
+                        { value: "external", label: "External restart" },
+                    ]}
+                />
+            </div>
             {query.isPending && <LoadingState label="Loading restart status…" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {refresh.isError && <ErrorNotice error={refresh.error} />}
@@ -61,43 +91,12 @@ export function MaintenancePanel() {
             )}
             {query.data && query.data.length > 0 && (
                 <>
-                    <div className="grid gap-3 @min-[32rem]/restarts:grid-cols-2 @min-[52rem]/restarts:grid-cols-[minmax(0,1fr)_12rem_12rem]">
-                        <SearchInput
-                            className="@min-[32rem]/restarts:col-span-2 @min-[52rem]/restarts:col-span-1"
-                            label="Search restart targets"
-                            placeholder="Search hosts or services…"
-                            value={search}
-                            maxLength={160}
-                            onChange={setSearch}
-                        />
-                        <Select<RequirementFilter>
-                            label="Restart requirement"
-                            value={requirement}
-                            onChange={setRequirement}
-                            options={[
-                                { value: "all", label: "All statuses" },
-                                { value: "required", label: "Restart required" },
-                                { value: "unknown", label: "Requirement unknown" },
-                                { value: "not-required", label: "No restart required" },
-                            ]}
-                        />
-                        <Select<RestartLocationFilter>
-                            label="Restart location"
-                            value={location}
-                            onChange={setLocation}
-                            options={[
-                                { value: "all", label: "All restart locations" },
-                                { value: "dashboard", label: "In dashboard" },
-                                { value: "external", label: "External restart" },
-                            ]}
-                        />
-                    </div>
                     <output className="block text-sm text-primary-400">
                         {count} of {query.data.length} targets · {groups.length}{" "}
                         {groups.length === 1 ? "host" : "hosts"}
                     </output>
                     {groups.length === 0 && (
-                        <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
+                        <p className="rounded-lg border border-primary-700 bg-surface-empty p-4 text-sm text-primary-400">
                             No restart targets match. Change the filters or clear the
                             search.
                         </p>
@@ -137,6 +136,6 @@ export function MaintenancePanel() {
             {selected && (
                 <RestartDialog plan={selected} onClose={() => setSelected(undefined)} />
             )}
-        </Card>
+        </SectionPanel>
     );
 }

@@ -7,6 +7,7 @@ import {
     Modal,
     Switch,
 } from "@homelab/ui";
+import { Pause } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
@@ -45,6 +46,7 @@ export function MiraDisableDialog({
     );
     return (
         <Modal
+            icon={Pause}
             title={`Pause ${title}`}
             description={description}
             onClose={onClose}

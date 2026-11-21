@@ -3,11 +3,11 @@ import {
     Badge,
     Button,
     buttonStyles,
-    Card,
     ErrorNotice,
     LoadingState,
     queryRefresh,
     SectionHeader,
+    SectionPanel,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { PackageCheck, Tag } from "lucide-react";
@@ -44,41 +44,42 @@ export function ReleasesPanel() {
     }[publication];
     const unverifiedTone = release?.fresh && publishing ? "info" : "warning";
     return (
-        <Card id="homelab-release" className="@container space-y-4">
-            <SectionHeader
-                title="Homelab release"
-                description="Current app versions and the latest published release."
-                icon={PackageCheck}
-                actions={
-                    <Button
-                        variant="secondary"
-                        disabled={!data?.configured || refresh.isPending}
-                        onClick={() =>
-                            void refresh
-                                .mutateAsync({
-                                    action: "homelab.release",
-                                    requestId: crypto.randomUUID(),
-                                })
-                                .catch(() => {})
-                        }
-                    >
-                        Refresh release
-                    </Button>
-                }
-            />
+        <SectionPanel
+            id="homelab-release"
+            className="@container"
+            title="Homelab release"
+            description="Current app versions and the latest published release."
+            icon={PackageCheck}
+            actions={
+                <Button
+                    variant="secondary"
+                    disabled={!data?.configured || refresh.isPending}
+                    onClick={() =>
+                        void refresh
+                            .mutateAsync({
+                                action: "homelab.release",
+                                requestId: crypto.randomUUID(),
+                            })
+                            .catch(() => {})
+                    }
+                >
+                    Refresh release
+                </Button>
+            }
+        >
             {query.isPending && <LoadingState label="Loading release status…" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {refresh.isError && <ErrorNotice error={refresh.error} />}
             {data && (
                 <>
                     <dl className="grid gap-3 text-sm @min-[30rem]:grid-cols-2 @min-[54rem]:grid-cols-4">
-                        <div className="space-y-2 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
+                        <div className="space-y-2 rounded-lg border border-primary-700 bg-surface-card p-4">
                             <dt className="text-xs text-primary-400">Dashboard</dt>
                             <dd className="font-medium wrap-anywhere">
                                 {data.dashboard}
                             </dd>
                         </div>
-                        <div className="space-y-2 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
+                        <div className="space-y-2 rounded-lg border border-primary-700 bg-surface-card p-4">
                             <dt className="text-xs text-primary-400">Workers</dt>
                             <dd className="font-medium wrap-anywhere">
                                 {data.workers.length > 0
@@ -91,7 +92,7 @@ export function ReleasesPanel() {
                                     : "No workers available"}
                             </dd>
                         </div>
-                        <div className="space-y-2 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
+                        <div className="space-y-2 rounded-lg border border-primary-700 bg-surface-card p-4">
                             <dt className="text-xs text-primary-400">Auth</dt>
                             <dd className="font-medium wrap-anywhere">
                                 {data.auth.length > 0
@@ -104,7 +105,7 @@ export function ReleasesPanel() {
                                     : "Version unavailable"}
                             </dd>
                         </div>
-                        <div className="space-y-2 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
+                        <div className="space-y-2 rounded-lg border border-primary-700 bg-surface-card p-4">
                             <dt className="text-xs text-primary-400">Mira</dt>
                             <dd className="font-medium wrap-anywhere">
                                 {data.mira
@@ -114,7 +115,7 @@ export function ReleasesPanel() {
                         </div>
                     </dl>
                     {release ? (
-                        <div className="space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm">
+                        <div className="space-y-3 rounded-lg border border-primary-700 bg-surface-card p-4 text-sm">
                             <SectionHeader
                                 title={`Release ${release.value.version}`}
                                 icon={Tag}
@@ -160,7 +161,7 @@ export function ReleasesPanel() {
                             />
                         </div>
                     ) : (
-                        <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
+                        <p className="rounded-lg border border-primary-700 bg-surface-empty p-4 text-sm text-primary-400">
                             {data.configured
                                 ? "No release information yet. Refresh to check."
                                 : "Release checks are not configured."}
@@ -178,6 +179,6 @@ export function ReleasesPanel() {
                     }}
                 />
             )}
-        </Card>
+        </SectionPanel>
     );
 }

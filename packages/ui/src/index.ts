@@ -5,7 +5,14 @@ export { TimeSeriesChart } from "./components/Chart/TimeSeriesChart";
 export { formatMetric, utilization, type MetricUnit } from "./lib/formatMetric";
 export { Button } from "./components/Button/Button";
 export { ActionGroup } from "./components/Button/ActionGroup";
+export { DetailSection } from "./components/Modal/DetailSection";
+export { DetailFacts } from "./components/Modal/DetailFacts";
+export { BreakableName } from "./components/Inventory/BreakableName";
+export { DetailEntry } from "./components/Inventory/DetailEntry";
+export { DetailList } from "./components/Inventory/DetailList";
+export { ActivityPanel } from "./components/Popover/ActivityPanel";
 export { Card } from "./components/Card/Card";
+export { SectionPanel } from "./components/Card/SectionPanel";
 export { ErrorNotice } from "./components/Alert/ErrorNotice";
 export { FieldsForm } from "./components/Form/FieldsForm";
 export { FormField } from "./components/Form/FormField";
@@ -19,6 +26,7 @@ export { IconButton } from "./components/Button/IconButton";
 export { buttonStyles } from "./components/Button/buttonStyles";
 export { AuthFrame } from "./components/AuthFrame/AuthFrame";
 export { SectionHeader } from "./components/SectionHeader/SectionHeader";
+export { HeadingLabel } from "./components/SectionHeader/HeadingLabel";
 export { SectionIcon } from "./components/SectionHeader/SectionIcon";
 
 export { LoadingState } from "./components/Loading/LoadingState";
@@ -72,3 +80,24 @@ export { SyntaxSource } from "./components/Markdown/SyntaxSource";
 
 export { TextFilePreview } from "./components/Markdown/TextFilePreview";
 export { fileTypeIcon, fileTypeIcons } from "./lib/fileTypeIcon";
+export { SummaryStrip } from "./components/SectionHeader/SummaryStrip";
+export { ReadingBar } from "./components/Meter/ReadingBar";
+export { TimeRangeSelect } from "./components/Select/TimeRangeSelect";
+export { SectionJumpMenu } from "./components/Select/SectionJumpMenu";
+export { ResourceReadings } from "./components/Meter/ResourceReadings";
+export { CapacityReading } from "./components/Meter/CapacityReading";
+export { CatalogRow } from "./components/Inventory/CatalogRow";
+export { GroupedDirectory } from "./components/Inventory/GroupedDirectory";
+export { EventTimeline } from "./components/Inventory/EventTimeline";
+export { SortControl } from "./components/Inventory/SortControl";
+export { useInventorySort } from "./components/Inventory/useInventorySort";
+export { PageSections } from "./components/SectionHeader/PageSections";
+export {
+    PageOutlineContext,
+    type PageOutline,
+} from "./components/SectionHeader/pageOutlineContext";
+export { FilterBar } from "./components/SearchInput/FilterBar";
+export { ChoiceBar } from "./components/Select/ChoiceBar";
+export { EmptyState } from "./components/EmptyState/EmptyState";
+export { Timestamp } from "./components/DataTable/Timestamp";
+export { MetricStat } from "./components/SectionHeader/MetricStat";

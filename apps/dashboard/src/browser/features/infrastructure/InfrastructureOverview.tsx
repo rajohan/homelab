@@ -1,10 +1,10 @@
 import type { InfrastructureInventory } from "@homelab/contracts/infrastructure";
+import { PageSections } from "@homelab/ui";
 import { useState } from "react";
 
-import { ApplicationInventory } from "./ApplicationInventory";
+import { ApplicationCatalog } from "../applications/ApplicationCatalog";
 import { HostDetails } from "./HostDetails";
 import { HostInventory } from "./HostInventory";
-import { MetricStat } from "./MetricStat";
 import { ServiceInventory } from "./ServiceInventory";
 import { StorageInventory } from "./StorageInventory";
 
@@ -14,57 +14,81 @@ import { StorageInventory } from "./StorageInventory";
  */
 export function InfrastructureOverview({
     inventory,
+    loading,
+    stale,
 }: {
-    readonly inventory: InfrastructureInventory;
+    readonly stale: boolean;
+    readonly inventory: InfrastructureInventory | null | undefined;
+    readonly loading: boolean;
 }) {
     const [selected, setSelected] = useState<string | null>(null);
-    const host = inventory.hosts.find((item) => item.id === selected);
-    const guests = inventory.hosts.filter(
-        (item) => item.kind === "vm" || item.kind === "container"
-    );
+    const host = inventory?.hosts.find((item) => item.id === selected);
     return (
         <div className="space-y-5">
-            <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <MetricStat
-                    label="PVE guests"
-                    value={guests.length}
-                    detail={`${guests.filter((item) => item.kind === "vm").length} virtual machines · ${guests.filter((item) => item.kind === "container").length} containers`}
-                />
-                <MetricStat
-                    label="Hosts and nodes"
-                    value={inventory.hosts.length - guests.length}
-                    detail="Hypervisors and additional hosts"
-                />
-                <MetricStat
-                    label="Applications"
-                    value={`${inventory.applications.filter((item) => item.state === "healthy").length} / ${inventory.applications.length}`}
-                    detail="Reported healthy / expected"
-                />
-                <MetricStat
-                    label="Needs attention"
-                    value={
-                        inventory.applications.filter(
-                            (item) => item.state === "unhealthy"
-                        ).length +
-                        inventory.services.filter(
-                            (item) => item.kind === "probe" && item.state === "unhealthy"
-                        ).length
-                    }
-                    detail={`${inventory.applications.filter((item) => item.state === "unknown").length} applications with unknown state`}
-                />
-            </dl>
-            <HostInventory
-                hosts={inventory.hosts}
-                filesystems={inventory.filesystems}
-                onSelect={(item) => setSelected(item.id)}
+            <PageSections
+                label="Infrastructure sections"
+                sections={[
+                    ...(inventory
+                        ? [
+                              {
+                                  id: "hosts",
+
+                                  label: "Hosts and guests",
+                                  content: (
+                                      <HostInventory
+                                          stale={stale}
+                                          hosts={inventory.hosts}
+                                          filesystems={inventory.filesystems}
+                                          onSelect={(item) => setSelected(item.id)}
+                                      />
+                                  ),
+                              },
+                              {
+                                  id: "storage",
+                                  label: "Storage",
+                                  content: (
+                                      <StorageInventory
+                                          pools={inventory.storage}
+                                          disks={inventory.diskHealth}
+                                      />
+                                  ),
+                              },
+                          ]
+                        : []),
+                    {
+                        id: "applications",
+
+                        label: "Applications",
+                        content: (
+                            <ApplicationCatalog
+                                inventory={inventory}
+                                stale={stale}
+                                loading={loading}
+                            />
+                        ),
+                    },
+                    ...(inventory
+                        ? [
+                              {
+                                  id: "services",
+
+                                  label: "Services and probes",
+                                  content: (
+                                      <ServiceInventory
+                                          services={inventory.services}
+                                          stale={stale}
+                                      />
+                                  ),
+                              },
+                          ]
+                        : []),
+                ]}
             />
-            <StorageInventory pools={inventory.storage} disks={inventory.diskHealth} />
-            <ApplicationInventory applications={inventory.applications} />
-            <ServiceInventory services={inventory.services} />
-            {host && (
+            {host && inventory && (
                 <HostDetails
                     key={host.id}
                     host={host}
+                    stale={stale}
                     inventory={inventory}
                     onClose={() => setSelected(null)}
                 />

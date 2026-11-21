@@ -28,7 +28,7 @@ export function WindowsRelease({
             : null;
     const computers = data.computers.filter((computer) => computer.platform === "win32");
     return (
-        <section className="space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm">
+        <section className="space-y-3 rounded-lg border border-primary-700 bg-surface-card p-4 text-sm">
             <SectionHeader
                 title="Windows app"
                 icon={Monitor}
@@ -58,7 +58,7 @@ export function WindowsRelease({
             {computers.length === 0 ? (
                 <p className="text-primary-400">No Windows computers paired yet.</p>
             ) : (
-                <dl className="max-h-80 space-y-3 overflow-y-auto overscroll-contain">
+                <dl className="max-h-80 space-y-3 overflow-y-auto overscroll-contain pe-3">
                     {computers.map((computer) => (
                         <div
                             key={computer.id}

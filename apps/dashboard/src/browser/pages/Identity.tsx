@@ -1,4 +1,5 @@
 import { Badge, Card, PageHeader } from "@homelab/ui";
+import { Fingerprint } from "lucide-react";
 
 /**
  * Explain the independent identity service and the current preview boundaries.
@@ -8,6 +9,7 @@ export function Identity() {
     return (
         <>
             <PageHeader
+                icon={Fingerprint}
                 eyebrow="Identity"
                 title="One identity. Clear boundaries."
                 description="A separate identity application serves the dashboard and other approved clients."

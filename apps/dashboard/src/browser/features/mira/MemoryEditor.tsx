@@ -69,15 +69,15 @@ export function MemoryEditor({
                 </FormField>
                 {save.error && <ErrorNotice error={save.error} />}
                 <ActionGroup>
-                    <Button type="submit" busy={save.isPending} disabled={!title.trim()}>
-                        Save memory
-                    </Button>
                     <Button
                         variant="secondary"
                         disabled={save.isPending}
                         onClick={onClose}
                     >
                         Cancel
+                    </Button>
+                    <Button type="submit" busy={save.isPending} disabled={!title.trim()}>
+                        Save memory
                     </Button>
                 </ActionGroup>
             </form>

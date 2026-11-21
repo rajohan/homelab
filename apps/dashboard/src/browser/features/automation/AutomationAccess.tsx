@@ -109,7 +109,7 @@ export function AutomationAccess() {
                 )}
             />
             {inventory.data?.pages[0]?.accounts.length === 0 && (
-                <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
+                <p className="rounded-lg border border-primary-700 bg-surface-empty p-4 text-sm text-primary-400">
                     No automation accounts. Create one when a script or service needs
                     access.
                 </p>

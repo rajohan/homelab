@@ -3,11 +3,15 @@ import {
     Badge,
     Checkbox,
     ConfirmDialog,
-    DataTable,
+    DetailEntry,
+    DetailFacts,
+    DetailList,
+    DetailSection,
     ErrorNotice,
     LoadingState,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
+import { ListChecks, PackageCheck } from "lucide-react";
 import { useState } from "react";
 import type { InferOutput } from "valibot";
 
@@ -19,7 +23,7 @@ import { updateVersion } from "./updateVersion";
 /**
  * Review every included and excluded update before submitting a revision-fenced host batch.
  * @param props - Explicit source scope or all hosts, plus the caller's close callback.
- * @returns A virtualized confirmation that cannot submit a pending or failed plan.
+ * @returns A sortable confirmation that cannot submit a pending or failed plan.
  */
 export function UpdateBatchDialog({
     source,
@@ -82,135 +86,112 @@ export function UpdateBatchDialog({
             {query.isError && <ErrorNotice error={query.error} />}
             {plan && !query.isError && (
                 <div className="space-y-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <Badge tone="positive">
-                            {included.length}{" "}
-                            {included.length === 1 ? "update" : "updates"} included
-                        </Badge>
-                        <Badge>
-                            {new Set(included.map((entry) => entry.source)).size} hosts
-                        </Badge>
-                        {plan.entries.length > included.length && (
-                            <Badge tone="warning">
-                                {plan.entries.length - included.length} not included
+                    <DetailSection icon={ListChecks} title="Selection">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Badge tone="positive">
+                                {included.length}{" "}
+                                {included.length === 1 ? "update" : "updates"} included
                             </Badge>
-                        )}
-                    </div>
-                    {plan.entries.length > 0 ? (
-                        <DataTable
-                            label="Update plan"
-                            compact
-                            className="max-h-[min(26rem,50dvh)]"
-                            rows={plan.entries}
-                            getKey={(entry) =>
-                                JSON.stringify([entry.source, entry.item.id])
-                            }
-                            columns={[
-                                {
-                                    id: "selected",
-                                    label: "Include",
-                                    width: "w-20",
-                                    render: (entry) => {
-                                        const key = JSON.stringify([
-                                            entry.source,
-                                            entry.item.id,
-                                        ]);
-                                        return (
-                                            <Checkbox
-                                                label={`Include ${entry.item.name} on ${entry.sourceLabel}`}
-                                                checked={
-                                                    entry.reason === null &&
-                                                    !excluded.has(key)
-                                                }
-                                                disabled={
-                                                    entry.reason !== null ||
-                                                    operation.isPending
-                                                }
-                                                onChange={(checked) => {
-                                                    setExcluded((current) => {
-                                                        const next = new Set(current);
-                                                        if (checked) next.delete(key);
-                                                        else next.add(key);
-                                                        return next;
-                                                    });
-                                                }}
-                                            />
-                                        );
-                                    },
-                                },
-                                {
-                                    id: "software",
-                                    sortValue: (row) => row.item.name,
-                                    label: "Software",
-                                    mobile: "title",
-                                    render: (entry) => (
-                                        <div>
-                                            {entry.item.name}
-                                            {entry.reason && (
-                                                <p className="mt-1 text-xs text-primary-400">
-                                                    {entry.reason}
-                                                </p>
-                                            )}
-                                        </div>
+                            <Badge>
+                                {new Set(included.map((entry) => entry.source)).size}{" "}
+                                hosts
+                            </Badge>
+                            {plan.entries.length > included.length && (
+                                <Badge tone="warning">
+                                    {plan.entries.length - included.length} not included
+                                </Badge>
+                            )}
+                        </div>
+                    </DetailSection>
+                    <DetailList
+                        icon={PackageCheck}
+                        title="Update plan"
+                        defaultField="Host"
+                        rows={plan.entries}
+                        getKey={(entry) => JSON.stringify([entry.source, entry.item.id])}
+                        sorts={[
+                            { label: "Software", value: (row) => row.item.name },
+                            { label: "Host", value: (row) => row.sourceLabel },
+                            { label: "Installed", value: (row) => row.item.installed },
+                            { label: "Available", value: (row) => row.item.available },
+                            {
+                                label: "Status",
+                                value: (row) =>
+                                    row.reason === null &&
+                                    !excluded.has(
+                                        JSON.stringify([row.source, row.item.id])
                                     ),
-                                },
-                                {
-                                    id: "source",
-                                    sortValue: (row) => row.sourceLabel,
-                                    label: "Host",
-                                    render: (entry) => entry.sourceLabel,
-                                },
-                                {
-                                    id: "installed",
-                                    sortValue: (row) => row.item.installed,
-                                    label: "Installed",
-                                    render: (entry) =>
-                                        updateVersion(entry.item, "installed"),
-                                },
-                                {
-                                    id: "available",
-                                    sortValue: (row) => row.item.available,
-                                    label: "Available",
-                                    render: (entry) =>
-                                        updateVersion(entry.item, "available"),
-                                },
-                                {
-                                    id: "included",
-                                    sortValue: (row) => row.control?.allowed ?? false,
-                                    label: "Status",
-                                    render: (entry) => (
-                                        <Badge
-                                            tone={
-                                                entry.reason ||
-                                                excluded.has(
-                                                    JSON.stringify([
-                                                        entry.source,
-                                                        entry.item.id,
-                                                    ])
-                                                )
-                                                    ? "neutral"
-                                                    : "positive"
+                            },
+                        ]}
+                        empty="No updates are available."
+                        render={(entry) => {
+                            const key = JSON.stringify([entry.source, entry.item.id]);
+                            const selected = entry.reason === null && !excluded.has(key);
+                            return (
+                                <div className="flex items-start gap-3">
+                                    <span className="mt-0.5 grid min-h-6 place-items-center">
+                                        <Checkbox
+                                            label={`Include ${entry.item.name} on ${entry.sourceLabel}`}
+                                            checked={selected}
+                                            disabled={
+                                                entry.reason !== null ||
+                                                operation.isPending
+                                            }
+                                            onChange={(checked) =>
+                                                setExcluded((current) => {
+                                                    const next = new Set(current);
+                                                    if (checked) next.delete(key);
+                                                    else next.add(key);
+                                                    return next;
+                                                })
+                                            }
+                                        />
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                        <DetailEntry
+                                            name={entry.item.name}
+                                            description={entry.sourceLabel}
+                                            accessory={
+                                                <Badge
+                                                    tone={
+                                                        selected ? "positive" : "neutral"
+                                                    }
+                                                >
+                                                    {selected
+                                                        ? "Included"
+                                                        : "Not included"}
+                                                </Badge>
                                             }
                                         >
-                                            {entry.reason ||
-                                            excluded.has(
-                                                JSON.stringify([
-                                                    entry.source,
-                                                    entry.item.id,
-                                                ])
-                                            )
-                                                ? "Not included"
-                                                : "Included"}
-                                        </Badge>
-                                    ),
-                                },
-                            ]}
-                        />
-                    ) : (
-                        <p className="rounded-lg border border-primary-700 bg-primary-900 p-4 text-sm text-primary-400">
-                            No updates are available.
-                        </p>
-                    )}
+                                            <DetailFacts
+                                                items={[
+                                                    {
+                                                        label: "Installed",
+                                                        value: updateVersion(
+                                                            entry.item,
+                                                            "installed"
+                                                        ),
+                                                    },
+                                                    {
+                                                        label: "Available",
+                                                        value: updateVersion(
+                                                            entry.item,
+                                                            "available"
+                                                        ),
+                                                    },
+                                                ]}
+                                            />
+                                        </DetailEntry>
+                                        {entry.reason && (
+                                            <p className="mt-1 text-xs text-primary-400">
+                                                {entry.reason}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        }}
+                    />
                 </div>
             )}
         </ConfirmDialog>

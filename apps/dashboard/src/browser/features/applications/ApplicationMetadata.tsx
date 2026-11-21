@@ -1,5 +1,13 @@
 import type { ManagedApplication } from "@homelab/contracts/applications";
-import { DataTable, formatDateTime } from "@homelab/ui";
+import {
+    DetailEntry,
+    DetailFacts,
+    DetailList,
+    DetailSection,
+    formatDateTime,
+} from "@homelab/ui";
+import { Box, Folder, Network } from "lucide-react";
+import type { ReactNode } from "react";
 
 /**
  * Render explicitly selected Docker metadata without exposing environment variables or labels.
@@ -7,121 +15,94 @@ import { DataTable, formatDateTime } from "@homelab/ui";
  */
 export function ApplicationMetadata({
     application,
+    status,
+    actions,
+    prefix,
 }: {
+    readonly prefix: string;
+    readonly status: ReactNode;
+    readonly actions: ReactNode;
     readonly application: ManagedApplication;
 }) {
     return (
         <div className="space-y-5">
-            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm [&_dd]:wrap-anywhere [&_dt]:text-primary-400">
-                <dt>Image</dt>
-                <dd>{application.image}</dd>
-                <dt>Container</dt>
-                <dd>{application.containerName}</dd>
-                <dt>Container ID</dt>
-                <dd>{application.containerId}</dd>
-                <dt>Image ID</dt>
-                <dd>{application.imageId}</dd>
-                <dt>Started</dt>
-                <dd>
-                    {application.startedAt.startsWith("0001-")
-                        ? "Not started"
-                        : formatDateTime(application.startedAt)}
-                </dd>
-                <dt>Networks</dt>
-                <dd>{application.networks.join(", ") || "None"}</dd>
-            </dl>
-            <section className="space-y-2">
-                <h3 className="font-medium">Published ports</h3>
-                {application.ports.length > 0 ? (
-                    <DataTable
-                        label="Published ports"
-                        rows={application.ports}
-                        getKey={(row) =>
-                            `${row.hostAddress}:${row.hostPort}:${row.container}`
-                        }
-                        compact
-                        columns={[
-                            {
-                                id: "container",
-                                sortValue: (row) => row.container,
-                                label: "Container port",
-                                width: "w-40",
-                                mobile: "title",
-                                render: (row) => row.container,
-                            },
-                            {
-                                id: "address",
-                                sortValue: (row) => row.hostAddress,
-                                label: "Host address",
-                                render: (row) => row.hostAddress,
-                            },
-                            {
-                                id: "port",
-                                sortValue: (row) => Number(row.hostPort),
-                                label: "Host port",
-                                width: "w-32",
-                                render: (row) => row.hostPort,
-                            },
-                        ]}
-                    />
-                ) : (
-                    <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-3 text-sm text-primary-400">
-                        No published ports.
-                    </p>
+            <DetailSection
+                icon={Box}
+                title="Container details"
+                actions={actions}
+                anchor={prefix + "-details"}
+            >
+                <DetailFacts
+                    items={[
+                        { label: "Container status", value: status },
+                        { label: "Image", value: application.image },
+                        { label: "Container", value: application.containerName },
+                        { label: "Container ID", value: application.containerId },
+                        { label: "Image ID", value: application.imageId },
+                        {
+                            label: "Started",
+                            value: application.startedAt.startsWith("0001-")
+                                ? "Not started"
+                                : formatDateTime(application.startedAt),
+                        },
+                        {
+                            label: "Networks",
+                            value: application.networks.join(", ") || "None",
+                        },
+                    ]}
+                />
+            </DetailSection>
+            <DetailList
+                icon={Network}
+                title="Published ports"
+                anchor={prefix + "-ports"}
+                rows={application.ports}
+                getKey={(row) => `${row.hostAddress}:${row.hostPort}:${row.container}`}
+                sorts={[
+                    { label: "Container port", value: (row) => row.container },
+                    { label: "Host address", value: (row) => row.hostAddress },
+                    { label: "Host port", value: (row) => Number(row.hostPort) },
+                ]}
+                empty="No published ports."
+                render={(row) => (
+                    <DetailEntry name={row.container} description="Container port">
+                        <DetailFacts
+                            inline
+                            items={[
+                                { label: "Host address", value: row.hostAddress },
+                                { label: "Host port", value: row.hostPort },
+                            ]}
+                        />
+                    </DetailEntry>
                 )}
-            </section>
-            <section className="space-y-2">
-                <h3 className="font-medium">Mounts</h3>
-                {application.mounts.length > 0 ? (
-                    <DataTable
-                        label="Mounts"
-                        rows={application.mounts}
-                        getKey={(row) => row.destination}
-                        compact
-                        columns={[
-                            {
-                                id: "destination",
-                                sortValue: (row) => row.destination,
-                                label: "Destination",
-                                mobile: "title",
-                                render: (row) => (
-                                    <span className="wrap-anywhere">
-                                        {row.destination}
-                                    </span>
-                                ),
-                            },
-                            {
-                                id: "source",
-                                sortValue: (row) => row.source,
-                                label: "Source",
-                                mobile: "wide",
-                                render: (row) => (
-                                    <span className="wrap-anywhere">{row.source}</span>
-                                ),
-                            },
-                            {
-                                id: "access",
-                                sortValue: (row) => row.readOnly,
-                                label: "Access",
-                                width: "w-32",
-                                render: (row) =>
-                                    row.readOnly ? "Read only" : "Read / write",
-                            },
-                            {
-                                id: "type",
-                                sortValue: (row) => row.type,
-                                label: "Type",
-                                width: "w-24",
-                                render: (row) => row.type,
-                            },
-                        ]}
-                    />
-                ) : (
-                    <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-3 text-sm text-primary-400">
-                        No mounts.
-                    </p>
+            />
+            <DetailList
+                icon={Folder}
+                title="Mounts"
+                anchor={prefix + "-mounts"}
+                rows={application.mounts}
+                getKey={(row) => row.destination}
+                sorts={[
+                    { label: "Destination", value: (row) => row.destination },
+                    { label: "Source", value: (row) => row.source },
+                    { label: "Access", value: (row) => row.readOnly },
+                    { label: "Type", value: (row) => row.type },
+                ]}
+                empty="No mounts."
+                render={(row) => (
+                    <DetailEntry name={row.destination} description={row.type} wideName>
+                        <DetailFacts
+                            items={[
+                                { label: "Source", value: row.source },
+                                {
+                                    label: "Access",
+                                    value: row.readOnly ? "Read only" : "Read / write",
+                                },
+                            ]}
+                        />
+                    </DetailEntry>
                 )}
-            </section>
+            />
         </div>
     );
 }

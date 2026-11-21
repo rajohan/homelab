@@ -1,5 +1,6 @@
 import type { Incident } from "@homelab/contracts/alerts";
-import { formatDateTime, Modal } from "@homelab/ui";
+import { DetailFacts, DetailSection, formatDateTime, Modal } from "@homelab/ui";
+import { BellRing, Radio } from "lucide-react";
 
 import { IncidentStatus } from "./IncidentStatus";
 
@@ -20,38 +21,28 @@ export function IncidentDetails({
     return (
         <Modal
             title={incident.name}
-            description="Monitoring status and affected resources."
+            icon={Radio}
+            description="Monitoring incident"
             onClose={onClose}
             titleAccessory={
                 <IncidentStatus incident={incident} unavailable={unavailable} />
             }
         >
-            <dl className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                    <dt className="text-primary-400">Host</dt>
-                    <dd className="mt-1 wrap-anywhere">
-                        {incident.host ?? "Not reported"}
-                    </dd>
-                </div>
-                <div>
-                    <dt className="text-primary-400">Service</dt>
-                    <dd className="mt-1 wrap-anywhere">
-                        {incident.service ?? "Not reported"}
-                    </dd>
-                </div>
-                <div>
-                    <dt className="text-primary-400">Started</dt>
-                    <dd className="mt-1">{formatDateTime(incident.startedAt)}</dd>
-                </div>
-                <div>
-                    <dt className="text-primary-400">Resolved</dt>
-                    <dd className="mt-1">
-                        {incident.resolvedAt
-                            ? formatDateTime(incident.resolvedAt)
-                            : unresolved}
-                    </dd>
-                </div>
-            </dl>
+            <DetailSection icon={BellRing} title="Incident details">
+                <DetailFacts
+                    items={[
+                        { label: "Host", value: incident.host ?? "Not reported" },
+                        { label: "Service", value: incident.service ?? "Not reported" },
+                        { label: "Started", value: formatDateTime(incident.startedAt) },
+                        {
+                            label: "Resolved",
+                            value: incident.resolvedAt
+                                ? formatDateTime(incident.resolvedAt)
+                                : unresolved,
+                        },
+                    ]}
+                />
+            </DetailSection>
         </Modal>
     );
 }

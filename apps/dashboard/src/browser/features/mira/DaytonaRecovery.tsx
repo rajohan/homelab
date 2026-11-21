@@ -73,7 +73,7 @@ export function DaytonaRecovery({
                 {query.isPending && <LoadingState label="Loading sandbox identity" />}
                 {recovery && (
                     <>
-                        <Card className="space-y-4 bg-primary-900/40">
+                        <Card className="space-y-4">
                             <SectionHeader title="Original sandbox" icon={Cloud} />
                             <dl className="grid gap-3 text-sm sm:grid-cols-2">
                                 {[
@@ -99,7 +99,7 @@ export function DaytonaRecovery({
                             </dl>
                         </Card>
                         {recovery.resolution ? (
-                            <Card className="space-y-3 bg-primary-900/40">
+                            <Card className="space-y-3">
                                 <SectionHeader
                                     title="Operator confirmation"
                                     icon={Cloud}

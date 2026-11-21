@@ -71,7 +71,7 @@ export function TextFilePreview({
                     <CopyTextButton text={content} label="Copy preview" iconOnly />
                 </div>
             </div>
-            <div className="max-h-[60dvh] min-w-0 overflow-auto overscroll-contain rounded-lg border border-primary-700 bg-primary-950/30">
+            <div className="max-h-[60dvh] min-w-0 overflow-auto overscroll-contain rounded-lg border border-primary-700 bg-surface-card">
                 {presentation.kind === "markdown" && !source ? (
                     <div className="p-4">
                         <Markdown>{content}</Markdown>

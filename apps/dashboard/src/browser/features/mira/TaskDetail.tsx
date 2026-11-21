@@ -5,27 +5,26 @@ import {
     Button,
     buttonStyles,
     ConfirmDialog,
+    DetailFacts,
+    DetailSection,
     ErrorNotice,
     formatDateTime,
     FormField,
     InfiniteScrollTrigger,
     Markdown,
     Modal,
-    SectionHeader,
     Textarea,
 } from "@homelab/ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
-    CalendarDays,
+    Activity,
     FileText,
-    Flag,
-    History,
     ListChecks,
+    ListTodo,
     MessageSquare,
     Pencil,
     Trash2,
-    UserRound,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -125,80 +124,73 @@ export function TaskDetail({
             size="wide"
         >
             <div className="space-y-4">
-                <div className="grid gap-3 rounded-xl border border-primary-700 bg-primary-900/40 p-4 sm:grid-cols-3">
-                    <div className="space-y-2">
-                        <p className="flex items-center gap-2 text-xs text-primary-400">
-                            <UserRound size={14} aria-hidden="true" />
-                            Assigned to
-                        </p>
-                        <p className="text-sm text-primary-100">
-                            {task.assignee === "mira" ? "Mira" : "You"}
-                        </p>
-                    </div>
-                    <div className="space-y-2">
-                        <p className="flex items-center gap-2 text-xs text-primary-400">
-                            <Flag size={14} aria-hidden="true" />
-                            Priority
-                        </p>
-                        <Badge tone={taskPriorityTone(task.priority)}>
-                            {task.priority}
-                        </Badge>
-                    </div>
-                    <div className="space-y-2">
-                        <p className="flex items-center gap-2 text-xs text-primary-400">
-                            <CalendarDays size={14} aria-hidden="true" />
-                            Due date
-                        </p>
-                        <p className="text-sm text-primary-100">
-                            {task.dueAt ? formatDateTime(task.dueAt) : "No due date"}
-                        </p>
-                    </div>
-                </div>
-                {task.labels.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                        {task.labels.map((label) => (
-                            <Badge key={label}>{label}</Badge>
-                        ))}
-                    </div>
-                )}
-                <ActionGroup stretch={false}>
-                    <Button
-                        variant="secondary"
-                        onClick={() => onEdit(task)}
-                        disabled={current.isError}
-                    >
-                        <Pencil size={16} aria-hidden="true" />
-                        Edit task
-                    </Button>
-                    {task.conversationId && (
-                        <Link
-                            to="/mira/$conversationId"
-                            params={{ conversationId: task.conversationId }}
-                            className={buttonStyles({ variant: "secondary" })}
-                        >
-                            <MessageSquare size={16} aria-hidden="true" />
-                            Open conversation
-                        </Link>
+                <DetailSection icon={ListTodo} title="Task details">
+                    <DetailFacts
+                        items={[
+                            {
+                                label: "Assigned to",
+                                value: task.assignee === "mira" ? "Mira" : "You",
+                            },
+                            {
+                                label: "Priority",
+                                value: (
+                                    <Badge tone={taskPriorityTone(task.priority)}>
+                                        {task.priority}
+                                    </Badge>
+                                ),
+                            },
+                            {
+                                label: "Due date",
+                                value: task.dueAt
+                                    ? formatDateTime(task.dueAt)
+                                    : "No due date",
+                            },
+                        ]}
+                    />
+                    {task.labels.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                            {task.labels.map((label) => (
+                                <Badge key={label}>{label}</Badge>
+                            ))}
+                        </div>
                     )}
-                    <Button
-                        variant="secondary"
-                        onClick={() => setDeleting(task.version)}
-                        disabled={current.isError}
-                    >
-                        <Trash2 size={16} aria-hidden="true" />
-                        Delete task
-                    </Button>
-                </ActionGroup>
+                    <ActionGroup>
+                        <Button
+                            variant="danger"
+                            onClick={() => setDeleting(task.version)}
+                            disabled={current.isError}
+                        >
+                            <Trash2 size={16} aria-hidden="true" />
+                            Delete task
+                        </Button>
+                        {task.conversationId && (
+                            <Link
+                                to="/mira/$conversationId"
+                                params={{ conversationId: task.conversationId }}
+                                className={buttonStyles({ variant: "secondary" })}
+                            >
+                                <MessageSquare size={16} aria-hidden="true" />
+                                Open conversation
+                            </Link>
+                        )}
+                        <Button
+                            variant="primary"
+                            onClick={() => onEdit(task)}
+                            disabled={current.isError}
+                        >
+                            <Pencil size={16} aria-hidden="true" />
+                            Edit task
+                        </Button>
+                    </ActionGroup>
+                </DetailSection>
                 {current.error && <ErrorNotice error={current.error} />}
-                <section className="space-y-3 border-t border-primary-700 pt-4">
-                    <SectionHeader title="Description" icon={FileText} />
+                <DetailSection icon={FileText} title="Description">
                     <Markdown>{task.description || "No description."}</Markdown>
-                </section>
+                </DetailSection>
                 {task.completionCriteria && (
-                    <section className="space-y-3 rounded-xl border border-primary-700 bg-primary-900/40 p-4">
-                        <SectionHeader title="Completion criteria" icon={ListChecks} />
+                    <DetailSection icon={ListChecks} title="Completion criteria">
                         <Markdown>{task.completionCriteria}</Markdown>
-                    </section>
+                    </DetailSection>
                 )}
                 <TaskExecution
                     id={task.id}
@@ -211,14 +203,13 @@ export function TaskDetail({
                         setStarting({ version, reviewRunId })
                     }
                 />
-                <section className="space-y-3">
-                    <SectionHeader title="Progress" icon={History} />
+                <DetailSection icon={Activity} title="Progress">
                     {query.data?.pages
                         .flatMap((page) => page.rows)
                         .map((entry) => (
                             <article
                                 key={entry.id}
-                                className="space-y-2 rounded-lg border border-primary-700 bg-primary-900/40 p-3"
+                                className="space-y-2 border-b border-primary-700 pb-3"
                             >
                                 <p className="text-xs text-primary-400">
                                     {entry.actor.startsWith("mira:") ? "Mira" : "You"} ·{" "}
@@ -256,7 +247,7 @@ export function TaskDetail({
                             Add progress
                         </Button>
                     </ActionGroup>
-                </section>
+                </DetailSection>
             </div>
         </Modal>
     );

@@ -4,7 +4,6 @@ import {
     Card,
     DataTable,
     ErrorNotice,
-    formatDateTime,
     LoadingState,
     queryRefresh,
     SectionHeader,
@@ -45,6 +44,9 @@ export function BuildDependencies() {
                 title="Homelab source dependencies"
                 description="Checked hourly. Updates are incorporated through a reviewed Homelab release."
                 icon={PackageSearch}
+                badge={
+                    snapshot && !fresh && <Badge tone="warning">Status outdated</Badge>
+                }
                 actions={
                     <Button
                         variant="secondary"
@@ -67,65 +69,59 @@ export function BuildDependencies() {
             {query.isError && <ErrorNotice error={query.error} />}
             {refresh.isError && <ErrorNotice error={refresh.error} />}
             {snapshot ? (
-                <>
-                    <p className="text-xs text-primary-400">
-                        Checked {formatDateTime(snapshot.capturedAt)}
-                        {fresh ? "" : " · Status outdated"}
-                    </p>
-                    <DataTable
-                        label="Homelab source dependencies"
-                        compact
-                        rows={snapshot.value.items}
-                        getKey={(item) => item.id}
-                        columns={[
-                            {
-                                id: "name",
-                                label: "Dependency",
-                                mobile: "title",
-                                sortValue: (item) => item.name,
-                                render: (item) => (
-                                    <a
-                                        className="text-accent-300 underline underline-offset-4"
-                                        href={item.url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                    >
-                                        {item.name}
-                                    </a>
-                                ),
-                            },
-                            {
-                                id: "pinned",
-                                label: "In this release",
-                                sortValue: (item) => item.pinned,
-                                render: (item) => item.pinned,
-                            },
-                            {
-                                id: "available",
-                                label: "Upstream",
-                                sortValue: (item) => item.available,
-                                render: (item) =>
-                                    fresh ? (item.available ?? "Unavailable") : "Unknown",
-                            },
-                            {
-                                id: "status",
-                                label: "Status",
-                                sortValue: (item) => (fresh ? item.status : null),
-                                render: (item) => (
-                                    <Badge
-                                        tone={
-                                            fresh && item.status === "current"
-                                                ? "positive"
-                                                : "warning"
-                                        }
-                                    >
-                                        {statusLabels[fresh ? item.status : "stale"]}
-                                    </Badge>
-                                ),
-                            },
-                        ]}
-                    />
-                </>
+                <DataTable
+                    label="Homelab source dependencies"
+                    compact
+                    rows={snapshot.value.items}
+                    getKey={(item) => item.id}
+                    columns={[
+                        {
+                            id: "name",
+                            label: "Dependency",
+                            mobile: "title",
+                            sortValue: (item) => item.name,
+                            render: (item) => (
+                                <a
+                                    className="text-accent-300 underline underline-offset-4"
+                                    href={item.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                >
+                                    {item.name}
+                                </a>
+                            ),
+                        },
+                        {
+                            id: "pinned",
+                            label: "In this release",
+                            sortValue: (item) => item.pinned,
+                            render: (item) => item.pinned,
+                        },
+                        {
+                            id: "available",
+                            label: "Upstream",
+                            sortValue: (item) => item.available,
+                            render: (item) =>
+                                fresh ? (item.available ?? "Unavailable") : "Unknown",
+                        },
+                        {
+                            id: "status",
+                            label: "Status",
+                            sortValue: (item) => (fresh ? item.status : null),
+                            render: (item) => (
+                                <Badge
+                                    tone={
+                                        fresh && item.status === "current"
+                                            ? "positive"
+                                            : "warning"
+                                    }
+                                >
+                                    {statusLabels[fresh ? item.status : "stale"]}
+                                </Badge>
+                            ),
+                        },
+                    ]}
+                />
             ) : (
                 query.data &&
                 !query.isError && (
@@ -136,10 +132,6 @@ export function BuildDependencies() {
                     </p>
                 )
             )}
-            <p className="text-xs text-primary-400">
-                Application packages, GitHub Actions and base images are monitored by
-                Dependabot.
-            </p>
         </Card>
     );
 }

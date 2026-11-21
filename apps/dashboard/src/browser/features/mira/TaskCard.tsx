@@ -27,7 +27,7 @@ export function TaskCard({
     return (
         <article
             ref={ref}
-            className={`relative rounded-xl border border-primary-700 bg-primary-800 shadow-sm transition-colors hover:border-primary-500 ${isDragging ? "opacity-35" : "focus-within:border-accent-400"}`}
+            className={`relative rounded-xl border border-primary-700 bg-surface-card shadow-sm transition-colors hover:border-primary-500 ${isDragging ? "opacity-35" : "focus-within:border-accent-400"}`}
         >
             <button
                 type="button"

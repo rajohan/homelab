@@ -78,7 +78,7 @@ export function ComputerAccessDialog({
         >
             <div className="space-y-4">
                 {access && (
-                    <section className="space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
+                    <section className="space-y-3 rounded-lg border border-primary-700 bg-surface-card p-4">
                         <SectionHeader
                             title={
                                 computers.data?.find((pc) => pc.id === access.computerId)
@@ -112,7 +112,7 @@ export function ComputerAccessDialog({
                         )}
                         {stoppable && (
                             <Button
-                                variant="secondary"
+                                variant="danger"
                                 fullWidth
                                 busy={stop.isPending}
                                 onClick={() => stop.mutate(access.id)}
@@ -124,7 +124,7 @@ export function ComputerAccessDialog({
                     </section>
                 )}
                 {!running && (
-                    <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-300">
+                    <p className="rounded-lg border border-primary-700 bg-surface-card p-4 text-sm text-primary-300">
                         Ask Mira to help with your computer first. Access can be requested
                         while that manual run is running. Existing conversation access
                         stays open between replies.

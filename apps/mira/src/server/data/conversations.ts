@@ -98,13 +98,27 @@ export async function listConversations(
  * Create a product conversation independently of any provider session.
  * @param context - Authenticated product context.
  * @param title - Validated initial title.
+ * @param requestedId - Optional stable identifier used when the first message is retried.
  * @returns The product ID, which remains stable across runtime replacements.
  */
-export async function createConversation(context: MiraContext, title: string) {
+export async function createConversation(
+    context: MiraContext,
+    title: string,
+    requestedId?: string
+) {
     return context.client.begin(async (query) => {
-        const id = Bun.randomUUIDv7();
-        await query`INSERT INTO mira_conversations (id, owner, title) VALUES (${id}, ${context.owner}, ${title})`;
-        await auditMira(query, context, "conversation.created", id);
+        const id = requestedId ?? Bun.randomUUIDv7();
+        const [inserted] = await query<
+            { id: string }[]
+        >`INSERT INTO mira_conversations (id, owner, title) VALUES (${id}, ${context.owner}, ${title}) ON CONFLICT (id) DO NOTHING RETURNING id`;
+        if (inserted) await auditMira(query, context, "conversation.created", id);
+        else {
+            const [owned] = await query<
+                { id: string }[]
+            >`SELECT id FROM mira_conversations WHERE id = ${id} AND owner = ${context.owner} AND deleted_at IS NULL AND archived_at IS NULL`;
+            if (!owned)
+                throw new MiraFailure("NOT_FOUND", "Conversation is unavailable.");
+        }
         return { id };
     });
 }

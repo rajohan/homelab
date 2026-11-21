@@ -34,7 +34,7 @@ export function OidcConsentRequest({
     }
     return (
         <div className="space-y-4">
-            <div className="space-y-1 rounded-lg border border-primary-700 bg-primary-900 p-3 text-sm wrap-anywhere">
+            <div className="space-y-1 rounded-lg border border-primary-700 bg-surface-card p-3 text-sm wrap-anywhere">
                 <p className="text-primary-200">
                     Signed in as <strong>{consent.username}</strong>.
                 </p>
@@ -53,19 +53,19 @@ export function OidcConsentRequest({
             {error !== undefined && <ErrorNotice error={error} />}
             <ActionGroup>
                 <Button
-                    disabled={pending !== undefined}
-                    busy={pending === "approve"}
-                    onClick={() => void decide("approve")}
-                >
-                    Approve
-                </Button>
-                <Button
                     variant="secondary"
                     disabled={pending !== undefined}
                     busy={pending === "deny"}
                     onClick={() => void decide("deny")}
                 >
                     Deny
+                </Button>
+                <Button
+                    disabled={pending !== undefined}
+                    busy={pending === "approve"}
+                    onClick={() => void decide("approve")}
+                >
+                    Approve
                 </Button>
             </ActionGroup>
         </div>

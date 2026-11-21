@@ -55,9 +55,9 @@ export function DaytonaJobs({
                     No code jobs yet. Ask Mira to prepare a command in Chat.
                 </p>
             )}
-            <div ref={scrollRoot} className="max-h-128 space-y-3 overflow-y-auto">
+            <div ref={scrollRoot} className="max-h-128 space-y-3 overflow-y-auto pe-3">
                 {rows.map((job) => (
-                    <Card key={job.id} className="space-y-3 bg-primary-900/40">
+                    <Card key={job.id} className="space-y-3">
                         <SectionHeader
                             title={job.content.title}
                             icon={job.executionTarget === "main" ? Server : Cloud}

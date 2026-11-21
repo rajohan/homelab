@@ -1,141 +1,129 @@
+import type { BackupState } from "@homelab/contracts/backups";
 import {
     buttonStyles,
-    Card,
-    DataTable,
+    EmptyState,
     ErrorNotice,
     formatDateTime,
+    GroupedDirectory,
     LoadingState,
-    queryRefresh,
-    SearchInput,
-    SectionHeader,
+    SectionPanel,
+    SummaryStrip,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Archive } from "lucide-react";
 import { useState } from "react";
 
-import { api } from "../../api/client";
-import { MetricStat } from "../infrastructure/MetricStat";
 import { ObservationBadge } from "../operations/ObservationBadge";
+import { backupInventoryQuery } from "./backupInventoryQuery";
 import { BackupStatus } from "./BackupStatus";
+
+type StatusScope = "healthy" | "attention" | "unknown";
+const statusLabels = {
+    healthy: "Healthy",
+    attention: "Needs attention",
+    unknown: "Unknown",
+} as const;
+
+function category(state: BackupState, stale: boolean) {
+    if (stale) return "unknown";
+    return state === "failed" || state === "overdue" ? "attention" : state;
+}
 
 /**
  * Present backup and verification observations without granting archive or restore access.
- * @returns Independent freshness, status totals and a shared virtualized task table.
+ * @returns Independent freshness, status totals and tasks grouped by host.
  */
 export function BackupsPanel({ compact = false }: { readonly compact?: boolean }) {
-    const [search, setSearch] = useState("");
-    const query = useQuery({
-        queryKey: ["operations", "backups"],
-        queryFn: ({ signal }) => api.backups.inventory.query(undefined, { signal }),
-        ...queryRefresh("normal"),
-        retry: false,
-    });
+    const [scope, setScope] = useState<StatusScope | null>(null);
+    const query = useQuery(backupInventoryQuery);
     const data = query.data;
     const stale = !data?.configured || query.isError || (data?.stale ?? true);
     const rows = data?.inventory?.backups ?? [];
-    const filtered = rows.filter((row) =>
-        `${row.host} ${row.task}`.toLowerCase().includes(search.toLowerCase())
-    );
-    const count = (states: readonly string[]) =>
-        rows.filter((row) => states.includes(row.state)).length;
-    let unknownCount: number | string = count(["unknown"]);
-    if (stale) unknownCount = rows.length > 0 ? rows.length : "—";
+    const filtered = scope
+        ? rows.filter((row) => category(row.state, stale) === scope)
+        : rows;
+    const items = (["healthy", "attention", "unknown"] as const).map((status) => {
+        const count = rows.filter((row) => category(row.state, stale) === status).length;
+        const selected = scope === status;
+        const canFilter = !compact && (selected || (count > 0 && count < rows.length));
+        return {
+            label: statusLabels[status],
+            value: stale && (status !== "unknown" || rows.length === 0) ? "—" : count,
+            tone: status === "healthy" ? ("positive" as const) : ("warning" as const),
+            ...(canFilter && {
+                toggle: {
+                    label: selected
+                        ? "Show all backup jobs"
+                        : `Filter backup jobs by status: ${statusLabels[status]} (${count})`,
+                    pressed: selected,
+                    onClick: () => setScope(selected ? null : status),
+                },
+            }),
+        };
+    });
     return (
-        <Card className="space-y-4">
-            <SectionHeader
-                title="Backup protection"
-                description="Backup completion, verification and freshness."
-                icon={Archive}
-                actions={
-                    <ObservationBadge
-                        configured={data?.configured ?? true}
-                        available={Boolean(data?.inventory)}
-                        stale={stale}
-                    />
-                }
-            />
+        <SectionPanel
+            title="Backup protection"
+            description="Backup completion, verification and freshness."
+            icon={Archive}
+            badge={
+                <ObservationBadge
+                    configured={data?.configured ?? true}
+                    available={Boolean(data?.inventory)}
+                    stale={stale}
+                />
+            }
+        >
             {query.isPending && <LoadingState label="Loading backup status…" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {data && (
                 <>
-                    <dl className="grid grid-cols-3 gap-3">
-                        <MetricStat
-                            label="Healthy"
-                            value={stale ? "—" : count(["healthy"])}
-                        />
-                        <MetricStat
-                            label="Needs attention"
-                            value={stale ? "—" : count(["failed", "overdue"])}
-                        />
-                        <MetricStat label="Unknown" value={unknownCount} />
-                    </dl>
+                    <SummaryStrip label="Backup job status" items={items} />
                     {!compact && (
-                        <SearchInput
-                            label="Search backups"
-                            clearLabel="Clear backup search"
-                            placeholder="Find a host or backup task…"
-                            value={search}
-                            onChange={setSearch}
-                        />
-                    )}
-                    {!compact && filtered.length > 0 && (
-                        <DataTable
-                            label="Backup tasks"
-                            compact
-                            rows={filtered}
-                            getKey={(row) => row.id}
-                            columns={[
-                                {
-                                    id: "task",
-                                    sortValue: (row) => row.task,
-                                    label: "Task",
-                                    mobile: "title",
-                                    render: (row) => row.task,
-                                },
-                                {
-                                    id: "host",
-                                    sortValue: (row) => row.host,
-                                    label: "Host",
-                                    render: (row) => row.host,
-                                },
-                                {
-                                    id: "state",
-                                    sortValue: (row) => (stale ? null : row.state),
-                                    label: "Status",
-                                    render: (row) => (
+                        <>
+                            {filtered.length > 0 ? (
+                                <GroupedDirectory
+                                    items={filtered}
+                                    group={(row) => row.host}
+                                    getKey={(row) => row.id}
+                                    name={(row) => row.task}
+                                    detail={(row) => (
+                                        <>
+                                            Last success{" "}
+                                            {row.lastSuccessAt
+                                                ? formatDateTime(row.lastSuccessAt)
+                                                : "not reported"}
+                                            {row.lastFailureAt && (
+                                                <span className="block">
+                                                    Last failure{" "}
+                                                    {formatDateTime(row.lastFailureAt)}
+                                                </span>
+                                            )}
+                                        </>
+                                    )}
+                                    status={(row) => (
                                         <BackupStatus
                                             state={stale ? "unknown" : row.state}
                                         />
-                                    ),
-                                },
-                                {
-                                    id: "success",
-                                    sortValue: (row) => row.lastSuccessAt,
-                                    label: "Last successful backup",
-                                    render: (row) =>
-                                        row.lastSuccessAt
-                                            ? formatDateTime(row.lastSuccessAt)
-                                            : "Not reported",
-                                },
-                                {
-                                    id: "failure",
-                                    sortValue: (row) => row.lastFailureAt,
-                                    label: "Last failure",
-                                    render: (row) =>
-                                        row.lastFailureAt
-                                            ? formatDateTime(row.lastFailureAt)
-                                            : "None reported",
-                                },
-                            ]}
-                        />
-                    )}
-                    {!compact && filtered.length === 0 && (
-                        <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
-                            {search
-                                ? "No matching backup tasks."
-                                : "No backup observations are available."}
-                        </p>
+                                    )}
+                                />
+                            ) : (
+                                <EmptyState
+                                    icon={Archive}
+                                    title={
+                                        scope
+                                            ? "No jobs match this status"
+                                            : "No backup observations available"
+                                    }
+                                    description={
+                                        scope
+                                            ? "Select the highlighted status again to show all backup jobs."
+                                            : "Backup tasks appear after the first observation."
+                                    }
+                                />
+                            )}
+                        </>
                     )}
                     {compact && (
                         <Link
@@ -150,6 +138,6 @@ export function BackupsPanel({ compact = false }: { readonly compact?: boolean }
                     )}
                 </>
             )}
-        </Card>
+        </SectionPanel>
     );
 }

@@ -18,6 +18,7 @@ import { clientAllowed } from "./clientAccess";
 import { readConsentDecision } from "./consent";
 import { createOidcFetch } from "./fetch";
 import { serializeInteraction } from "./interactionLock";
+import { logoutStyleHash, signedOutDocument } from "./logoutDocument";
 import { renderLogout } from "./logoutPage";
 
 async function cookiePrincipal(
@@ -91,8 +92,11 @@ export function createProvider(accounts: Accounts): Provider {
                     ),
                 postLogoutSuccessSource: (context) => {
                     context.type = "html";
-                    context.body =
-                        '<!doctype html><html lang="en"><meta charset="utf-8"><title>Signed out</title><main><h1>You are signed out</h1><a href="/sign-in">Sign in again</a></main></html>';
+                    context.set(
+                        "Content-Security-Policy",
+                        `default-src 'none'; style-src 'sha256-${logoutStyleHash}'; img-src data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`
+                    );
+                    context.body = signedOutDocument();
                 },
             },
             revocation: { enabled: true },

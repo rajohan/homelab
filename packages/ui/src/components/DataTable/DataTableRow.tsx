@@ -20,7 +20,9 @@ export function DataTableRow<T>({
     readonly compact: boolean;
     readonly rowAction?: DataRowAction<T>;
 }) {
-    const hasInlineActions = columns.some((column) => column.mobile === "actions");
+    const hasTitleAccessory = columns.some(
+        (column) => column.mobile === "actions" || column.mobile === "status"
+    );
     return (
         <tr
             ref={measureElement}
@@ -52,8 +54,11 @@ export function DataTableRow<T>({
                                 column.mobile === "title" &&
                                 cn(
                                     "@max-[48rem]:row-start-1 @max-[48rem]:self-center @max-[48rem]:font-medium @max-[48rem]:text-primary-50",
-                                    !hasInlineActions && "@max-[48rem]:col-span-2"
+                                    !hasTitleAccessory && "@max-[48rem]:col-span-2"
                                 ),
+                            compact &&
+                                column.mobile === "status" &&
+                                "@max-[48rem]:col-start-2 @max-[48rem]:row-start-1 @max-[48rem]:self-center @max-[48rem]:justify-self-end",
                             compact &&
                                 column.mobile === "actions" &&
                                 "py-1 @max-[48rem]:col-start-2 @max-[48rem]:row-start-1 @max-[48rem]:justify-self-end @max-[48rem]:p-0",
@@ -82,7 +87,9 @@ export function DataTableRow<T>({
                                     "hidden text-xs font-medium text-primary-400",
                                     column.hideLabel ||
                                         (compact &&
-                                            (column.mobile === "title" || isAction))
+                                            (column.mobile === "title" ||
+                                                column.mobile === "status" ||
+                                                isAction))
                                         ? "sr-only"
                                         : "@max-[48rem]:mb-1 @max-[48rem]:block"
                                 )}

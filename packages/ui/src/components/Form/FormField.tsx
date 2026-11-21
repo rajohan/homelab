@@ -2,6 +2,7 @@ import { Description, Field, Label } from "@headlessui/react";
 import { type ReactNode, useContext } from "react";
 
 import { FormFieldInvalidContext } from "../../lib/formFieldContext";
+import { fieldLabelStyles } from "./fieldLabelStyles";
 
 /**
  * Associate a field label, description and validation feedback with its child control.
@@ -25,9 +26,7 @@ export function FormField({
     const inheritedInvalid = useContext(FormFieldInvalidContext);
     return (
         <Field {...(disabled === undefined ? {} : { disabled })} className={className}>
-            <Label className="mb-1.5 block text-sm font-medium text-primary-200 data-disabled:opacity-60">
-                {label}
-            </Label>
+            <Label className={fieldLabelStyles}>{label}</Label>
             <FormFieldInvalidContext value={error !== undefined || inheritedInvalid}>
                 {children}
             </FormFieldInvalidContext>

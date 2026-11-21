@@ -11,7 +11,7 @@ import type { AccountPanelProps } from "../../types";
 export function AccountIdentityPanel({ data, onAction }: AccountPanelProps) {
     const session = data.sessions.find((candidate) => candidate.current);
     return (
-        <Card className="flex items-center gap-3 rounded-lg bg-primary-800 p-4 shadow-none sm:p-4">
+        <Card className="flex items-center gap-3 rounded-lg p-4 shadow-none sm:p-4">
             <SectionIcon icon={UserRound} />
             <p className="min-w-0 flex-1 text-sm wrap-anywhere text-primary-300">
                 Signed in as{" "}

@@ -162,6 +162,16 @@ export function ImprovementPermission({
                     <ErrorNotice error={query.error ?? save.error ?? resolve.error} />
                 )}
                 <ActionGroup>
+                    {grant?.enabled && (
+                        <Button
+                            variant="danger"
+                            busy={save.isPending && save.variables === false}
+                            disabled={save.isPending || resolve.isPending}
+                            onClick={() => apply(false)}
+                        >
+                            Revoke permission
+                        </Button>
+                    )}
                     {!active && (
                         <Button
                             busy={save.isPending && save.variables === true}
@@ -171,16 +181,6 @@ export function ImprovementPermission({
                             onClick={() => apply(true)}
                         >
                             {grant?.enabled ? "Renew permission" : "Allow code changes"}
-                        </Button>
-                    )}
-                    {grant?.enabled && (
-                        <Button
-                            variant="secondary"
-                            busy={save.isPending && save.variables === false}
-                            disabled={save.isPending || resolve.isPending}
-                            onClick={() => apply(false)}
-                        >
-                            Revoke permission
                         </Button>
                     )}
                 </ActionGroup>

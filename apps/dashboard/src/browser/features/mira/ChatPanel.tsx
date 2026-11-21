@@ -1,25 +1,27 @@
 import { miraDefaultChatSettings } from "@homelab/contracts/mira";
 import type { MiraAttachment } from "@homelab/contracts/mira";
 import {
-    Badge,
     Card,
     ConfirmDialog,
     DropdownMenu,
     ErrorNotice,
     FieldsForm,
+    IconButton,
     LoadingState,
     Modal,
-    SectionHeader,
 } from "@homelab/ui";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
     Archive,
     Brain,
+    ChevronDown,
     Files,
     MessageSquare,
     Monitor,
+    PanelLeftOpen,
     Pencil,
+    Settings2,
     Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -54,7 +56,13 @@ export function ChatPanel({
     readonly onLibrary: (library: "files" | "memory") => void;
     readonly onChooseConversation: () => void;
 }) {
-    const [text, setText] = useState("");
+    const client = useQueryClient();
+    const [text, setText] = useState(
+        () => client.getQueryData<string>(["mira-draft", id]) ?? ""
+    );
+    useEffect(() => {
+        client.removeQueries({ queryKey: ["mira-draft", id], exact: true });
+    }, [client, id]);
     const [display, setDisplay] = useState(readChatDisplay);
     const [attachments, setAttachments] = useState<MiraAttachment[]>([]);
     const [uploading, setUploading] = useState(false);
@@ -62,7 +70,6 @@ export function ChatPanel({
     const [dialog, setDialog] = useState<"rename" | "delete" | "settings" | "computer">();
     const request = useRef<{ text: string; id: string } | null>(null);
     const navigate = useNavigate();
-    const client = useQueryClient();
     const [voice] = useState(
         () =>
             new MiraVoiceConnection(id, () => {
@@ -72,6 +79,7 @@ export function ChatPanel({
             })
     );
     const voiceState = useSyncExternalStore(voice.subscribe, voice.snapshot);
+    const [showStatus, setShowStatus] = useState(false);
     const [expanded, setExpanded] = useState(false);
     const queryKey = ["operations", "mira", "conversation", id];
     const query = useQuery({
@@ -190,89 +198,120 @@ export function ChatPanel({
         catalog.data?.fresh && selectedModel?.inputModalities.includes("image")
     );
     return (
-        <Card className="flex min-h-0 min-w-0 flex-col overflow-hidden p-0 sm:p-0">
-            <header className="shrink-0 border-b border-primary-700 px-4 py-3">
-                <SectionHeader
+        <Card className="flex min-h-0 min-w-0 flex-col overflow-y-auto rounded-none border-0 bg-transparent p-0 shadow-none sm:p-0">
+            <header className="flex shrink-0 items-center gap-2 border-b border-primary-700 px-2 py-1 sm:px-4 sm:py-2">
+                <IconButton
+                    icon={PanelLeftOpen}
+                    label="Choose conversation"
+                    onClick={onChooseConversation}
+                    className="chat-split:hidden"
+                />
+                <h1
                     title={conversation.title}
-                    icon={MessageSquare}
-                    badge={
-                        <Badge tone={status.data?.ready ? "positive" : "warning"}>
-                            {status.data?.ready ? "Ready" : waitingLabel}
-                        </Badge>
-                    }
-                    compactActions
-                    actions={
-                        <DropdownMenu
-                            label="Conversation actions"
-                            disabled={change.isPending || rename.isPending}
-                            actions={[
-                                {
-                                    id: "computer",
-                                    label: "Computer access",
-                                    icon: Monitor,
-                                    onSelect: () => setDialog("computer"),
-                                },
-                                {
-                                    id: "files",
-                                    label: "Files",
-                                    icon: Files,
-                                    onSelect: () => onLibrary("files"),
-                                },
-                                {
-                                    id: "memory",
-                                    label: "Memory",
-                                    icon: Brain,
-                                    onSelect: () => onLibrary("memory"),
-                                },
-                                {
-                                    id: "conversations",
-                                    label: "Conversations",
-                                    icon: MessageSquare,
-                                    onSelect: onChooseConversation,
-                                },
-                                {
-                                    id: "rename",
-                                    label: "Rename",
-                                    icon: Pencil,
-                                    onSelect: () => setDialog("rename"),
-                                },
-                                {
-                                    id: "archive",
-                                    label: conversation.archivedAt
-                                        ? "Restore"
-                                        : "Archive",
-                                    icon: Archive,
-                                    disabled: Boolean(active),
-                                    onSelect: () =>
-                                        change.mutate(
-                                            conversation.archivedAt
-                                                ? "restore"
-                                                : "archive"
-                                        ),
-                                },
-                                {
-                                    id: "delete",
-                                    label: "Delete conversation",
-                                    icon: Trash2,
-                                    danger: true,
-                                    disabled: Boolean(active),
-                                    onSelect: () => setDialog("delete"),
-                                },
-                            ]}
-                        />
-                    }
+                    className="min-w-0 flex-1 truncate text-base font-semibold tracking-tight text-primary-50 sm:text-lg"
+                >
+                    {conversation.title}
+                </h1>
+                <button
+                    type="button"
+                    aria-label={`Connection status: ${status.data?.ready ? "Ready" : waitingLabel}`}
+                    aria-controls="mira-connection-details"
+                    aria-expanded={showStatus}
+                    onClick={() => setShowStatus(!showStatus)}
+                    className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-primary-300 hover:bg-primary-800"
+                >
+                    <span
+                        aria-hidden="true"
+                        className={`size-2 rounded-full ${status.data?.ready ? "bg-emerald-400" : "bg-amber-400"}`}
+                    />
+                    {status.data?.ready ? "Ready" : waitingLabel}
+                    <ChevronDown
+                        size={14}
+                        aria-hidden="true"
+                        className={showStatus ? "rotate-180" : ""}
+                    />
+                </button>
+                <DropdownMenu
+                    label="Conversation actions"
+                    disabled={change.isPending || rename.isPending}
+                    actions={[
+                        {
+                            id: "settings",
+                            label: "Chat settings",
+                            icon: Settings2,
+                            disabled: archived,
+                            onSelect: () => setDialog("settings"),
+                        },
+                        {
+                            id: "computer",
+                            label: "Computer access",
+                            icon: Monitor,
+                            onSelect: () => setDialog("computer"),
+                        },
+                        {
+                            id: "files",
+                            label: "Files",
+                            icon: Files,
+                            onSelect: () => onLibrary("files"),
+                        },
+                        {
+                            id: "memory",
+                            label: "Memory",
+                            icon: Brain,
+                            onSelect: () => onLibrary("memory"),
+                        },
+                        {
+                            id: "conversations",
+                            label: "Conversations",
+                            icon: MessageSquare,
+                            onSelect: onChooseConversation,
+                        },
+                        {
+                            id: "rename",
+                            label: "Rename",
+                            icon: Pencil,
+                            onSelect: () => setDialog("rename"),
+                        },
+                        {
+                            id: "archive",
+                            label: conversation.archivedAt ? "Restore" : "Archive",
+                            icon: Archive,
+                            disabled: Boolean(active),
+                            onSelect: () =>
+                                change.mutate(
+                                    conversation.archivedAt ? "restore" : "archive"
+                                ),
+                        },
+                        {
+                            id: "delete",
+                            label: "Delete conversation",
+                            icon: Trash2,
+                            danger: true,
+                            disabled: Boolean(active),
+                            onSelect: () => setDialog("delete"),
+                        },
+                    ]}
                 />
             </header>
-            <ChatgptConnection />
-            <ProviderQuota
-                quotas={catalog.data?.quotas ?? []}
-                fresh={!catalog.isError && (catalog.data?.fresh ?? false)}
-            />
-            {(!status.data?.ready || status.data.message) && (
-                <p className="shrink-0 border-b border-primary-700 px-4 py-2 text-xs text-primary-400">
-                    {status.data?.message ?? "Checking Mira connection…"}
-                </p>
-            )}
+            <div
+                id="mira-connection-details"
+                className="max-h-[36dvh] shrink-0 overflow-y-auto bg-surface-panel"
+            >
+                <ChatgptConnection alertsOnly={!showStatus} />
+                {showStatus && (
+                    <>
+                        <ProviderQuota
+                            quotas={catalog.data?.quotas ?? []}
+                            fresh={!catalog.isError && (catalog.data?.fresh ?? false)}
+                        />
+                        {(!status.data?.ready || status.data.message) && (
+                            <p className="shrink-0 border-b border-primary-700 px-4 py-2 text-xs text-primary-400">
+                                {status.data?.message ?? "Checking Mira connection…"}
+                            </p>
+                        )}
+                    </>
+                )}
+            </div>
             {error && (
                 <div className="shrink-0 px-4 py-2">
                     <ErrorNotice error={error} />
@@ -307,25 +346,28 @@ export function ChatPanel({
                     ) : null
                 }
             />
-            {run?.message && (
-                <p className="shrink-0 px-4 py-2 text-xs text-primary-300">
-                    {run.message}
-                </p>
-            )}
-            <BrowserAccessPanel run={run} />
-            <ComputerAccessPanel
-                run={run}
-                waiting={
-                    run?.state === "running" &&
-                    !run.cancelRequested &&
-                    (latest.tools ?? []).some(
-                        (tool) =>
-                            tool.tool === "mira_computer_wait" && tool.state === "running"
-                    )
-                }
-                onManage={() => setDialog("computer")}
-            />
-            <ProposedChanges key={`proposals:${id}`} conversationId={id} />
+            <div className="max-h-[32dvh] shrink-0 overflow-y-auto">
+                {run?.message && (
+                    <p className="shrink-0 px-4 py-2 text-xs text-primary-300">
+                        {run.message}
+                    </p>
+                )}
+                <BrowserAccessPanel run={run} />
+                <ComputerAccessPanel
+                    run={run}
+                    waiting={
+                        run?.state === "running" &&
+                        !run.cancelRequested &&
+                        (latest.tools ?? []).some(
+                            (tool) =>
+                                tool.tool === "mira_computer_wait" &&
+                                tool.state === "running"
+                        )
+                    }
+                    onManage={() => setDialog("computer")}
+                />
+                <ProposedChanges key={`proposals:${id}`} conversationId={id} />
+            </div>
             {!conversation.archivedAt && (
                 <ChatComposer
                     voice={voice}
@@ -345,8 +387,6 @@ export function ChatPanel({
                     }}
                     onSend={() => send.mutate(undefined)}
                     onBrowse={() => setSelectingFile(true)}
-                    onSettings={() => setDialog("settings")}
-                    onComputer={() => setDialog("computer")}
                 />
             )}
             {selectingFile && (

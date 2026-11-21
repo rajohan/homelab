@@ -2,20 +2,13 @@ import type {
     FilesystemMetric,
     InfrastructureHost,
 } from "@homelab/contracts/infrastructure";
-import {
-    Card,
-    DataTable,
-    formatMetric,
-    SearchInput,
-    SectionHeader,
-    Select,
-} from "@homelab/ui";
+import { compareTableValues } from "@homelab/contracts/tableSort";
+import { GroupedDirectory, SectionPanel, SummaryStrip } from "@homelab/ui";
 import { Server } from "lucide-react";
-import { useState } from "react";
 
-import { HostStorageUsage } from "./HostStorageUsage";
+import { HostReadings } from "./HostReadings";
+import { HostShelf } from "./HostShelf";
 import { ResourceStatus } from "./ResourceStatus";
-import { ResourceUsage } from "./ResourceUsage";
 
 const memoryLabels = {
     guest: "Inside guest / OS",
@@ -25,140 +18,83 @@ const memoryLabels = {
 
 /**
  * Show every hypervisor, guest and additional monitored host with explicit resource sources.
- * @returns A searchable responsive inventory whose rows open host details.
+ * @returns Host and guest counts, name-ordered resource readings and access to host details.
  */
 export function HostInventory({
     hosts,
     filesystems,
     onSelect,
+    stale,
 }: {
+    readonly stale: boolean;
     readonly hosts: readonly InfrastructureHost[];
     readonly filesystems: readonly FilesystemMetric[];
     readonly onSelect: (host: InfrastructureHost) => void;
 }) {
-    const [search, setSearch] = useState("");
-    const [kind, setKind] = useState("all");
-    const rows = hosts.filter(
-        (host) =>
-            (kind === "all" || host.kind === kind) &&
-            `${host.name} ${host.guestId ?? ""} ${host.node ?? ""}`
-                .toLowerCase()
-                .includes(search.toLowerCase())
+    const rows = hosts.toSorted((a, b) =>
+        compareTableValues(a.name, b.name, "ascending")
     );
+    const vms = hosts.filter((host) => host.kind === "vm").length;
+    const containers = hosts.filter((host) => host.kind === "container").length;
     return (
-        <Card className="space-y-4">
-            <SectionHeader
-                title="Hosts and guests"
-                description="Select a host for resource history, interfaces, disks and filesystems."
-                icon={Server}
-            />
-            <div className="grid gap-3 sm:grid-cols-[1fr_12rem]">
-                <SearchInput
-                    label="Search hosts"
-                    clearLabel="Clear host search"
-                    placeholder="Search hosts, nodes or VM IDs…"
-                    value={search}
-                    onChange={setSearch}
-                />
-                <Select
-                    label="Host type"
-                    value={kind}
-                    onChange={setKind}
-                    options={[
-                        { value: "all", label: "All types" },
-                        { value: "node", label: "PVE nodes" },
-                        { value: "vm", label: "Virtual machines" },
-                        { value: "container", label: "Containers" },
-                        { value: "host", label: "Other hosts" },
-                    ]}
-                />
-            </div>
-            <DataTable
-                label="Hosts and guests"
-                compact
-                rows={rows}
-                getKey={(host) => host.id}
-                rowAction={{ label: (host) => `Inspect ${host.name}`, onSelect }}
-                columns={[
-                    {
-                        id: "name",
-                        sortValue: (row) => row.name,
-                        label: "Host",
-                        mobile: "title",
-                        render: (host) => (
-                            <div>
-                                <span className="font-semibold text-primary-50">
-                                    {host.name}
-                                </span>
-                                <p className="mt-1 text-xs text-primary-400">
-                                    {host.guestId ?? host.kind}
-                                    {host.node && host.kind !== "node"
-                                        ? ` · ${host.node}`
-                                        : ""}
-                                </p>
-                            </div>
-                        ),
-                    },
-                    {
-                        id: "state",
-                        sortValue: (row) => row.state,
-                        label: "Status",
-                        render: (host) => <ResourceStatus state={host.state} />,
-                    },
-                    {
-                        id: "cpu",
-                        sortValue: (row) => row.cpuPercent,
-                        label: "CPU",
-                        render: (host) => (
-                            <div>
-                                {formatMetric(host.cpuPercent, "percent")}
-                                <p className="mt-1 text-xs text-primary-400">
-                                    {host.cores ?? "Unknown"} cores
-                                </p>
-                            </div>
-                        ),
-                    },
-                    {
-                        id: "memory",
-                        sortValue: (row) => row.memoryUsed,
-                        label: "Memory",
-                        width: "w-1/4",
-                        render: (host) => (
-                            <ResourceUsage
-                                used={host.memoryUsed}
-                                total={host.memoryTotal}
-                                description={memoryLabels[host.memorySource]}
-                            />
-                        ),
-                    },
-                    {
-                        id: "disk",
-                        sortValue: (row) =>
-                            filesystems.find(
-                                (volume) =>
-                                    volume.host === row.host && volume.mount === "/"
-                            )?.used,
-                        label: "Disk usage",
-                        width: "w-1/4",
-                        render: (host) => (
-                            <HostStorageUsage
-                                host={host.host}
-                                filesystems={filesystems}
-                                systemOnly={host.kind === "node"}
-                            />
-                        ),
-                    },
-                    {
-                        id: "uptime",
-                        sortValue: (row) => row.uptime,
-                        label: "Uptime",
-                        render: (host) => formatMetric(host.uptime, "seconds"),
-                    },
+        <SectionPanel
+            title="Hosts and guests"
+            description="Select a host for resource history, interfaces, disks and filesystems."
+            icon={Server}
+        >
+            <SummaryStrip
+                label="Host and guest counts"
+                items={[
+                    { label: "Hosts", value: hosts.length - vms - containers },
+                    { label: "VMs", value: vms },
+                    { label: "Containers", value: containers },
                 ]}
             />
-            {rows.length === 0 && (
-                <p className="text-sm text-primary-400">No hosts match these filters.</p>
+            {rows.length > 0 ? (
+                <div className="space-y-5 pt-2 sm:pt-3">
+                    <HostShelf
+                        compact
+                        filesystems={filesystems}
+                        hosts={rows.filter(
+                            (host) => host.kind === "node" || host.kind === "host"
+                        )}
+                        stale={stale}
+                        onSelect={onSelect}
+                    />
+                    <GroupedDirectory
+                        ordered
+                        items={rows.filter(
+                            (host) => host.kind !== "node" && host.kind !== "host"
+                        )}
+                        group={(host) =>
+                            host.node
+                                ? `Guests on ${host.node}`
+                                : "Guests without a reported node"
+                        }
+                        getKey={(host) => host.id}
+                        name={(host) => host.name}
+                        detail={(host) =>
+                            [
+                                `${host.kind === "vm" ? "VM" : "Container"} ${host.guestId ?? ""}`.trim(),
+                                memoryLabels[host.memorySource],
+                            ].join(" · ")
+                        }
+                        readings={(host) => (
+                            <HostReadings
+                                host={host}
+                                filesystems={filesystems}
+                                stale={stale}
+                            />
+                        )}
+                        status={(host) => (
+                            <ResourceStatus state={stale ? "unknown" : host.state} />
+                        )}
+                        onSelect={onSelect}
+                    />
+                </div>
+            ) : (
+                <p className="text-sm text-primary-400">No hosts or guests reported.</p>
             )}
-        </Card>
+        </SectionPanel>
     );
 }

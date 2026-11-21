@@ -1,26 +1,25 @@
+import { compareTableValues } from "@homelab/contracts/tableSort";
 import {
+    Badge,
     buttonStyles,
-    Card,
-    DataTable,
     ErrorNotice,
-    formatDateTime,
+    GroupedDirectory,
     LoadingState,
-    queryRefresh,
-    SectionHeader,
+    SectionPanel,
     Select,
+    SummaryStrip,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { PackageCheck } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
-import { api } from "../../api/client";
-import { MetricStat } from "../infrastructure/MetricStat";
 import { ObservationBadge } from "../operations/ObservationBadge";
 import { AutomaticUpdates } from "./AutomaticUpdates";
 import { RestartStatus } from "./RestartStatus";
 import { SoftwareUpdates } from "./SoftwareUpdates";
 import { UpdateBatchAction } from "./UpdateBatchAction";
+import { updateInventoryQuery } from "./updateInventoryQuery";
 
 /**
  * Present update observations separately from confirmed manual and opt-in automatic installation.
@@ -28,13 +27,17 @@ import { UpdateBatchAction } from "./UpdateBatchAction";
  */
 export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }) {
     const [selection, setSelection] = useState("");
-    const query = useQuery({
-        queryKey: ["operations", "updates"],
-        queryFn: ({ signal }) => api.updates.inventory.query(undefined, { signal }),
-        ...queryRefresh("normal"),
-        retry: false,
-    });
+    const softwareHeading = useRef<HTMLDivElement>(null);
+    const query = useQuery(updateInventoryQuery);
     const sources = query.data ?? [];
+    const currentReports = sources.flatMap((item) =>
+        item.report && !item.stale ? [item.report] : []
+    );
+    const securityUpdates = currentReports.reduce(
+        (sum, report) => sum + report.security,
+        0
+    );
+    const missingSources = sources.filter((item) => item.stale || !item.report).length;
     const options = sources.flatMap((item) => {
         const categories = item.report?.coveredKinds.includes("runtime")
             ? (["software", "toolchains"] as const)
@@ -47,22 +50,40 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
         }));
     });
     const selected = options.find((item) => item.value === selection) ?? options[0];
+    const inspectSource = (item: (typeof sources)[number]) => {
+        setSelection(JSON.stringify([item.id, "software"]));
+        softwareHeading.current?.focus({
+            preventScroll: true,
+        });
+        softwareHeading.current?.scrollIntoView({
+            block: "start",
+        });
+    };
+    const sourceAction = (item: (typeof sources)[number]) => (
+        <UpdateBatchAction
+            source={item.id}
+            label={item.label}
+            disabled={query.isError || item.stale || (item.report?.available ?? 0) === 0}
+        />
+    );
     return (
-        <Card className="space-y-4">
-            <SectionHeader
-                title="Available updates"
-                description="Installed versions, available updates and update policies. Inventory observation and package-list refresh times are separate; OS package lists older than 48 hours are stale."
+        <div className="grid min-w-0 gap-5">
+            <SectionPanel
+                title={compact ? "Available updates" : "Update sources"}
+                description="Select a source to inspect its packages. OS package lists expire after 48 hours."
                 icon={PackageCheck}
                 badge={
-                    <ObservationBadge
-                        configured={
-                            query.data === undefined ||
-                            query.isError ||
-                            sources.length > 0
-                        }
-                        available={sources.some((item) => item.report)}
-                        stale={query.isError || sources.some((item) => item.stale)}
-                    />
+                    query.data && (
+                        <ObservationBadge
+                            configured={
+                                query.data === undefined ||
+                                query.isError ||
+                                sources.length > 0
+                            }
+                            available={sources.some((item) => item.report)}
+                            stale={query.isError || sources.some((item) => item.stale)}
+                        />
+                    )
                 }
                 actions={
                     !compact && (
@@ -78,227 +99,163 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                         />
                     )
                 }
-            />
-            {query.isPending && <LoadingState label="Loading update inventory…" />}
-            {query.isError && <ErrorNotice error={query.error} />}
-            {query.data && (
-                <>
-                    <dl className="grid grid-cols-3 gap-3">
-                        <MetricStat
-                            label="Available"
-                            value={
-                                sources.length > 0 && !query.isError
-                                    ? sources.reduce(
-                                          (sum, item) =>
-                                              sum +
-                                              (item.stale
-                                                  ? 0
-                                                  : (item.report?.available ?? 0)),
-                                          0
-                                      )
-                                    : "—"
-                            }
+            >
+                {query.isPending && <LoadingState label="Loading update inventory…" />}
+                {query.isError && <ErrorNotice error={query.error} />}
+                {query.data && (
+                    <>
+                        <SummaryStrip
+                            label="Update inventory counts"
+                            items={[
+                                {
+                                    label: "Available",
+                                    value:
+                                        currentReports.length > 0 && !query.isError
+                                            ? currentReports.reduce(
+                                                  (sum, report) => sum + report.available,
+                                                  0
+                                              )
+                                            : "—",
+                                },
+                                {
+                                    label: "Security",
+                                    attention: !query.isError && securityUpdates > 0,
+                                    value:
+                                        currentReports.length > 0 && !query.isError
+                                            ? securityUpdates
+                                            : "—",
+                                },
+                                {
+                                    label: "Missing / stale sources",
+                                    attention: !query.isError && missingSources > 0,
+                                    value:
+                                        sources.length > 0 && !query.isError
+                                            ? missingSources
+                                            : "—",
+                                },
+                            ]}
                         />
-                        <MetricStat
-                            label="Security"
-                            value={
-                                sources.length > 0 && !query.isError
-                                    ? sources.reduce(
-                                          (sum, item) =>
-                                              sum +
-                                              (item.stale
-                                                  ? 0
-                                                  : (item.report?.security ?? 0)),
-                                          0
-                                      )
-                                    : "—"
-                            }
-                        />
-                        <MetricStat
-                            label="Missing / stale sources"
-                            value={
-                                sources.length > 0 && !query.isError
-                                    ? sources.filter((item) => item.stale || !item.report)
-                                          .length
-                                    : "—"
-                            }
-                        />
-                    </dl>
-                    {!compact && (
-                        <>
-                            {sources.length > 0 && (
-                                <DataTable
-                                    label="Update sources"
-                                    compact
-                                    className="@max-[48rem]:[&_tr[data-index]]:grid-cols-[minmax(0,1fr)_minmax(0,1.7fr)]"
-                                    rows={sources}
-                                    getKey={(item) => item.id}
-                                    columns={[
-                                        {
-                                            id: "source",
-                                            sortValue: (row) => row.label,
-                                            label: "Source",
-                                            mobile: "title",
-                                            render: (item) => item.label,
-                                        },
-                                        {
-                                            id: "updates",
-                                            sortValue: (row) => row.report?.available,
-                                            label: "Updates",
-                                            render: (item) =>
-                                                !query.isError &&
-                                                !item.stale &&
-                                                item.report
-                                                    ? item.report.available
-                                                    : "—",
-                                        },
-                                        {
-                                            id: "coverage",
-                                            sortValue: (row) =>
-                                                row.report?.coveredKinds.join(" "),
-                                            label: "Checks",
-                                            render: (item) =>
-                                                item.report?.coveredKinds.join(" · ") ??
-                                                "Not reported",
-                                        },
-                                        {
-                                            id: "time",
-                                            sortValue: (row) => row.report?.capturedAt,
-                                            label: "Inventory observed",
-                                            render: (item) =>
-                                                item.report
-                                                    ? formatDateTime(
-                                                          item.report.capturedAt
-                                                      )
-                                                    : "Not reported",
-                                        },
-                                        {
-                                            id: "packageLists",
-                                            sortValue: (row) =>
-                                                row.report?.repositoryMetadataAt,
-                                            label: "Package lists refreshed",
-                                            render: (item) => {
-                                                if (
-                                                    !item.report?.coveredKinds.includes(
-                                                        "os"
-                                                    )
+                        {!compact && (
+                            <>
+                                {sources.length > 0 && (
+                                    <>
+                                        <GroupedDirectory
+                                            ordered
+                                            items={sources.toSorted((a, b) =>
+                                                compareTableValues(
+                                                    a.label,
+                                                    b.label,
+                                                    "ascending"
                                                 )
-                                                    return "Not applicable";
-                                                return item.report.repositoryMetadataAt
-                                                    ? formatDateTime(
-                                                          item.report.repositoryMetadataAt
-                                                      )
-                                                    : "Not reported";
-                                            },
-                                        },
-                                        {
-                                            id: "state",
-                                            sortValue: (row) => row.stale,
-                                            label: "Status",
-                                            render: (item) => (
-                                                <div className="flex flex-wrap items-center gap-1.5">
-                                                    <ObservationBadge
-                                                        configured
-                                                        available={Boolean(item.report)}
-                                                        stale={
-                                                            query.isError || item.stale
-                                                        }
-                                                    />
-                                                    <span className="@min-[48rem]:hidden">
-                                                        <RestartStatus
-                                                            observation={item.restart}
-                                                            unavailable={query.isError}
-                                                        />
-                                                    </span>
-                                                </div>
-                                            ),
-                                        },
-                                        {
-                                            id: "restart",
-                                            label: "Restart",
-                                            mobile: "hidden",
-                                            sortValue: (item) =>
-                                                item.restart?.stale
-                                                    ? null
-                                                    : item.restart?.required,
-                                            render: (item) => (
-                                                <RestartStatus
-                                                    observation={item.restart}
-                                                    unavailable={query.isError}
-                                                />
-                                            ),
-                                        },
-                                        {
-                                            id: "actions",
-                                            label: "Actions",
-                                            width: "w-40",
-                                            mobile: "footer-actions",
-                                            render: (item) => (
-                                                <UpdateBatchAction
-                                                    source={item.id}
-                                                    label={item.label}
-                                                    disabled={
-                                                        query.isError ||
-                                                        item.stale ||
-                                                        (item.report?.available ?? 0) ===
-                                                            0
-                                                    }
-                                                />
-                                            ),
-                                        },
-                                    ]}
-                                />
-                            )}
-                            {sources.length > 0 ? (
-                                <>
-                                    <Select
-                                        label="Software source"
-                                        value={selected?.value ?? ""}
-                                        onChange={setSelection}
-                                        options={options}
-                                    />
-                                    {selected && (
-                                        <div key={selected.value} className="space-y-4">
-                                            {selected.category === "toolchains" && (
-                                                <p className="mt-1 text-sm text-primary-400">
-                                                    Update shared runtimes separately.
-                                                    Version-pinned projects keep their
-                                                    existing runtime.
-                                                </p>
                                             )}
-                                            <SoftwareUpdates
-                                                source={selected.source}
-                                                category={selected.category}
-                                            />
-                                            <AutomaticUpdates
-                                                source={selected.source}
-                                                category={selected.category}
-                                            />
-                                        </div>
-                                    )}
-                                </>
-                            ) : (
-                                !query.isError && (
-                                    <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
+                                            group={(item) => {
+                                                if (
+                                                    query.isError ||
+                                                    item.stale ||
+                                                    !item.report
+                                                )
+                                                    return "Status unavailable";
+                                                if (item.report.security > 0)
+                                                    return "Security updates";
+                                                return item.report.available > 0
+                                                    ? "Updates available"
+                                                    : "Up to date";
+                                            }}
+                                            getKey={(item) => item.id}
+                                            name={(item) => item.label}
+                                            detail={(item) =>
+                                                item.report?.coveredKinds.join(" · ") ||
+                                                "Checks not reported"
+                                            }
+                                            status={(item) => (
+                                                <span className="flex flex-wrap items-center justify-end gap-2">
+                                                    {!query.isError &&
+                                                        !item.stale &&
+                                                        item.report && (
+                                                            <span className="tabular-nums">
+                                                                {item.report.available}{" "}
+                                                                available
+                                                            </span>
+                                                        )}
+                                                    {item.report &&
+                                                        !item.stale &&
+                                                        !query.isError &&
+                                                        item.report.security > 0 && (
+                                                            <Badge tone="warning">
+                                                                {item.report.security}{" "}
+                                                                security
+                                                            </Badge>
+                                                        )}
+                                                    <RestartStatus
+                                                        observation={item.restart}
+                                                        unavailable={query.isError}
+                                                    />
+                                                </span>
+                                            )}
+                                            onSelect={inspectSource}
+                                            actions={sourceAction}
+                                        />
+                                    </>
+                                )}
+                                {sources.length === 0 && !query.isError && (
+                                    <p className="text-sm text-primary-400">
                                         No update sources are configured.
                                     </p>
-                                )
-                            )}
-                        </>
-                    )}
-                    {compact && (
-                        <Link
-                            to="/updates"
-                            className={buttonStyles({
-                                variant: "secondary",
-                                className: "w-full",
-                            })}
-                        >
-                            View updates
-                        </Link>
-                    )}
-                </>
+                                )}
+                            </>
+                        )}
+                        {compact && (
+                            <Link
+                                to="/updates"
+                                className={buttonStyles({
+                                    variant: "secondary",
+                                    className: "w-full",
+                                })}
+                            >
+                                View updates
+                            </Link>
+                        )}
+                    </>
+                )}
+            </SectionPanel>
+            {!compact && (
+                <div ref={softwareHeading} tabIndex={-1} className="min-w-0 scroll-mt-18">
+                    <SectionPanel
+                        icon={PackageCheck}
+                        title="Software inventory"
+                        actions={
+                            selected && (
+                                <Select
+                                    label="Software source"
+                                    compact
+                                    icon={PackageCheck}
+                                    value={selected?.value ?? ""}
+                                    onChange={setSelection}
+                                    options={options}
+                                />
+                            )
+                        }
+                    >
+                        {selected?.category === "toolchains" && (
+                            <p className="mt-1 text-sm text-primary-400">
+                                Update shared runtimes separately. Version-pinned projects
+                                keep their existing runtime.
+                            </p>
+                        )}
+                        <SoftwareUpdates
+                            source={selected?.source}
+                            category={selected?.category ?? "software"}
+                        />
+                        {selected && (
+                            <AutomaticUpdates
+                                key={selected.value}
+                                source={selected.source}
+                                category={selected.category}
+                            />
+                        )}
+                    </SectionPanel>
+                </div>
             )}
-        </Card>
+        </div>
     );
 }

@@ -2,6 +2,8 @@ import type { BackupGroup } from "@homelab/contracts/backups";
 import type { TableSort } from "@homelab/contracts/tableSort";
 import {
     Badge,
+    DetailFacts,
+    DetailSection,
     ErrorNotice,
     formatMetric,
     LoadingState,
@@ -9,15 +11,15 @@ import {
     queryRefresh,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { Archive, Layers } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
-import { MetricStat } from "../infrastructure/MetricStat";
-import { SnapshotTable } from "./SnapshotTable";
+import { SnapshotList } from "./SnapshotList";
 
 /**
  * Inspect retained snapshot metadata with automatic bounded continuation, never archive access.
- * @returns Group metadata and a single scrollable snapshot table inside the shared modal.
+ * @returns Group metadata and a single scrollable snapshot list inside the shared modal.
  */
 export function SnapshotDetails({
     group,
@@ -55,45 +57,52 @@ export function SnapshotDetails({
             onClose={onClose}
         >
             <div className="space-y-4">
-                <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <MetricStat label="Datastore" value={group.datastore} />
-                    <MetricStat label="Namespace" value={group.namespace || "Root"} />
-                    <MetricStat label="Snapshots" value={group.snapshotCount} />
-                    <MetricStat
-                        label="Latest snapshot size"
-                        value={formatMetric(group.latestSizeBytes, "bytes")}
+                <DetailSection icon={Archive} title="Backup group">
+                    <DetailFacts
+                        items={[
+                            { label: "Datastore", value: group.datastore },
+                            { label: "Namespace", value: group.namespace || "Root" },
+                            { label: "Snapshots", value: group.snapshotCount },
+                            {
+                                label: "Latest snapshot size",
+                                value: formatMetric(group.latestSizeBytes, "bytes"),
+                                detail: "Before deduplication and compression",
+                            },
+                        ]}
                     />
-                </dl>
-                <p className="text-sm text-primary-400">
-                    Logical size before deduplication and compression.
-                </p>
-                {query.isPending && <LoadingState label="Loading snapshots…" />}
-                {query.isError && <ErrorNotice error={query.error} />}
-                {unavailable && <Badge tone="warning">Snapshot status unavailable</Badge>}
-                {rows.length > 0 ? (
-                    <SnapshotTable
-                        snapshots={rows}
-                        sort={sort}
-                        onSortChange={setSort}
-                        unavailable={unavailable}
-                        continuation={{
-                            hasMore: query.hasNextPage,
-                            loading: query.isFetching,
-                            error: query.isError ? query.error : undefined,
-                            onLoadMore: () =>
-                                void (query.isRefetchError
-                                    ? query.refetch()
-                                    : query.fetchNextPage()),
-                            loadingLabel: "Loading snapshots…",
-                        }}
-                    />
-                ) : (
-                    !query.isPending && (
-                        <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
-                            No snapshots are available for this backup group.
-                        </p>
-                    )
-                )}
+                </DetailSection>
+                <DetailSection icon={Layers} title="Snapshots">
+                    {query.isPending && <LoadingState label="Loading snapshots…" />}
+                    {query.isError && <ErrorNotice error={query.error} />}
+                    {unavailable && (
+                        <Badge tone="warning">Snapshot status unavailable</Badge>
+                    )}
+                    {rows.length > 0 ? (
+                        <SnapshotList
+                            snapshots={rows}
+                            total={group.snapshotCount}
+                            sort={sort}
+                            onSortChange={setSort}
+                            unavailable={unavailable}
+                            continuation={{
+                                hasMore: query.hasNextPage,
+                                loading: query.isFetching,
+                                error: query.isError ? query.error : undefined,
+                                onLoadMore: () =>
+                                    void (query.isRefetchError
+                                        ? query.refetch()
+                                        : query.fetchNextPage()),
+                                loadingLabel: "Loading snapshots…",
+                            }}
+                        />
+                    ) : (
+                        !query.isPending && (
+                            <p className="text-sm text-primary-400">
+                                No snapshots are available for this backup group.
+                            </p>
+                        )
+                    )}
+                </DetailSection>
             </div>
         </Modal>
     );

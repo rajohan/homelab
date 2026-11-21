@@ -1,4 +1,5 @@
-import { PageHeader } from "@homelab/ui";
+import { PageHeader, PageSections } from "@homelab/ui";
+import { Archive } from "lucide-react";
 
 import { BackupsPanel } from "../features/backups/BackupsPanel";
 import { SnapshotsPanel } from "../features/backups/SnapshotsPanel";
@@ -11,13 +12,25 @@ export function Backups() {
     return (
         <>
             <PageHeader
+                icon={Archive}
                 title="Backups"
                 description="Protection status across backup tasks and verification jobs."
             />
-            <div className="space-y-6">
-                <BackupsPanel />
-                <SnapshotsPanel />
-            </div>
+            <PageSections
+                label="Backups sections"
+                sections={[
+                    {
+                        id: "protection",
+                        label: "Protection tasks",
+                        content: <BackupsPanel />,
+                    },
+                    {
+                        id: "snapshots",
+                        label: "Backup snapshots",
+                        content: <SnapshotsPanel />,
+                    },
+                ]}
+            />
         </>
     );
 }

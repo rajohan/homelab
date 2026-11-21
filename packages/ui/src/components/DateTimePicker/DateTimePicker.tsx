@@ -25,10 +25,11 @@ export function DateTimePicker({
     return (
         <Fieldset
             legend={label}
+            className="@container/date-time"
             disabled={disabled}
             {...(error === undefined ? {} : { error })}
         >
-            <div className="grid min-w-0 grid-cols-1 items-start gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="grid min-w-0 grid-cols-1 items-start gap-4 @min-[24rem]/date-time:grid-cols-2">
                 <DatePicker
                     label="Date (DD.MM.YYYY)"
                     value={value.date}

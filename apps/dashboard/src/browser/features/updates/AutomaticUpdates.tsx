@@ -46,7 +46,7 @@ export function AutomaticUpdates({
                 />
             )}
             {query.isSuccess && targets.length === 0 && (
-                <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
+                <p className="rounded-lg border border-primary-700 bg-surface-empty p-4 text-sm text-primary-400">
                     Update installation is not configured for this source.
                 </p>
             )}

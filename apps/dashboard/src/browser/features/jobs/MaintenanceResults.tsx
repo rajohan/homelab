@@ -1,4 +1,6 @@
 import type { MaintenanceResult } from "@homelab/contracts/maintenance";
+import { DetailSection } from "@homelab/ui";
+import { BadgeCheck } from "lucide-react";
 
 /**
  * Present verified per-target receipts, including partial success in a failed host batch.
@@ -12,8 +14,7 @@ export function MaintenanceResults({
 }) {
     if (results.length === 0) return null;
     return (
-        <section className="space-y-3" aria-label="Maintenance results">
-            <h3 className="font-medium">Verified results</h3>
+        <DetailSection icon={BadgeCheck} title="Verified results">
             <p className="text-sm text-primary-400">
                 These entries completed verification. A failed or cancelled run may have
                 additional, unverified changes; inspect its last progress before retrying.
@@ -21,7 +22,7 @@ export function MaintenanceResults({
             {results.map((result, index) => (
                 <div
                     key={`${index}:${result.label}`}
-                    className="space-y-1 rounded-lg border border-primary-700 bg-primary-950/40 p-3 text-sm"
+                    className="space-y-1 border-b border-primary-700 pb-2 text-sm"
                 >
                     <p className="font-medium">{result.label}</p>
                     {result.installed && (
@@ -36,7 +37,7 @@ export function MaintenanceResults({
                     ))}
                 </div>
             ))}
-        </section>
+        </DetailSection>
     );
 }
 

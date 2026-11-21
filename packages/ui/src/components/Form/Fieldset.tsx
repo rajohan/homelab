@@ -3,6 +3,7 @@ import { type ReactNode, useId } from "react";
 
 import { cn } from "../../lib/classNames";
 import { FormFieldInvalidContext } from "../../lib/formFieldContext";
+import { fieldLabelStyles } from "./fieldLabelStyles";
 
 /**
  * Group controls under a legend with shared disabled and validation state.
@@ -36,24 +37,24 @@ export function Fieldset({
             disabled={disabled}
             aria-describedby={describedBy || undefined}
             aria-invalid={error !== undefined || undefined}
-            className={cn("m-0 min-w-0 space-y-3 border-0 p-0", className)}
+            className={cn("m-0 min-w-0 border-0 p-0", className)}
         >
-            <Legend className="text-sm font-semibold text-primary-200 data-disabled:opacity-60">
-                {legend}
-            </Legend>
-            {description && (
-                <p id={descriptionId} className="text-sm leading-6 text-primary-400">
-                    {description}
-                </p>
-            )}
-            <FormFieldInvalidContext value={error !== undefined}>
-                {children}
-            </FormFieldInvalidContext>
-            {error !== undefined && (
-                <p id={errorId} className="text-sm text-red-300">
-                    {error}
-                </p>
-            )}
+            <Legend className={fieldLabelStyles}>{legend}</Legend>
+            <div className="min-w-0 space-y-3">
+                {description && (
+                    <p id={descriptionId} className="text-sm leading-6 text-primary-400">
+                        {description}
+                    </p>
+                )}
+                <FormFieldInvalidContext value={error !== undefined}>
+                    {children}
+                </FormFieldInvalidContext>
+                {error !== undefined && (
+                    <p id={errorId} className="text-sm text-red-300">
+                        {error}
+                    </p>
+                )}
+            </div>
         </HeadlessFieldset>
     );
 }

@@ -1,21 +1,20 @@
 import {
-    Card,
-    DataTable,
+    DetailEntry,
+    DetailFacts,
     ErrorNotice,
     formatDateTime,
     formatMetric,
     LoadingState,
-    queryRefresh,
-    SearchInput,
-    SectionHeader,
+    SectionPanel,
+    SummaryStrip,
+    VirtualList,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
-import { Layers } from "lucide-react";
+import { ChevronRight, Layers } from "lucide-react";
 import { useState } from "react";
 
-import { api } from "../../api/client";
-import { MetricStat } from "../infrastructure/MetricStat";
 import { ObservationBadge } from "../operations/ObservationBadge";
+import { backupCatalogQuery } from "./backupCatalogQuery";
 import { SnapshotDetails } from "./SnapshotDetails";
 
 /**
@@ -23,112 +22,91 @@ import { SnapshotDetails } from "./SnapshotDetails";
  * @returns Logical snapshot sizes, counts and row-opened snapshot details.
  */
 export function SnapshotsPanel() {
-    const [search, setSearch] = useState("");
     const [selected, setSelected] = useState<string | null>(null);
-    const query = useQuery({
-        queryKey: ["operations", "backup-catalog"],
-        queryFn: ({ signal }) => api.backups.catalog.query(undefined, { signal }),
-        ...queryRefresh("normal"),
-        retry: false,
-    });
+    const query = useQuery(backupCatalogQuery);
     const data = query.data;
     const stale = !data?.configured || query.isError || (data?.stale ?? true);
     const groups = data?.inventory?.groups ?? [];
     const group = groups.find((row) => row.id === selected);
-    const rows = groups.filter((row) =>
-        `${row.name} ${row.datastore} ${row.namespace}`
-            .toLowerCase()
-            .includes(search.toLowerCase())
-    );
     return (
-        <Card className="space-y-4">
-            <SectionHeader
-                title="Backup snapshots"
-                description="Retained backups and their logical sizes."
-                icon={Layers}
-                actions={
-                    <ObservationBadge
-                        configured={data?.configured ?? true}
-                        available={Boolean(data?.inventory)}
-                        stale={stale}
-                    />
-                }
-            />
+        <SectionPanel
+            title="Backup snapshots"
+            description="Retained backups and their logical sizes."
+            icon={Layers}
+            badge={
+                <ObservationBadge
+                    configured={data?.configured ?? true}
+                    available={Boolean(data?.inventory)}
+                    stale={stale}
+                />
+            }
+        >
             {query.isPending && <LoadingState label="Loading backup snapshots…" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {data?.inventory && (
-                <dl className="grid grid-cols-2 gap-3">
-                    <MetricStat label="Backup groups" value={groups.length} />
-                    <MetricStat
-                        label="Snapshots"
-                        value={groups.reduce(
-                            (total, row) => total + row.snapshotCount,
-                            0
-                        )}
-                    />
-                </dl>
-            )}
-            <SearchInput
-                label="Search snapshot groups"
-                clearLabel="Clear snapshot search"
-                placeholder="Find a backup group or datastore…"
-                value={search}
-                onChange={setSearch}
-            />
-            {rows.length > 0 ? (
-                <DataTable
-                    label="Backup groups"
-                    compact
-                    rows={rows}
-                    getKey={(row) => row.id}
-                    rowAction={{
-                        label: (row) => `Inspect snapshots for ${row.name}`,
-                        onSelect: (row) => setSelected(row.id),
-                    }}
-                    columns={[
+                <SummaryStrip
+                    label="Retained backup inventory"
+                    items={[
+                        { label: "Backup groups", value: groups.length },
                         {
-                            id: "name",
-                            sortValue: (row) => row.name,
-                            label: "Backup group",
-                            mobile: "title",
-                            render: (row) => row.name,
-                        },
-                        {
-                            id: "datastore",
-                            sortValue: (row) => `${row.datastore} ${row.namespace}`,
-                            label: "Datastore",
-                            render: (row) =>
-                                row.namespace
-                                    ? `${row.datastore} / ${row.namespace}`
-                                    : row.datastore,
-                        },
-                        {
-                            id: "count",
-                            sortValue: (row) => row.snapshotCount,
                             label: "Snapshots",
-                            render: (row) => row.snapshotCount,
-                        },
-                        {
-                            id: "size",
-                            sortValue: (row) => row.latestSizeBytes,
-                            label: "Latest logical size",
-                            render: (row) => formatMetric(row.latestSizeBytes, "bytes"),
-                        },
-                        {
-                            id: "latest",
-                            sortValue: (row) => row.latestAt,
-                            label: "Latest snapshot",
-                            mobile: "wide",
-                            render: (row) => formatDateTime(row.latestAt),
+                            value: groups.reduce(
+                                (total, row) => total + row.snapshotCount,
+                                0
+                            ),
                         },
                     ]}
                 />
+            )}
+            {groups.length > 0 ? (
+                <VirtualList
+                    label="Backup groups"
+                    rows={groups.toSorted((a, b) =>
+                        a.name.localeCompare(b.name, undefined, { numeric: true })
+                    )}
+                    getKey={(row) => row.id}
+                    className="@container/entries"
+                    itemClassName="border-b border-primary-700/70 py-3"
+                    renderItem={(row) => (
+                        <DetailEntry
+                            name={
+                                <button
+                                    type="button"
+                                    className="inline-flex min-h-10 items-center gap-2 rounded text-left font-semibold hover:text-accent-300 focus-visible:outline-2 focus-visible:outline-accent-300"
+                                    aria-label={`Inspect snapshots for ${row.name}`}
+                                    onClick={() => setSelected(row.id)}
+                                >
+                                    {row.name}
+                                    <ChevronRight size={14} aria-hidden="true" />
+                                </button>
+                            }
+                            description={[row.datastore, row.namespace]
+                                .filter(Boolean)
+                                .join(" / ")}
+                        >
+                            <DetailFacts
+                                items={[
+                                    { label: "Snapshots", value: row.snapshotCount },
+                                    {
+                                        label: "Latest logical size",
+                                        value: formatMetric(row.latestSizeBytes, "bytes"),
+                                    },
+                                    {
+                                        label: "Latest snapshot",
+                                        value: formatDateTime(row.latestAt),
+                                    },
+                                ]}
+                            />
+                        </DetailEntry>
+                    )}
+                />
             ) : (
-                <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
-                    {search
-                        ? "No matching backup groups."
-                        : "No snapshot inventory is available."}
-                </p>
+                !query.isPending &&
+                !query.isError && (
+                    <p className="rounded-lg border border-primary-700 bg-surface-empty p-4 text-sm text-primary-400">
+                        No snapshot inventory is available.
+                    </p>
+                )
             )}
             {group && (
                 <SnapshotDetails
@@ -137,6 +115,6 @@ export function SnapshotsPanel() {
                     onClose={() => setSelected(null)}
                 />
             )}
-        </Card>
+        </SectionPanel>
     );
 }

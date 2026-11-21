@@ -1,6 +1,13 @@
 import { type HistoryRange, historyRanges } from "@homelab/contracts/infrastructure";
-import { ErrorNotice, LoadingState, queryRefresh, Select } from "@homelab/ui";
+import {
+    DetailSection,
+    ErrorNotice,
+    LoadingState,
+    queryRefresh,
+    TimeRangeSelect,
+} from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
+import { ChartNoAxesCombined } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
@@ -12,8 +19,10 @@ import { ResourceHistoryCharts } from "./ResourceHistoryCharts";
  */
 export function ApplicationHistory({
     id,
+    anchor,
     name,
 }: {
+    readonly anchor: string;
     readonly id: string;
     readonly name: string;
 }) {
@@ -27,16 +36,18 @@ export function ApplicationHistory({
         retry: false,
     });
     return (
-        <div className="space-y-4">
-            <Select
-                label="Time range"
-                value={range}
-                onChange={setRange}
-                options={historyRanges.map((value) => ({
-                    value,
-                    label: `Last ${value}`,
-                }))}
-            />
+        <DetailSection
+            anchor={anchor}
+            icon={ChartNoAxesCombined}
+            title="Resource history"
+            actions={
+                <TimeRangeSelect
+                    ranges={historyRanges}
+                    value={range}
+                    onChange={setRange}
+                />
+            }
+        >
             {query.isPending && <LoadingState label="Loading application history…" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {query.data && (
@@ -46,6 +57,6 @@ export function ApplicationHistory({
                     diskLabel="Block I/O"
                 />
             )}
-        </div>
+        </DetailSection>
     );
 }

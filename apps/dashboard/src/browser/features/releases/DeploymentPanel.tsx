@@ -60,7 +60,7 @@ export function DeploymentPanel() {
             {query.data?.targets.map((target) => (
                 <div
                     key={target.id}
-                    className="@container/deployment space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm"
+                    className="@container/deployment space-y-3 rounded-lg border border-primary-700 bg-surface-card p-4 text-sm"
                 >
                     <div className="grid items-center gap-3 @min-[40rem]/deployment:grid-cols-[minmax(0,1fr)_auto]">
                         <SectionHeader
@@ -83,7 +83,7 @@ export function DeploymentPanel() {
                 </div>
             ))}
             {run && (
-                <output className="block space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm">
+                <output className="block space-y-3 rounded-lg border border-primary-700 bg-surface-card p-4 text-sm">
                     <SectionHeader
                         icon={Rocket}
                         title={`Release ${run.version}`}

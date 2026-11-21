@@ -2,11 +2,10 @@ import type { MiraSwitch } from "@homelab/contracts/mira";
 import {
     Badge,
     Button,
-    Card,
     ErrorNotice,
     formatDateTime,
     LoadingState,
-    SectionHeader,
+    SectionPanel,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Globe } from "lucide-react";
@@ -40,36 +39,33 @@ export function MiraBrowserControl() {
     const control = controls.data?.find((entry) => entry.key === "computer:browser");
     const error = controls.error ?? enable.error;
     return (
-        <Card className="space-y-4">
-            <SectionHeader
-                title="Browser"
-                icon={Globe}
-                description="Mira opens the server browser for your requests and closes it when finished."
-                badge={
-                    control && (
-                        <Badge tone={control.enabled ? "positive" : "neutral"}>
-                            {control.enabled ? "Enabled" : "Paused"}
-                        </Badge>
-                    )
-                }
-                actions={
-                    control && (
-                        <Button
-                            variant="secondary"
-                            className="w-full min-[30rem]:w-auto"
-                            disabled={Boolean(controls.error)}
-                            busy={enable.isPending}
-                            onClick={() =>
-                                control.enabled
-                                    ? setPaused(control)
-                                    : enable.mutate(control)
-                            }
-                        >
-                            {control.enabled ? "Pause Browser" : "Enable Browser"}
-                        </Button>
-                    )
-                }
-            />
+        <SectionPanel
+            title="Browser"
+            icon={Globe}
+            description="Mira opens the server browser for your requests and closes it when finished."
+            badge={
+                control && (
+                    <Badge tone={control.enabled ? "positive" : "neutral"}>
+                        {control.enabled ? "Enabled" : "Paused"}
+                    </Badge>
+                )
+            }
+            actions={
+                control && (
+                    <Button
+                        variant="secondary"
+                        className="w-full min-[30rem]:w-auto"
+                        disabled={Boolean(controls.error)}
+                        busy={enable.isPending}
+                        onClick={() =>
+                            control.enabled ? setPaused(control) : enable.mutate(control)
+                        }
+                    >
+                        {control.enabled ? "Pause Browser" : "Enable Browser"}
+                    </Button>
+                )
+            }
+        >
             {controls.isPending && <LoadingState label="Loading browser control…" />}
             {error && <ErrorNotice error={error} />}
             {control && !control.enabled && control.reason && (
@@ -87,6 +83,6 @@ export function MiraBrowserControl() {
                     onClose={() => setPaused(undefined)}
                 />
             )}
-        </Card>
+        </SectionPanel>
     );
 }

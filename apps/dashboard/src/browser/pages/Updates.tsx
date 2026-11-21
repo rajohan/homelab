@@ -1,4 +1,5 @@
-import { PageHeader } from "@homelab/ui";
+import { PageHeader, PageSections } from "@homelab/ui";
+import { PackageCheck } from "lucide-react";
 
 import { MaintenancePanel } from "../features/maintenance/MaintenancePanel";
 import { BuildDependencies } from "../features/releases/BuildDependencies";
@@ -13,15 +14,28 @@ export function Updates() {
     return (
         <>
             <PageHeader
+                icon={PackageCheck}
                 title="Updates"
                 description="Installed software, available versions and check coverage."
             />
-            <div className="space-y-6">
-                <UpdatesPanel />
-                <MaintenancePanel />
-                <ReleasesPanel />
-                <BuildDependencies />
-            </div>
+            <PageSections
+                deferBelowFold
+                label="Updates sections"
+                sections={[
+                    { id: "software", label: "Software", content: <UpdatesPanel /> },
+                    {
+                        id: "maintenance",
+                        label: "Maintenance",
+                        content: <MaintenancePanel />,
+                    },
+                    { id: "releases", label: "Releases", content: <ReleasesPanel /> },
+                    {
+                        id: "dependencies",
+                        label: "Build dependencies",
+                        content: <BuildDependencies />,
+                    },
+                ]}
+            />
         </>
     );
 }

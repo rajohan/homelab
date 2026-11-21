@@ -20,7 +20,13 @@ export interface DataColumn<T> {
     readonly label: string;
     readonly render: (row: T) => ReactNode;
     readonly sortValue?: (row: T) => TableSortValue;
-    readonly mobile?: "title" | "wide" | "actions" | "footer-actions" | "hidden";
+    readonly mobile?:
+        | "title"
+        | "status"
+        | "wide"
+        | "actions"
+        | "footer-actions"
+        | "hidden";
     readonly hideLabel?: boolean;
     readonly width?: string;
 }
@@ -86,7 +92,7 @@ export function DataTable<T>({
                 tabIndex={0}
                 aria-label={label}
                 className={cn(
-                    "isolate max-h-[min(32.5rem,60dvh)] scrollbar-gutter-stable overflow-auto rounded-lg border border-primary-700 focus-visible:outline-2 focus-visible:outline-accent-500",
+                    "isolate max-h-[min(32.5rem,60dvh)] scrollbar-gutter-stable overflow-auto rounded-lg border border-primary-700 bg-surface-card focus-visible:outline-2 focus-visible:outline-accent-500",
                     className
                 )}
             >
@@ -101,9 +107,9 @@ export function DataTable<T>({
                     {({ items, totalSize, measureElement }) => (
                         <table
                             aria-label={label}
-                            className="w-full table-fixed border-separate border-spacing-0 bg-primary-950/40 text-sm @max-[48rem]:block"
+                            className="w-full table-fixed border-separate border-spacing-0 text-sm tabular-nums @max-[48rem]:block"
                         >
-                            <thead className="sticky top-0 z-10 bg-primary-900 text-left text-xs text-primary-400 @max-[48rem]:sr-only">
+                            <thead className="sticky top-0 z-10 bg-surface-heading text-left text-xs text-primary-400 @max-[48rem]:sr-only">
                                 <tr>
                                     {columns.map((column) => (
                                         <th
