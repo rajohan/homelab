@@ -1,22 +1,32 @@
 import type { MiraAutomation, MiraSwitch } from "@homelab/contracts/mira";
 import { describeSchedule } from "@homelab/contracts/operations";
 import {
-    ActionGroup,
     Badge,
     Button,
-    Card,
+    CatalogRow,
     ConfirmDialog,
+    DetailFacts,
     DropdownMenu,
     ErrorNotice,
     formatDateTime,
     InfiniteScrollTrigger,
     LoadingState,
     PageHeader,
-    SectionHeader,
+    PageSections,
+    SectionPanel,
 } from "@homelab/ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Clock, Code2, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import {
+    CalendarClock,
+    Clock,
+    Code2,
+    Pause,
+    Pencil,
+    Play,
+    Plus,
+    Trash2,
+} from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../api/client";
@@ -79,213 +89,290 @@ export function MiraAutomations() {
     return (
         <div className="@container/automations space-y-4">
             <PageHeader
+                icon={Clock}
                 title="Automations"
-                description="Schedule work, manage heartbeat and pause automatic activity with a reason."
+                accessory={
+                    global &&
+                    !global.enabled && <Badge tone="neutral">Automatic work paused</Badge>
+                }
+                description={
+                    global && !global.enabled
+                        ? [
+                              global.reason,
+                              global.until && `Resumes ${formatDateTime(global.until)}`,
+                          ]
+                              .filter(Boolean)
+                              .join(" · ")
+                        : undefined
+                }
                 actions={
-                    <Button onClick={() => setEditing("new")}>
-                        <Plus size={16} aria-hidden="true" />
-                        New automation
-                    </Button>
+                    global && (
+                        <Button
+                            variant="secondary"
+                            busy={
+                                enable.isPending && enable.variables?.key === "autonomy"
+                            }
+                            onClick={() =>
+                                global.enabled
+                                    ? setPaused({
+                                          control: global,
+                                          title: "automatic work",
+                                      })
+                                    : enable.mutate(global)
+                            }
+                        >
+                            {global.enabled ? (
+                                <Pause size={15} aria-hidden="true" />
+                            ) : (
+                                <Play size={15} aria-hidden="true" />
+                            )}
+                            {global.enabled
+                                ? "Pause automatic work"
+                                : "Resume automatic work"}
+                        </Button>
+                    )
                 }
             />
-            <Card className="@container/automations space-y-4">
-                <SectionHeader
-                    title="Automatic work"
-                    icon={Clock}
-                    badge={
-                        <Badge tone={global?.enabled ? "positive" : "neutral"}>
-                            {global?.enabled ? "Enabled" : "Paused"}
-                        </Badge>
-                    }
-                    actions={
-                        global && (
-                            <Button
-                                variant="secondary"
-                                className="w-full min-[30rem]:w-auto"
-                                busy={
-                                    enable.isPending &&
-                                    enable.variables?.key === "autonomy"
-                                }
-                                onClick={() =>
-                                    global.enabled
-                                        ? setPaused({
-                                              control: global,
-                                              title: "automatic work",
-                                          })
-                                        : enable.mutate(global)
+            {error && <ErrorNotice error={error} />}
+            <PageSections
+                deferBelowFold
+                label="Automation sections"
+                sections={[
+                    {
+                        id: "schedules",
+                        width: rows.length === 0 ? "half" : "full",
+                        label: "Schedules",
+                        content: (
+                            <SectionPanel
+                                title="Schedules"
+                                icon={CalendarClock}
+                                actions={
+                                    <Button onClick={() => setEditing("new")}>
+                                        <Plus size={16} aria-hidden="true" />
+                                        New automation
+                                    </Button>
                                 }
                             >
-                                {global.enabled
-                                    ? "Pause automatic work"
-                                    : "Resume automatic work"}
-                            </Button>
-                        )
-                    }
-                />
-                {global && !global.enabled && (
-                    <p className="text-sm text-primary-300">
-                        {global.reason}
-                        {global.until ? ` · Resumes ${formatDateTime(global.until)}` : ""}
-                    </p>
-                )}
-                {error && <ErrorNotice error={error} />}
-            </Card>
-            {query.isPending && (
-                <Card>
-                    <LoadingState label="Loading automations…" />
-                </Card>
-            )}
-            {!query.isPending && rows.length === 0 && (
-                <Card className="@container/automations space-y-4">
-                    <p className="text-sm text-primary-300">
-                        Restore the morning brief, evening summary, dashboard improvement
-                        and heartbeat definitions. They start paused so you can review
-                        them.
-                    </p>
-                    <ActionGroup>
-                        <Button
-                            busy={presets.isPending}
-                            onClick={() => presets.mutate(undefined)}
-                        >
-                            Add Mira schedules
-                        </Button>
-                    </ActionGroup>
-                </Card>
-            )}
-            <div className="grid gap-4 @min-[64rem]/automations:grid-cols-2">
-                {rows.map((automation) => {
-                    const control = controls.data?.find(
-                        (item) => item.key === `automation:${automation.id}`
-                    );
-                    let cadence: string;
-                    if (automation.schedule.kind === "once")
-                        cadence = `Once · ${formatDateTime(automation.schedule.at)}`;
-                    else if (automation.schedule.kind === "event")
-                        cadence = `Event · ${automation.schedule.event.replaceAll("_", " ")}`;
-                    else cadence = describeSchedule(automation.schedule);
-                    return (
-                        <Card
-                            key={automation.id}
-                            className="@container/automations space-y-4"
-                        >
-                            <SectionHeader
-                                title={automation.title}
-                                icon={Clock}
-                                compactActions
-                                actions={
-                                    <DropdownMenu
-                                        label={`Actions for ${automation.title}`}
-                                        actions={[
-                                            {
-                                                id: "edit",
-                                                label: "Edit",
-                                                icon: Pencil,
-                                                onSelect: () => setEditing(automation),
-                                            },
-                                            ...(automation.kind === "improvement"
-                                                ? [
-                                                      {
-                                                          id: "coding",
-                                                          label: "Code permissions",
-                                                          icon: Code2,
-                                                          onSelect: () =>
-                                                              setCoding(automation),
-                                                      },
-                                                  ]
-                                                : []),
-                                            ...(control
-                                                ? [
-                                                      {
-                                                          id: "enabled",
-                                                          label: control.enabled
-                                                              ? "Pause"
-                                                              : "Enable",
-                                                          icon: control.enabled
-                                                              ? Pause
-                                                              : Play,
-                                                          disabled: enable.isPending,
-                                                          onSelect: () =>
-                                                              control.enabled
-                                                                  ? setPaused({
-                                                                        control,
-                                                                        title: automation.title,
+                                {query.isPending && (
+                                    <LoadingState label="Loading automations…" />
+                                )}
+                                {query.isSuccess && rows.length === 0 && (
+                                    <div className="flex flex-wrap items-center justify-between gap-4 py-1">
+                                        <div className="max-w-xl min-w-0">
+                                            <h3 className="text-base font-semibold">
+                                                No schedules yet
+                                            </h3>
+                                            <p className="mt-1 text-sm leading-relaxed text-primary-400">
+                                                Start with a morning brief, evening
+                                                summary, dashboard improvement and
+                                                heartbeat. All four start paused.
+                                            </p>
+                                        </div>
+                                        <Button
+                                            variant="secondary"
+                                            busy={presets.isPending}
+                                            onClick={() => presets.mutate(undefined)}
+                                        >
+                                            Add Mira schedules
+                                        </Button>
+                                    </div>
+                                )}
+                                {rows.length > 0 && (
+                                    <ul className="divide-y divide-primary-700/70">
+                                        {rows.map((automation) => {
+                                            const control = controls.data?.find(
+                                                (item) =>
+                                                    item.key ===
+                                                    `automation:${automation.id}`
+                                            );
+                                            let cadence: string;
+                                            if (automation.schedule.kind === "once")
+                                                cadence = `Once · ${formatDateTime(automation.schedule.at)}`;
+                                            else if (automation.schedule.kind === "event")
+                                                cadence = `Event · ${automation.schedule.event.replaceAll("_", " ")}`;
+                                            else
+                                                cadence = describeSchedule(
+                                                    automation.schedule
+                                                );
+                                            return (
+                                                <CatalogRow
+                                                    key={automation.id}
+                                                    icon={Clock}
+                                                    title={automation.title}
+                                                    status={
+                                                        control && (
+                                                            <Badge
+                                                                tone={
+                                                                    control.enabled
+                                                                        ? "positive"
+                                                                        : "neutral"
+                                                                }
+                                                            >
+                                                                {control.enabled
+                                                                    ? "Enabled"
+                                                                    : "Paused"}
+                                                            </Badge>
+                                                        )
+                                                    }
+                                                    description={
+                                                        <span className="line-clamp-3">
+                                                            {automation.prompt}
+                                                        </span>
+                                                    }
+                                                    actions={
+                                                        <>
+                                                            <RunAutomationButton
+                                                                id={automation.id}
+                                                                onStarted={(
+                                                                    conversationId
+                                                                ) =>
+                                                                    void navigate({
+                                                                        to: "/mira/$conversationId",
+                                                                        params: {
+                                                                            conversationId,
+                                                                        },
                                                                     })
-                                                                  : enable.mutate(
-                                                                        control
-                                                                    ),
-                                                      },
-                                                  ]
-                                                : []),
-                                            {
-                                                id: "delete",
-                                                label: "Delete",
-                                                icon: Trash2,
-                                                danger: true,
-                                                onSelect: () => setDeleting(automation),
-                                            },
-                                        ]}
-                                    />
-                                }
-                                badge={
-                                    <Badge
-                                        tone={control?.enabled ? "positive" : "neutral"}
-                                    >
-                                        {control?.enabled ? "Enabled" : "Paused"}
-                                    </Badge>
-                                }
-                            />
-                            <p className="line-clamp-3 text-sm leading-6 text-primary-300">
-                                {automation.prompt}
-                            </p>
-                            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm [&_dt]:text-primary-400">
-                                <dt>Schedule</dt>
-                                <dd>{cadence}</dd>
-                                <dt>Next run</dt>
-                                <dd>
-                                    {control?.enabled &&
-                                    global?.enabled &&
-                                    automation.nextRunAt
-                                        ? formatDateTime(automation.nextRunAt)
-                                        : "Not scheduled"}
-                                </dd>
-                                <dt>Run limit</dt>
-                                <dd>{automation.budgetSeconds / 60} minutes</dd>
-                            </dl>
-                            {control && !control.enabled && (
-                                <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-3 text-sm text-primary-300">
-                                    {control.reason}
-                                    {control.until
-                                        ? ` · Resumes ${formatDateTime(control.until)}`
-                                        : ""}
-                                </p>
-                            )}
-                            <RunAutomationButton
-                                id={automation.id}
-                                onStarted={(conversationId) => {
-                                    void navigate({
-                                        to: "/mira/$conversationId",
-                                        params: { conversationId },
-                                    });
-                                }}
-                            />
-                        </Card>
-                    );
-                })}
-            </div>
-            <InfiniteScrollTrigger
-                itemCount={query.data?.pages.length ?? 0}
-                hasMore={query.hasNextPage}
-                loading={query.isFetchingNextPage}
-                refreshing={query.isRefetching}
-                error={query.isError ? query.error : undefined}
-                onLoadMore={() =>
-                    void (query.isRefetchError ? query.refetch() : query.fetchNextPage())
-                }
+                                                                }
+                                                            />
+                                                            <DropdownMenu
+                                                                label={`Actions for ${automation.title}`}
+                                                                actions={[
+                                                                    {
+                                                                        id: "edit",
+                                                                        label: "Edit",
+                                                                        icon: Pencil,
+                                                                        onSelect: () =>
+                                                                            setEditing(
+                                                                                automation
+                                                                            ),
+                                                                    },
+                                                                    ...(automation.kind ===
+                                                                    "improvement"
+                                                                        ? [
+                                                                              {
+                                                                                  id: "coding",
+                                                                                  label: "Code permissions",
+                                                                                  icon: Code2,
+                                                                                  onSelect:
+                                                                                      () =>
+                                                                                          setCoding(
+                                                                                              automation
+                                                                                          ),
+                                                                              },
+                                                                          ]
+                                                                        : []),
+                                                                    ...(control
+                                                                        ? [
+                                                                              {
+                                                                                  id: "enabled",
+                                                                                  label: control.enabled
+                                                                                      ? "Pause"
+                                                                                      : "Enable",
+                                                                                  icon: control.enabled
+                                                                                      ? Pause
+                                                                                      : Play,
+                                                                                  disabled:
+                                                                                      enable.isPending,
+                                                                                  onSelect:
+                                                                                      () =>
+                                                                                          control.enabled
+                                                                                              ? setPaused(
+                                                                                                    {
+                                                                                                        control,
+                                                                                                        title: automation.title,
+                                                                                                    }
+                                                                                                )
+                                                                                              : enable.mutate(
+                                                                                                    control
+                                                                                                ),
+                                                                              },
+                                                                          ]
+                                                                        : []),
+                                                                    {
+                                                                        id: "delete",
+                                                                        label: "Delete",
+                                                                        icon: Trash2,
+                                                                        danger: true,
+                                                                        onSelect: () =>
+                                                                            setDeleting(
+                                                                                automation
+                                                                            ),
+                                                                    },
+                                                                ]}
+                                                            />
+                                                        </>
+                                                    }
+                                                >
+                                                    <DetailFacts
+                                                        inline
+                                                        items={[
+                                                            {
+                                                                label: "Schedule",
+                                                                value: cadence,
+                                                            },
+                                                            {
+                                                                label: "Next run",
+                                                                value:
+                                                                    control?.enabled &&
+                                                                    global?.enabled &&
+                                                                    automation.nextRunAt
+                                                                        ? formatDateTime(
+                                                                              automation.nextRunAt
+                                                                          )
+                                                                        : "Not scheduled",
+                                                            },
+                                                            {
+                                                                label: "Run limit",
+                                                                value: `${automation.budgetSeconds / 60} min`,
+                                                            },
+                                                        ]}
+                                                    />
+                                                    {control && !control.enabled && (
+                                                        <p className="text-xs text-primary-400">
+                                                            {[
+                                                                control.reason,
+                                                                control.until &&
+                                                                    `Resumes ${formatDateTime(control.until)}`,
+                                                            ]
+                                                                .filter(Boolean)
+                                                                .join(" · ")}
+                                                        </p>
+                                                    )}
+                                                </CatalogRow>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+                                <InfiniteScrollTrigger
+                                    itemCount={query.data?.pages.length ?? 0}
+                                    hasMore={query.hasNextPage}
+                                    loading={query.isFetchingNextPage}
+                                    refreshing={query.isRefetching}
+                                    error={query.isError ? query.error : undefined}
+                                    onLoadMore={() =>
+                                        void (query.isRefetchError
+                                            ? query.refetch()
+                                            : query.fetchNextPage())
+                                    }
+                                />
+                            </SectionPanel>
+                        ),
+                    },
+                    {
+                        id: "automation-history",
+                        width: rows.length === 0 ? "half" : "full",
+                        label: "Run history",
+                        content: <MiraRunHistory title="Run history" />,
+                    },
+                    {
+                        id: "integrations",
+                        label: "Integrations",
+                        content: <MiraIntegrations />,
+                    },
+                    { id: "browser", label: "Browser", content: <MiraBrowserControl /> },
+                    { id: "skills", label: "Skills", content: <MiraSkills /> },
+                ]}
             />
-            <MiraIntegrations />
-            <MiraBrowserControl />
-            <MiraSkills />
-            <MiraRunHistory />
             {editing && (
                 <AutomationEditor
                     agentMailAvailable

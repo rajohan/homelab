@@ -49,6 +49,7 @@ export function ApplicationActions({
         <>
             <DropdownMenu
                 label={`Actions for ${name}`}
+                triggerText={selection.kind === "project" ? "Project actions" : undefined}
                 disabled={
                     disabled || !revision || request.isPending || available.length === 0
                 }

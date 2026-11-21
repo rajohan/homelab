@@ -48,7 +48,7 @@ export function MailReview({
             size="wide"
         >
             <div className="space-y-4">
-                <Card className="space-y-4 bg-primary-900/40">
+                <Card className="space-y-4">
                     <SectionHeader
                         title={draft.content.subject}
                         icon={Mail}
@@ -149,7 +149,7 @@ export function MailReview({
                         "queued_verification",
                     ].includes(draft.state) && (
                         <Button
-                            variant="secondary"
+                            variant="danger"
                             busy={cancel.isPending}
                             disabled={approve.isPending}
                             onClick={() =>

@@ -588,9 +588,14 @@ export const miraRouter = trpc.router({
                 execute(ctx, (mira) => listConversations(mira, input))
             ),
         create: trpc.procedure
-            .input(miraConversationInputSchema)
+            .input(
+                v.strictObject({
+                    ...miraConversationInputSchema.entries,
+                    id: v.optional(idSchema),
+                })
+            )
             .mutation(({ ctx, input }) =>
-                execute(ctx, (mira) => createConversation(mira, input.title))
+                execute(ctx, (mira) => createConversation(mira, input.title, input.id))
             ),
         read: trpc.procedure
             .input(miraConversationReadSchema)

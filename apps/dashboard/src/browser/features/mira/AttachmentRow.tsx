@@ -21,7 +21,7 @@ export function AttachmentRow({
     const presentation = describeFile(file);
     const Icon = fileTypeIcons[presentation.kind];
     return (
-        <li className="flex min-w-0 items-center gap-1 rounded-lg border border-primary-700 bg-primary-800 p-1">
+        <li className="flex min-w-0 items-center gap-1 rounded-lg border border-primary-700 bg-surface-card p-1">
             <Button
                 variant="ghost"
                 className="min-w-0 flex-1 justify-start gap-2 px-2 text-left"

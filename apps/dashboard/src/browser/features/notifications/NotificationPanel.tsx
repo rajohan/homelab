@@ -4,14 +4,18 @@ import type {
     NotificationSeverity,
 } from "@homelab/contracts/notifications";
 import {
+    ActivityPanel,
     Button,
     ConfirmDialog,
+    EmptyState,
     ErrorNotice,
     LoadingState,
     Select,
+    SummaryStrip,
     VirtualList,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { Bell } from "lucide-react";
 import { useState } from "react";
 
 import { NotificationItem } from "./NotificationItem";
@@ -22,7 +26,7 @@ import { useNotificationActions } from "./useNotificationActions";
  * Browse and acknowledge a bounded notification inbox with server-side filters.
  * @returns Virtualized infinite history and explicit confirmation for clearing read items.
  */
-export function NotificationPanel() {
+export function NotificationPanel({ onClose }: { readonly onClose: () => void }) {
     const [state, setState] = useState<NotificationFilter["state"]>("all");
     const [severity, setSeverity] = useState<NotificationSeverity | "all">("all");
     const [clear, setClear] = useState<NotificationBulkInput>();
@@ -41,61 +45,64 @@ export function NotificationPanel() {
     const input = latest?.through
         ? { through: latest.through, ...(severity === "all" ? {} : { severity }) }
         : undefined;
+    const countStatus = query.isError
+        ? "Counts unavailable"
+        : "Loading notification counts…";
     return (
-        <section aria-label="Notification inbox" className="flex min-h-0 flex-col gap-4">
-            <div>
-                <h2 className="text-lg font-semibold">Notifications</h2>
-                <p className="mt-1 text-sm text-primary-400">
-                    {latest
-                        ? `${latest.unreadCount} unread · ${latest.readCount} read`
-                        : "Loading notification counts…"}
-                </p>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-                <Select
-                    label="Notification read state"
-                    value={state}
-                    onChange={setState}
-                    options={[
-                        { value: "all", label: "All notifications" },
-                        { value: "unread", label: "Unread" },
-                        { value: "read", label: "Read" },
-                    ]}
-                />
-                <Select
-                    label="Notification severity"
-                    value={severity}
-                    onChange={setSeverity}
-                    options={[
-                        { value: "all", label: "All severities" },
-                        { value: "info", label: "Info" },
-                        { value: "success", label: "Success" },
-                        { value: "warning", label: "Warning" },
-                        { value: "error", label: "Error" },
-                    ]}
-                />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-                <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={actions.pending || !input || !latest?.unreadCount}
-                    onClick={() => {
-                        if (input) actions.bulk.mutate({ ...input, action: "read" });
-                    }}
-                >
-                    Mark all read
-                </Button>
-                <Button
-                    variant="secondary"
-                    size="sm"
-                    disabled={actions.pending || !input || !latest?.readCount}
-                    onClick={() => {
-                        if (input) setClear({ ...input, action: "dismissRead" });
-                    }}
-                >
-                    Clear read
-                </Button>
+        <ActivityPanel
+            title="Notifications"
+            icon={Bell}
+            onClose={onClose}
+            summary={latest ? undefined : countStatus}
+        >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-[min(100%,13rem)] flex-1">
+                    <SummaryStrip
+                        label="Notification read state"
+                        items={(
+                            [
+                                {
+                                    state: "all",
+                                    label: "All",
+                                    count:
+                                        latest && latest.unreadCount + latest.readCount,
+                                },
+                                {
+                                    state: "unread",
+                                    label: "Unread",
+                                    count: latest?.unreadCount,
+                                },
+                                {
+                                    state: "read",
+                                    label: "Read",
+                                    count: latest?.readCount,
+                                },
+                            ] as const
+                        ).map((item) => ({
+                            label: item.label,
+                            value: item.count ?? "—",
+                            toggle: {
+                                label: `Show ${item.state} notifications`,
+                                pressed: state === item.state,
+                                onClick: () => setState(item.state),
+                            },
+                        }))}
+                    />
+                </div>
+                <div className="flex min-w-0 items-center gap-2">
+                    <Select
+                        label="Notification severity"
+                        value={severity}
+                        onChange={setSeverity}
+                        options={[
+                            { value: "all", label: "All severities" },
+                            { value: "info", label: "Info" },
+                            { value: "success", label: "Success" },
+                            { value: "warning", label: "Warning" },
+                            { value: "error", label: "Error" },
+                        ]}
+                    />
+                </div>
             </div>
             {!clear && (actions.acknowledge.error || actions.bulk.error) && (
                 <ErrorNotice error={actions.acknowledge.error ?? actions.bulk.error} />
@@ -103,13 +110,12 @@ export function NotificationPanel() {
             {query.isPending && <LoadingState label="Loading notifications…" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {!query.isPending && !query.isError && rows.length === 0 && (
-                <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
-                    No matching notifications.
-                </p>
+                <EmptyState compact icon={Bell} title="No matching notifications." />
             )}
             {rows.length > 0 && (
                 <VirtualList
-                    label="Notifications"
+                    label="Notification history"
+                    itemClassName="pb-0"
                     scrollbarGap
                     rows={rows}
                     getKey={(row) => row.id}
@@ -135,6 +141,28 @@ export function NotificationPanel() {
                     }}
                 />
             )}
+            <div className="flex flex-wrap items-center justify-end gap-1 border-t border-primary-700 pt-2">
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={actions.pending || !input || !latest?.unreadCount}
+                    onClick={() => {
+                        if (input) actions.bulk.mutate({ ...input, action: "read" });
+                    }}
+                >
+                    Mark all read
+                </Button>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={actions.pending || !input || !latest?.readCount}
+                    onClick={() => {
+                        if (input) setClear({ ...input, action: "dismissRead" });
+                    }}
+                >
+                    Clear read
+                </Button>
+            </div>
             {clear && (
                 <ConfirmDialog
                     title="Clear read notifications?"
@@ -147,6 +175,6 @@ export function NotificationPanel() {
                     }}
                 />
             )}
-        </section>
+        </ActivityPanel>
     );
 }

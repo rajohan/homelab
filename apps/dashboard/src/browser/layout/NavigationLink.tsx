@@ -37,7 +37,7 @@ export function NavigationLink({
             onClick={onNavigate}
             activeOptions={{ exact: to === "/" }}
             activeProps={{ "aria-current": "page" }}
-            className="flex min-h-11 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-primary-300 transition-colors hover:bg-primary-800 hover:text-primary-50 focus-visible:ring-2 focus-visible:ring-accent-300 focus-visible:outline-none aria-[current=page]:bg-accent-700 aria-[current=page]:text-white motion-reduce:transition-none"
+            className="flex min-h-11 items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-primary-300 transition-colors hover:bg-primary-800 hover:text-primary-50 focus-visible:ring-2 focus-visible:ring-accent-300 focus-visible:outline-none aria-[current=page]:bg-accent-900/70 aria-[current=page]:font-semibold aria-[current=page]:text-accent-200 motion-reduce:transition-none"
         >
             <Icon size={19} className="shrink-0" aria-hidden="true" />
             <span className={compact ? "sr-only" : "min-w-0 truncate"}>{label}</span>

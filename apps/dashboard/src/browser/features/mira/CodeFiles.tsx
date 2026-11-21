@@ -27,9 +27,9 @@ export function CodeFiles({
                     <section
                         key={file.path}
                         aria-label={`Changes to ${file.path}`}
-                        className="min-w-0 overflow-hidden rounded-lg border border-primary-700 bg-primary-950"
+                        className="min-w-0 overflow-hidden rounded-lg border border-primary-700 bg-surface-card"
                     >
-                        <div className="flex flex-wrap items-center gap-2 border-b border-primary-700 bg-primary-900/60 px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-2 border-b border-primary-700 bg-surface-heading px-3 py-2">
                             <Icon
                                 size={16}
                                 aria-hidden="true"

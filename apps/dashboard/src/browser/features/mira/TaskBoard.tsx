@@ -14,6 +14,7 @@ import { useOperation } from "../operations/useOperation";
 import { TaskCardContent } from "./TaskCardContent";
 import { TaskColumn } from "./TaskColumn";
 import { taskDragSchema, taskMoveForDrop } from "./taskPresentation";
+import type { useTaskColumn } from "./useTaskColumn";
 
 const sensors = [PointerSensor, KeyboardSensor.configure({ offset: 40 })];
 
@@ -22,10 +23,12 @@ const sensors = [PointerSensor, KeyboardSensor.configure({ offset: 40 })];
  * @returns A pointer, touch and keyboard board with visible mutation failures.
  */
 export function TaskBoard({
+    columns,
     search,
     assignee,
     onSelect,
 }: {
+    readonly columns: Record<MiraTask["status"], ReturnType<typeof useTaskColumn>>;
     readonly search: string;
     readonly assignee: MiraTask["assignee"] | "all";
     readonly onSelect: (task: MiraTask) => void;
@@ -54,13 +57,13 @@ export function TaskBoard({
                     setDragged(undefined);
                 }}
             >
-                <div className="grid min-w-0 gap-4 @min-[34rem]/task-board:grid-cols-2 @min-[72rem]/task-board:grid-cols-4">
+                <div className="grid min-w-0 gap-4 @min-[34rem]/task-board:grid-cols-2 @min-[60rem]/task-board:grid-cols-4">
                     {miraTaskStates.map((status) => (
                         <TaskColumn
                             key={status}
                             status={status}
-                            search={search}
-                            assignee={assignee}
+                            query={columns[status]}
+                            filtered={Boolean(search) || assignee !== "all"}
                             onSelect={onSelect}
                             disabled={move.isPending}
                         />

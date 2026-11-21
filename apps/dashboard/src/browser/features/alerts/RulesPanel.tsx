@@ -1,13 +1,17 @@
 import {
-    Card,
-    DataTable,
+    DetailEntry,
+    DetailFacts,
     ErrorNotice,
+    FilterBar,
     formatDateTime,
     LoadingState,
     queryRefresh,
     SearchInput,
-    SectionHeader,
+    SectionPanel,
     Select,
+    SortControl,
+    useInventorySort,
+    VirtualList,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Activity } from "lucide-react";
@@ -40,30 +44,45 @@ export function RulesPanel() {
                 rule.health !== "healthy" ||
                 rule.state !== "inactive")
     );
+    const { ordered, control } = useInventorySort(rows, [
+        { label: "Rule", value: (row) => row.name },
+        { label: "Group", value: (row) => row.group },
+        {
+            label: "Status",
+            value: (row) => (stale ? null : `${row.health} ${row.state}`),
+        },
+        { label: "Evaluation interval", value: (row) => row.intervalSeconds },
+        { label: "Last evaluated", value: (row) => row.lastEvaluationAt },
+    ]);
     return (
-        <Card className="space-y-4">
-            <SectionHeader
-                title="Monitoring rules"
-                description="Alerting rules, evaluation health and current status."
-                icon={Activity}
-                actions={
+        <SectionPanel
+            title="Monitoring rules"
+            description="Alerting rules, evaluation health and current status."
+            icon={Activity}
+            badge={
+                data && (
                     <ObservationBadge
                         configured={data?.configured ?? true}
                         available={Boolean(data?.inventory)}
                         stale={stale}
                     />
-                }
-            />
+                )
+            }
+            actions={<SortControl label="monitoring rules" {...control} />}
+        >
             {query.isPending && <LoadingState label="Loading monitoring rules…" />}
             {query.isError && <ErrorNotice error={query.error} />}
-            <div className="grid gap-3 sm:grid-cols-[1fr_12rem]">
-                <SearchInput
-                    label="Search monitoring rules"
-                    placeholder="Find a rule or group…"
-                    clearLabel="Clear rule search"
-                    value={search}
-                    onChange={setSearch}
-                />
+            <FilterBar
+                search={
+                    <SearchInput
+                        label="Search monitoring rules"
+                        placeholder="Find a rule or group…"
+                        clearLabel="Clear rule search"
+                        value={search}
+                        onChange={setSearch}
+                    />
+                }
+            >
                 <Select
                     label="Rule status"
                     value={filter}
@@ -73,59 +92,45 @@ export function RulesPanel() {
                         { value: "attention", label: "Needs attention" },
                     ]}
                 />
-            </div>
+            </FilterBar>
             {rows.length > 0 ? (
-                <DataTable
-                    label="Monitoring rules"
-                    compact
-                    rows={rows}
+                <VirtualList
+                    label="Monitoring rule evaluations"
+                    rows={ordered}
                     getKey={(row) => row.id}
-                    columns={[
-                        {
-                            id: "name",
-                            sortValue: (row) => row.name,
-                            label: "Rule",
-                            mobile: "title",
-                            render: (row) => row.name,
-                        },
-                        {
-                            id: "group",
-                            sortValue: (row) => row.group,
-                            label: "Group",
-                            render: (row) => row.group,
-                        },
-                        {
-                            id: "state",
-                            sortValue: (row) =>
-                                stale ? null : `${row.health} ${row.state}`,
-                            label: "Status",
-                            render: (row) => <RuleStatus rule={row} stale={stale} />,
-                        },
-                        {
-                            id: "cadence",
-                            sortValue: (row) => row.intervalSeconds,
-                            label: "Evaluation interval",
-                            render: (row) => `${row.intervalSeconds} seconds`,
-                        },
-                        {
-                            id: "evaluated",
-                            sortValue: (row) => row.lastEvaluationAt,
-                            label: "Last evaluated",
-                            mobile: "wide",
-                            render: (row) =>
-                                row.lastEvaluationAt
-                                    ? formatDateTime(row.lastEvaluationAt)
-                                    : "Not reported",
-                        },
-                    ]}
+                    className="@container/entries"
+                    itemClassName="border-b border-primary-700/70 py-3"
+                    renderItem={(row) => (
+                        <DetailEntry
+                            wideName
+                            name={row.name}
+                            description={row.group}
+                            accessory={<RuleStatus rule={row} stale={stale} />}
+                        >
+                            <DetailFacts
+                                items={[
+                                    {
+                                        label: "Evaluates every",
+                                        value: `${row.intervalSeconds} seconds`,
+                                    },
+                                    {
+                                        label: "Last evaluated",
+                                        value: row.lastEvaluationAt
+                                            ? formatDateTime(row.lastEvaluationAt)
+                                            : "Not reported",
+                                    },
+                                ]}
+                            />
+                        </DetailEntry>
+                    )}
                 />
             ) : (
-                <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
+                <p className="rounded-lg border border-primary-700 bg-surface-empty p-4 text-sm text-primary-400">
                     {search || filter !== "all"
                         ? "No matching monitoring rules."
                         : "No monitoring rule inventory is available."}
                 </p>
             )}
-        </Card>
+        </SectionPanel>
     );
 }

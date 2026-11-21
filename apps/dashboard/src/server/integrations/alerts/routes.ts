@@ -3,12 +3,47 @@ import {
     incidentPageSchema,
     type RuleInventory,
 } from "@homelab/contracts/alerts";
+import { idSchema } from "@homelab/contracts/operations";
+import * as v from "valibot";
 
 import { runOperation, trpc } from "../../api/trpc";
 import { authorizedOperations } from "../../operations/authorization";
 import { sortedPage } from "../../operations/sortedPage";
 
 export const alertsRouter = trpc.router({
+    occurrence: trpc.procedure
+        .input(
+            v.strictObject({
+                kind: v.picklist(["incident", "notification"]),
+                id: idSchema,
+            })
+        )
+        .query(({ ctx, input }) =>
+            runOperation(async () => {
+                const { operations, principal } = authorizedOperations(
+                    ctx,
+                    "alerts:read"
+                );
+                const sql = operations.client;
+                let occurrence = sql`i.id = ${input.id}`;
+                if (input.kind === "notification") {
+                    authorizedOperations(ctx, "notifications:read");
+                    const actor = `${principal.kind}:${principal.id}`;
+                    occurrence = sql`i.source_key = (
+                        SELECT regexp_replace(n.source_key, ':(opened|resolved)$', '')
+                        FROM dashboard_notifications n
+                        WHERE n.id = ${input.id} AND n.source = 'alerts' AND n.destination = 'alerts'
+                        AND n.source_key ~ ':(opened|resolved)$' AND (n.recipient IS NULL OR n.recipient = ${actor})
+                    )`;
+                }
+                const [row] = await sql<
+                    Incident[]
+                >`SELECT i.id, i.name, i.host, i.service, i.severity, i.state,
+                    i.started_at::text AS "startedAt", i.resolved_at::text AS "resolvedAt"
+                    FROM operational_incidents i WHERE ${occurrence}`;
+                return row ?? null;
+            })
+        ),
     rules: trpc.procedure.query(({ ctx }) =>
         runOperation(async () => {
             const { operations } = authorizedOperations(ctx, "alerts:read");

@@ -1,0 +1,9 @@
+:root {
+    --homelab-canvas: #0b0e13;
+    --homelab-panel: #141921;
+    --homelab-raised: #202731;
+    --homelab-line: #313a46;
+    --homelab-muted: #a2adbd;
+    --homelab-link: #a2c8ff;
+    --homelab-heading: color-mix(in srgb, var(--homelab-canvas), var(--homelab-panel));
+}

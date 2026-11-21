@@ -46,7 +46,7 @@ export function PublicationReview({
             size="wide"
         >
             <div className="space-y-4">
-                <Card className="space-y-4 bg-primary-900/40">
+                <Card className="space-y-4">
                     <SectionHeader
                         title={draft.content.title}
                         icon={Globe}
@@ -100,7 +100,7 @@ export function PublicationReview({
                         "queued_verification",
                     ].includes(draft.state) && (
                         <Button
-                            variant="secondary"
+                            variant="danger"
                             busy={cancel.isPending}
                             disabled={approve.isPending}
                             onClick={() =>
@@ -112,6 +112,28 @@ export function PublicationReview({
                         >
                             Cancel action
                         </Button>
+                    )}
+                    {draft.state === "published" && draft.slug && (
+                        <a
+                            href={`https://${draft.slug}.here.now/`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={buttonStyles()}
+                        >
+                            <ExternalLink size={16} aria-hidden="true" />
+                            Open site
+                        </a>
+                    )}
+                    {draft.state === "needs_attention" && (
+                        <a
+                            href="https://here.now/"
+                            target="_blank"
+                            rel="noreferrer"
+                            className={buttonStyles()}
+                        >
+                            <ExternalLink size={16} aria-hidden="true" />
+                            Open here.now
+                        </a>
                     )}
                     {draft.state === "draft" && (
                         <Button
@@ -127,28 +149,6 @@ export function PublicationReview({
                             <Upload size={16} aria-hidden="true" />
                             Publish publicly
                         </Button>
-                    )}
-                    {draft.state === "published" && draft.slug && (
-                        <a
-                            href={`https://${draft.slug}.here.now/`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className={buttonStyles({ variant: "secondary" })}
-                        >
-                            <ExternalLink size={16} aria-hidden="true" />
-                            Open site
-                        </a>
-                    )}
-                    {draft.state === "needs_attention" && (
-                        <a
-                            href="https://here.now/"
-                            target="_blank"
-                            rel="noreferrer"
-                            className={buttonStyles({ variant: "secondary" })}
-                        >
-                            <ExternalLink size={16} aria-hidden="true" />
-                            Open here.now
-                        </a>
                     )}
                 </ActionGroup>
             </div>

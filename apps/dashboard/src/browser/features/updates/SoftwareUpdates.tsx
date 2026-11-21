@@ -2,12 +2,13 @@ import type { TableSort } from "@homelab/contracts/tableSort";
 import {
     DataTable,
     ErrorNotice,
+    FilterBar,
     LoadingState,
     queryRefresh,
     SearchInput,
     Select,
 } from "@homelab/ui";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { skipToken, useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api } from "../../api/client";
@@ -24,7 +25,7 @@ export function SoftwareUpdates({
     source,
     category = "software",
 }: {
-    readonly source: string;
+    readonly source: string | undefined;
     readonly category?: "software" | "toolchains";
 }) {
     const [search, setSearch] = useState("");
@@ -41,18 +42,21 @@ export function SoftwareUpdates({
             ...(sort ? [sort] : []),
         ],
         initialPageParam: {},
-        queryFn: ({ pageParam, signal }) =>
-            api.updates.list.query(
-                {
-                    source,
-                    category,
-                    search,
-                    state,
-                    ...pageParam,
-                    ...(sort ? { sort } : {}),
-                },
-                { signal }
-            ),
+        queryFn:
+            source === undefined
+                ? skipToken
+                : ({ pageParam, signal }) =>
+                      api.updates.list.query(
+                          {
+                              source,
+                              category,
+                              search,
+                              state,
+                              ...pageParam,
+                              ...(sort ? { sort } : {}),
+                          },
+                          { signal }
+                      ),
         getNextPageParam: (page) => {
             if (sort)
                 return page.nextSortCursor ? { cursor: page.nextSortCursor } : undefined;
@@ -64,14 +68,18 @@ export function SoftwareUpdates({
     const rows = query.data?.pages.flatMap((page) => page.items) ?? [];
     return (
         <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-                <SearchInput
-                    label="Search software"
-                    clearLabel="Clear software search"
-                    placeholder="Find a package or application…"
-                    value={search}
-                    onChange={setSearch}
-                />
+            <FilterBar
+                search={
+                    <SearchInput
+                        disabled={source === undefined}
+                        label="Search software"
+                        clearLabel="Clear software search"
+                        placeholder="Find a package or application…"
+                        value={search}
+                        onChange={setSearch}
+                    />
+                }
+            >
                 <Select
                     label="Show"
                     value={state}
@@ -81,8 +89,8 @@ export function SoftwareUpdates({
                         { value: "all", label: "All observed software" },
                     ]}
                 />
-            </div>
-            {query.isPending && <LoadingState label="Loading software inventory…" />}
+            </FilterBar>
+            {query.isLoading && <LoadingState label="Loading software inventory…" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {rows.length > 0 && (
                 <DataTable
@@ -191,7 +199,7 @@ export function SoftwareUpdates({
                 />
             )}
             {query.data && rows.length === 0 && (
-                <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
+                <p className="rounded-lg border border-primary-700 bg-surface-empty p-4 text-sm text-primary-400">
                     No matching software in this observation.
                 </p>
             )}

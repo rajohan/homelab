@@ -20,6 +20,7 @@ import {
     TimePicker,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
+import { CalendarClock } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
@@ -93,6 +94,7 @@ export function AutomationEditor({
     });
     return (
         <Modal
+            icon={CalendarClock}
             title={automation ? "Edit automation" : "New automation"}
             onClose={onClose}
             size="wide"
@@ -262,18 +264,18 @@ export function AutomationEditor({
                 {save.error && <ErrorNotice error={save.error} />}
                 <ActionGroup>
                     <Button
-                        type="submit"
-                        busy={save.isPending}
-                        disabled={!title.trim() || !prompt.trim()}
-                    >
-                        Save automation
-                    </Button>
-                    <Button
                         variant="secondary"
                         onClick={onClose}
                         disabled={save.isPending}
                     >
                         Cancel
+                    </Button>
+                    <Button
+                        type="submit"
+                        busy={save.isPending}
+                        disabled={!title.trim() || !prompt.trim()}
+                    >
+                        Save automation
                     </Button>
                 </ActionGroup>
             </form>

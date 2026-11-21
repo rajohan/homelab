@@ -21,7 +21,7 @@ export function CapabilityPicker({
     readonly onChange: (value: Capability[]) => void;
 }) {
     return (
-        <Fieldset legend="Permissions" className="space-y-4">
+        <Fieldset legend="Permissions">
             <div className="flex flex-wrap gap-2">
                 <Button
                     size="sm"
@@ -37,7 +37,7 @@ export function CapabilityPicker({
             {groups.map((group) => (
                 <div
                     key={group}
-                    className="space-y-3 rounded-lg border border-primary-700 bg-primary-900/40 p-3"
+                    className="space-y-3 rounded-lg border border-primary-700 bg-surface-card p-3"
                 >
                     <h4 className="text-sm font-semibold">{group}</h4>
                     {capabilities

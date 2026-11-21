@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from "react";
 
-import { Card, SectionHeader } from "../../../../index";
+import { SectionPanel } from "../../../../index";
 
 /**
  * Present a compact account-settings section with consistent headings and action placement.
@@ -10,17 +10,18 @@ export function SettingsSection({
     id,
     children,
     ...heading
-}: ComponentProps<typeof SectionHeader> & {
+}: Omit<ComponentProps<typeof SectionPanel>, "children"> & {
     readonly id: string;
     readonly children?: ReactNode;
 }) {
     return (
-        <Card
+        <SectionPanel
+            {...heading}
             id={id}
-            className="scroll-mt-6 space-y-4 rounded-lg bg-primary-800 p-4 shadow-none sm:p-4"
+            className="scroll-mt-18"
+            compactActions={false}
         >
-            <SectionHeader {...heading} />
             {children}
-        </Card>
+        </SectionPanel>
     );
 }

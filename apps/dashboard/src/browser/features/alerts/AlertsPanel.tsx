@@ -1,50 +1,32 @@
-import type { Incident } from "@homelab/contracts/alerts";
 import type { TableSort } from "@homelab/contracts/tableSort";
 import {
-    buttonStyles,
-    Card,
-    DataTable,
+    BreakableName,
+    EmptyState,
     ErrorNotice,
-    formatDateTime,
+    EventTimeline,
     LoadingState,
-    queryRefresh,
-    SectionHeader,
-    Select,
+    SectionPanel,
+    SortControl,
+    SummaryStrip,
 } from "@homelab/ui";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { BellRing } from "lucide-react";
 import { useState } from "react";
 
-import { api } from "../../api/client";
-import { MetricStat } from "../infrastructure/MetricStat";
 import { ObservationBadge } from "../operations/ObservationBadge";
-import { IncidentDetails } from "./IncidentDetails";
+import { incidentOptions } from "./incidentQueries";
 import { IncidentStatus } from "./IncidentStatus";
 
 /**
  * Present independent current incidents and cursor-paginated resolved history.
- * @returns A compact overview module or full virtualized incident history.
+ * @returns An independently sortable incident feed.
  */
-export function AlertsPanel({ compact = false }: { readonly compact?: boolean }) {
-    const [state, setState] = useState<"current" | "resolved">("current");
-    const [selected, setSelected] = useState<Incident | null>(null);
+export function AlertsPanel({ state }: { readonly state: "current" | "resolved" }) {
     const [sort, setSort] = useState<TableSort | null>(null);
     const query = useInfiniteQuery({
-        queryKey: ["operations", "alerts", state, ...(sort ? [sort] : [])],
-        initialPageParam: {},
-        queryFn: ({ pageParam, signal }) =>
-            api.alerts.list.query(
-                { state, ...pageParam, ...(sort ? { sort } : {}) },
-                { signal }
-            ),
-        getNextPageParam: (page) => {
-            if (sort)
-                return page.nextSortCursor ? { cursor: page.nextSortCursor } : undefined;
-            return page.nextCursor ? { before: page.nextCursor } : undefined;
-        },
-        ...queryRefresh("fast"),
-        retry: false,
+        ...incidentOptions(state, sort),
+        placeholderData: keepPreviousData,
     });
     const data = query.data?.pages[0];
     const rows = query.data?.pages.flatMap((page) => page.incidents) ?? [];
@@ -62,139 +44,131 @@ export function AlertsPanel({ compact = false }: { readonly compact?: boolean })
         emptyMessage = "Waiting for the first monitoring observation.";
     if (state === "current" && data?.configured === false)
         emptyMessage = "Monitoring incident collection is not configured.";
+    const continuation = {
+        hasMore: query.hasNextPage,
+        loading: query.isFetching,
+        error: query.isError ? query.error : undefined,
+        loadingLabel: "Loading more incidents…",
+        onLoadMore: () =>
+            void (query.isRefetchError ? query.refetch() : query.fetchNextPage()),
+    };
     return (
-        <Card className="space-y-4">
-            <SectionHeader
-                title="Monitoring incidents"
-                description="Active problems and their resolution history."
-                icon={BellRing}
-                actions={
+        <SectionPanel
+            title={state === "resolved" ? "Resolution history" : "Current incidents"}
+
+            icon={BellRing}
+            badge={
+                data && (
                     <ObservationBadge
                         configured={data?.configured ?? true}
                         available={Boolean(data?.capturedAt)}
                         stale={unavailable}
                     />
-                }
-            />
+                )
+            }
+            actions={
+                (state === "resolved" || sort !== null || rows.length > 1) && (
+                    <SortControl
+                        label={
+                            state === "resolved"
+                                ? "resolution history"
+                                : "current incidents"
+                        }
+                        sort={sort ?? { id: "time", direction: "descending" }}
+                        onChange={(next) =>
+                            setSort(
+                                next.id === "time" && next.direction === "descending"
+                                    ? null
+                                    : next
+                            )
+                        }
+                        options={[
+                            {
+                                value: "time",
+                                label:
+                                    state === "resolved" ? "Resolved at" : "Started at",
+                            },
+                            { value: "name", label: "Incident" },
+                            { value: "host", label: "Host / service" },
+                            ...(state === "current"
+                                ? [{ value: "state", label: "Status" }]
+                                : []),
+                        ]}
+                    />
+                )
+            }
+        >
             {query.isPending && <LoadingState label="Loading incidents…" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {data && (
                 <>
-                    <dl className="grid grid-cols-3 gap-3">
-                        <MetricStat
-                            label="Active"
-                            value={unavailable ? "—" : count("active")}
-                        />
-                        <MetricStat
-                            label="Suppressed"
-                            value={unavailable ? "—" : count("suppressed")}
-                        />
-                        <MetricStat
-                            label="Resolved"
-                            value={data.capturedAt ? count("resolved") : "—"}
-                        />
-                    </dl>
-                    {!compact && (
-                        <Select
-                            label="Incident history"
-                            value={state}
-                            onChange={setState}
-                            options={[
-                                { value: "current", label: "Current incidents" },
-                                { value: "resolved", label: "Resolved incidents" },
+                    {state === "current" && (
+                        <SummaryStrip
+                            label="Incident counts"
+                            items={[
+                                {
+                                    label: "Active",
+                                    attention: !unavailable && count("active") > 0,
+                                    value: unavailable ? "—" : count("active"),
+                                },
+                                {
+                                    label: "Suppressed",
+                                    value: unavailable ? "—" : count("suppressed"),
+                                },
+                                {
+                                    label: "Resolved",
+                                    value: data.capturedAt ? count("resolved") : "—",
+                                },
                             ]}
                         />
                     )}
-                    {!compact && rows.length > 0 && (
-                        <DataTable
-                            label="Monitoring incidents"
-                            compact
-                            rows={rows}
-                            sort={sort}
-                            onSortChange={setSort}
-                            getKey={(row) => row.id}
-                            rowAction={{
-                                label: (row) => `Inspect ${row.name}`,
-                                onSelect: setSelected,
+                    {rows.length > 0 && (
+                        <EventTimeline
+                            scroll={{
+                                label:
+                                    state === "resolved"
+                                        ? "Resolved events"
+                                        : "Current events",
+                                continuation,
                             }}
-                            columns={[
-                                {
-                                    id: "name",
-                                    sortValue: (row) => row.name,
-                                    label: "Incident",
-                                    mobile: "title",
-                                    render: (row) => row.name,
-                                },
-                                {
-                                    id: "host",
-                                    sortValue: (row) => `${row.host} ${row.service}`,
-                                    label: "Host / service",
-                                    render: (row) =>
-                                        [row.host, row.service]
+                            presentation="feed"
+                            events={rows.map((row) => ({
+                                id: row.id,
+                                time: row.resolvedAt ?? row.startedAt,
+                                tone: row.state === "resolved" ? "positive" : "neutral",
+                                title: (
+                                    <Link
+                                        to="/alerts"
+                                        search={{
+                                            view: state,
+                                            incident: row.id,
+                                        }}
+                                        className="rounded-sm hover:text-accent-300 hover:underline focus-visible:outline-2 focus-visible:outline-accent-300"
+                                    >
+                                        <BreakableName>{row.name}</BreakableName>
+                                    </Link>
+                                ),
+                                detail: (
+                                    <span className="flex flex-wrap items-center gap-2">
+                                        {state === "current" && (
+                                            <IncidentStatus
+                                                incident={row}
+                                                unavailable={unavailable}
+                                            />
+                                        )}
+                                        {[row.host, row.service]
                                             .filter(Boolean)
-                                            .join(" · ") || "Not reported",
-                                },
-                                {
-                                    id: "state",
-                                    sortValue: (row) => row.state,
-                                    label: "Status",
-                                    render: (row) => (
-                                        <IncidentStatus
-                                            incident={row}
-                                            unavailable={unavailable}
-                                        />
-                                    ),
-                                },
-                                {
-                                    id: "time",
-                                    sortValue: (row) =>
-                                        state === "resolved"
-                                            ? row.resolvedAt
-                                            : row.startedAt,
-                                    label: state === "resolved" ? "Resolved" : "Started",
-                                    render: (row) =>
-                                        formatDateTime(row.resolvedAt ?? row.startedAt),
-                                },
-                            ]}
-                            continuation={{
-                                hasMore: query.hasNextPage,
-                                loading: query.isFetching,
-                                error: query.isError ? query.error : undefined,
-                                loadingLabel: "Loading more incidents…",
-                                onLoadMore: () =>
-                                    void (query.isRefetchError
-                                        ? query.refetch()
-                                        : query.fetchNextPage()),
-                            }}
+                                            .join(" · ") || "Resource not reported"}
+                                    </span>
+                                ),
+                            }))}
                         />
                     )}
-                    {!compact && rows.length === 0 && (
-                        <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
-                            {emptyMessage}
-                        </p>
-                    )}
-                    {compact && (
-                        <Link
-                            to="/alerts"
-                            className={buttonStyles({
-                                variant: "secondary",
-                                className: "w-full",
-                            })}
-                        >
-                            View incidents
-                        </Link>
+                    {rows.length === 0 && (
+                        <EmptyState icon={BellRing} title={emptyMessage} />
                     )}
                 </>
             )}
-            {selected && (
-                <IncidentDetails
-                    incident={rows.find((row) => row.id === selected.id) ?? selected}
-                    unavailable={
-                        unavailable || !rows.some((row) => row.id === selected.id)
-                    }
-                    onClose={() => setSelected(null)}
-                />
-            )}
-        </Card>
+        </SectionPanel>
     );
 }

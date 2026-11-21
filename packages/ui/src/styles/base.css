@@ -1,10 +1,62 @@
+@import "./surfaces.css";
+
+@theme {
+    --spacing-form-control: 2.75rem;
+    --color-primary-950: var(--homelab-canvas);
+    --color-primary-900: var(--homelab-panel);
+    --color-primary-800: var(--homelab-raised);
+    --color-primary-700: var(--homelab-line);
+    --color-primary-400: var(--homelab-muted);
+    --color-accent-50: #edf7f8;
+    --color-accent-100: #d8edf0;
+    --color-accent-200: #b9dfe4;
+    --color-accent-300: var(--homelab-link);
+    --color-accent-400: #83b3fa;
+    --color-accent-500: #6297d1;
+    --color-accent-600: #416c9d;
+    --color-accent-700: #34567f;
+    --color-accent-800: #293f59;
+    --color-accent-900: #1c3048;
+    --color-accent-950: #142234;
+}
+
+@theme inline {
+    --color-surface-heading: var(--homelab-heading);
+    --color-surface-panel: theme("colors.primary.900");
+    --color-surface-card: var(--card-fill, theme("colors.primary.900"));
+    --color-surface-empty: color-mix(
+        in srgb,
+        var(--card-fill, var(--homelab-raised)) 94%,
+        theme("colors.accent.300")
+    );
+}
+
 @layer base {
+    /* Resolve elevation on the painted element, including plain semantic cards within dialogs. */
+    :where(.bg-surface-panel, .bg-surface-card)
+        :where(.bg-surface-card, .bg-surface-empty) {
+        --card-fill: var(--homelab-raised);
+    }
+
+    :where(.bg-surface-panel, .bg-surface-card)
+        .bg-surface-card
+        :where(.bg-surface-card, .bg-surface-empty) {
+        --card-fill: color-mix(in srgb, var(--homelab-raised) 88%, var(--homelab-muted));
+    }
+
+    :where(.bg-surface-panel, .bg-surface-card)
+        .bg-surface-card
+        .bg-surface-card
+        :where(.bg-surface-card, .bg-surface-empty) {
+        --card-fill: color-mix(in srgb, var(--homelab-raised) 77%, var(--homelab-muted));
+    }
+
     :root {
         color-scheme: dark;
         font-family:
             Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
             "Segoe UI", sans-serif;
-        background: theme("colors.primary.900");
+        background: theme("colors.primary.950");
         color: theme("colors.primary.50");
         font-synthesis: none;
         text-rendering: optimizeLegibility;

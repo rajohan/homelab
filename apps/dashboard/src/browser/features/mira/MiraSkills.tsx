@@ -1,16 +1,15 @@
 import type { MiraSkillSummary } from "@homelab/contracts/miraSkills";
 import {
-    ActionGroup,
     Badge,
     Button,
-    Card,
+    CatalogRow,
     ErrorNotice,
     formatDateTime,
     LoadingState,
-    SectionHeader,
+    SectionPanel,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Eye } from "lucide-react";
+import { BookOpen, ChevronRight } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
@@ -41,12 +40,11 @@ export function MiraSkills() {
     );
     const error = query.error ?? enable.error;
     return (
-        <Card className="space-y-4">
-            <SectionHeader
-                title="Skills"
-                icon={BookOpen}
-                description="Reusable guidance, reviewed and updated with Homelab. Integration permissions are managed separately."
-            />
+        <SectionPanel
+            title="Skills"
+            icon={BookOpen}
+            description="Installed guidance for Mira. Each skill can be reviewed and paused independently."
+        >
             {error && <ErrorNotice error={error} />}
             {query.isPending && <LoadingState label="Loading skills…" />}
             {query.data?.[0]?.compatibility === "offline" && (
@@ -59,42 +57,35 @@ export function MiraSkills() {
                     Update Mira to the same skill catalog before enabling guidance.
                 </p>
             )}
-            <div className="max-h-144 space-y-3 overflow-y-auto overscroll-contain">
+            <ul className="divide-y divide-primary-700/70">
                 {query.data?.map((skill) => (
-                    <section
+                    <CatalogRow
                         key={skill.id}
-                        className="@container/skill space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4"
-                    >
-                        <div className="grid gap-3 @min-[36rem]/skill:grid-cols-[minmax(0,1fr)_13rem] @min-[36rem]/skill:items-center">
-                            {" "}
-                            <SectionHeader
-                                title={skill.title}
-                                icon={BookOpen}
-                                description={skill.description}
-                                badge={
-                                    <Badge
-                                        tone={
-                                            skill.control.enabled ? "positive" : "neutral"
-                                        }
-                                    >
-                                        {skill.control.enabled ? "Enabled" : "Paused"}
-                                    </Badge>
-                                }
-                            />
-                            <ActionGroup className="w-full @min-[36rem]/skill:w-52">
+                        icon={BookOpen}
+                        meta={`v${skill.version}`}
+                        title={
+                            <button
+                                type="button"
+                                aria-label={`View ${skill.title} skill`}
+                                className="inline-flex min-h-8 items-center gap-1.5 rounded text-left hover:text-accent-300 focus-visible:outline-2 focus-visible:outline-accent-300"
+                                onClick={() => setSelected(skill)}
+                            >
+                                {skill.title}
+                                <ChevronRight aria-hidden="true" size={14} />
+                            </button>
+                        }
+                        description={skill.description}
+                        status={
+                            <Badge tone={skill.control.enabled ? "positive" : "neutral"}>
+                                {skill.control.enabled ? "Enabled" : "Paused"}
+                            </Badge>
+                        }
+                        actions={
+                            (skill.control.enabled ||
+                                skill.compatibility === "available") && (
                                 <Button
                                     variant="secondary"
-                                    onClick={() => setSelected(skill)}
-                                >
-                                    <Eye size={16} aria-hidden="true" />
-                                    View
-                                </Button>
-                                <Button
-                                    variant="secondary"
-                                    disabled={
-                                        !skill.control.enabled &&
-                                        skill.compatibility !== "available"
-                                    }
+                                    size="sm"
                                     busy={
                                         enable.isPending &&
                                         enable.variables?.id === skill.id
@@ -107,24 +98,22 @@ export function MiraSkills() {
                                 >
                                     {skill.control.enabled ? "Pause" : "Enable"}
                                 </Button>
-                            </ActionGroup>
-                        </div>
-                        <p className="text-sm text-primary-400">
-                            Version {skill.version}
-                        </p>
+                            )
+                        }
+                    >
                         {!skill.control.enabled &&
                             skill.control.version > 1 &&
                             skill.control.reason && (
-                                <p className="text-sm text-primary-300">
+                                <p>
                                     {skill.control.reason}
                                     {skill.control.until
                                         ? ` · Resumes ${formatDateTime(skill.control.until)}`
                                         : ""}
                                 </p>
                             )}
-                    </section>
+                    </CatalogRow>
                 ))}
-            </div>
+            </ul>
             {selected && (
                 <SkillDetails skill={selected} onClose={() => setSelected(undefined)} />
             )}
@@ -136,6 +125,6 @@ export function MiraSkills() {
                     onClose={() => setPaused(undefined)}
                 />
             )}
-        </Card>
+        </SectionPanel>
     );
 }

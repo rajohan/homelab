@@ -1,5 +1,5 @@
 import type { JobSummary } from "@homelab/contracts/operations";
-import { Badge, IconButton } from "@homelab/ui";
+import { Badge, formatDateTime, IconButton } from "@homelab/ui";
 import { CheckCircle2, CircleAlert, Clock3, LoaderCircle, X } from "lucide-react";
 
 import { JobStatus } from "./JobStatus";
@@ -42,17 +42,17 @@ export function JobActivityItem({
         ? { icon: CircleAlert, color: "text-amber-400" }
         : presentation[run.state];
     return (
-        <div className="relative flex items-center gap-1 rounded-lg border border-primary-700 bg-primary-900 pr-2 transition-colors hover:bg-primary-700/50">
+        <div className="relative flex items-center gap-1 border-t border-primary-700 transition-colors hover:bg-primary-800">
             <button
                 type="button"
                 aria-label={`View ${run.label}`}
                 onClick={onSelect}
-                className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-3 text-left after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-accent-500"
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-md px-1 py-3 text-left after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-accent-500"
             >
                 <Icon size={18} aria-hidden="true" className={`shrink-0 ${color}`} />
                 <span className="min-w-0 flex-1">
                     <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <span className="truncate text-sm font-semibold">
+                        <span className="text-sm font-semibold wrap-anywhere">
                             {run.label}
                         </span>
                         {unavailable ? (
@@ -64,11 +64,14 @@ export function JobActivityItem({
                     <span
                         aria-live="polite"
                         aria-atomic="true"
-                        className="mt-1 block truncate text-xs text-primary-400"
+                        className="mt-1 block text-xs wrap-anywhere text-primary-400"
                     >
                         {run.cancelRequested && active
                             ? "Cancellation requested."
                             : (run.message ?? descriptions[run.state])}
+                    </span>
+                    <span className="mt-1 block text-xs text-primary-400 tabular-nums">
+                        {formatDateTime(run.finishedAt ?? run.startedAt ?? run.createdAt)}
                     </span>
                 </span>
             </button>

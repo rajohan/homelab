@@ -2,12 +2,14 @@ import {
     createRootRoute,
     createRoute,
     createRouter,
+    redirect,
     type RouterHistory,
 } from "@tanstack/react-router";
+import * as v from "valibot";
 
+import { incidentLocation } from "./features/alerts/incidentLocation";
 import { Shell } from "./layout/Shell";
 import { Alerts } from "./pages/Alerts";
-import { Applications } from "./pages/Applications";
 import { Backups } from "./pages/Backups";
 import { Identity } from "./pages/Identity";
 import { Infrastructure } from "./pages/Infrastructure";
@@ -75,6 +77,7 @@ export function createDashboardRouter(history?: RouterHistory) {
             createRoute({
                 getParentRoute: () => root,
                 path: "/alerts",
+                validateSearch: (raw) => v.parse(incidentLocation, raw),
                 component: Alerts,
             }),
             createRoute({
@@ -93,7 +96,13 @@ export function createDashboardRouter(history?: RouterHistory) {
             createRoute({
                 getParentRoute: () => root,
                 path: "/applications",
-                component: Applications,
+                beforeLoad: () =>
+                    redirect({
+                        to: "/infrastructure",
+                        hash: "applications",
+                        replace: true,
+                        throw: true,
+                    }),
             }),
             createRoute({ getParentRoute: () => root, path: "/jobs", component: Jobs }),
             createRoute({

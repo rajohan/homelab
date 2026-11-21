@@ -1,4 +1,6 @@
 import {
+    DetailFacts,
+    DetailSection,
     ErrorNotice,
     formatDateTime,
     LoadingState,
@@ -7,6 +9,7 @@ import {
     VirtualList,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { History, Play } from "lucide-react";
 
 import { api } from "../../api/client";
 import { formatJobActor } from "./formatJobActor";
@@ -48,6 +51,7 @@ export function RunDetailDialog({
     return (
         <Modal
             title={run?.label ?? "Run details"}
+            titleAccessory={run && <JobStatus state={run.state} />}
             description="Execution status and recorded events."
             onClose={onClose}
         >
@@ -56,57 +60,69 @@ export function RunDetailDialog({
                 {query.isError && !run && <ErrorNotice error={query.error} />}
                 {run && (
                     <>
-                        <JobStatus state={run.state} />
-                        <RunProgress run={run} />
+                        <DetailSection icon={Play} title="Execution">
+                            <RunProgress run={run} />
+                            <DetailFacts
+                                items={[
+                                    { label: "Run ID", value: run.id },
+                                    {
+                                        label: "Requested by",
+                                        value: formatJobActor(run.requestedBy),
+                                    },
+                                    { label: "Work size", value: run.resourceClass },
+                                    {
+                                        label: "Attempt",
+                                        value: `${run.attempt} / ${run.attemptLimit}`,
+                                    },
+                                    {
+                                        label: "Timeout",
+                                        value: `${run.timeoutMs / 1000} seconds`,
+                                    },
+                                    {
+                                        label: "Safe to retry",
+                                        value: run.retrySafe ? "Yes" : "No",
+                                    },
+                                    {
+                                        label: "Queued",
+                                        value: formatDateTime(run.createdAt),
+                                    },
+                                    {
+                                        label: "Started",
+                                        value: run.startedAt
+                                            ? formatDateTime(run.startedAt)
+                                            : "Not started",
+                                    },
+                                    {
+                                        label: "Finished",
+                                        value: run.finishedAt
+                                            ? formatDateTime(run.finishedAt)
+                                            : "Not finished",
+                                    },
+                                ]}
+                            />
+                        </DetailSection>
                         <MaintenanceResults results={run.results ?? []} />
-                        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm [&_dd]:wrap-anywhere [&_dt]:text-primary-400">
-                            <dt>Run ID</dt>
-                            <dd>{run.id}</dd>
-                            <dt>Requested by</dt>
-                            <dd>{formatJobActor(run.requestedBy)}</dd>
-                            <dt>Work size</dt>
-                            <dd>{run.resourceClass}</dd>
-                            <dt>Attempt</dt>
-                            <dd>
-                                {run.attempt} / {run.attemptLimit}
-                            </dd>
-                            <dt>Timeout</dt>
-                            <dd>{run.timeoutMs / 1000} seconds</dd>
-                            <dt>Safe to retry</dt>
-                            <dd>{run.retrySafe ? "Yes" : "No"}</dd>
-                            <dt>Queued</dt>
-                            <dd>{formatDateTime(run.createdAt)}</dd>
-                            <dt>Started</dt>
-                            <dd>
-                                {run.startedAt
-                                    ? formatDateTime(run.startedAt)
-                                    : "Not started"}
-                            </dd>
-                            <dt>Finished</dt>
-                            <dd>
-                                {run.finishedAt
-                                    ? formatDateTime(run.finishedAt)
-                                    : "Not finished"}
-                            </dd>
-                        </dl>
-                        <h3 className="font-medium">Run events</h3>
-                        <VirtualList
-                            label="Run events"
-                            className="max-h-72 space-y-3 overflow-y-auto rounded-lg border border-primary-700 bg-primary-950/40 p-3 text-sm"
-                            rows={query.data?.pages.flatMap((page) => page.events) ?? []}
-                            getKey={(event) => event.id}
-                            continuation={{
-                                hasMore: query.hasNextPage,
-                                loading: query.isFetching,
-                                error: query.isError ? query.error : undefined,
-                                loadingLabel: "Loading older events…",
-                                onLoadMore: () =>
-                                    void (query.isRefetchError
-                                        ? query.refetch()
-                                        : query.fetchNextPage()),
-                            }}
-                            renderItem={(event) => <RunEvent event={event} />}
-                        />
+                        <DetailSection icon={History} title="Run events">
+                            <VirtualList
+                                label="Run events"
+                                className="max-h-72 space-y-3 overflow-y-auto text-sm"
+                                rows={
+                                    query.data?.pages.flatMap((page) => page.events) ?? []
+                                }
+                                getKey={(event) => event.id}
+                                continuation={{
+                                    hasMore: query.hasNextPage,
+                                    loading: query.isFetching,
+                                    error: query.isError ? query.error : undefined,
+                                    loadingLabel: "Loading older events…",
+                                    onLoadMore: () =>
+                                        void (query.isRefetchError
+                                            ? query.refetch()
+                                            : query.fetchNextPage()),
+                                }}
+                                renderItem={(event) => <RunEvent event={event} />}
+                            />
+                        </DetailSection>
                     </>
                 )}
             </div>

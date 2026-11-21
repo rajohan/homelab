@@ -1,0 +1,9 @@
+@import "tailwindcss" source(none);
+@import "../../../../../packages/ui/src/styles/base.css";
+@config "../../../../../tailwind.config.ts";
+@source "../../../../../packages/ui/src/components/AuthFrame/AuthFrame.tsx";
+@source "../../../../../packages/ui/src/components/Brand/Brand.tsx";
+@source "../../../../../packages/ui/src/components/Button";
+@source "../../../../../packages/ui/src/components/Card/Card.tsx";
+@source "../../../../../packages/ui/src/components/Loading";
+@source "./LogoutView.tsx";

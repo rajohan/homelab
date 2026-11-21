@@ -1,6 +1,14 @@
+import { Settings } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { Button, Card, ErrorNotice, LoadingState, PageHeader } from "../../../index";
+import {
+    Button,
+    Card,
+    ErrorNotice,
+    LoadingState,
+    PageHeader,
+    PageSections,
+} from "../../../index";
 import type { IdentityClient } from "../api/IdentityClient";
 import { IdentityError } from "../api/IdentityError";
 import { useAccountSettings } from "../hooks/useAccountSettings";
@@ -54,76 +62,137 @@ export function AccountSettings({
         <div className="w-full space-y-4">
             {account.isError && <ErrorNotice error={account.error} />}
             <PageHeader
+                icon={Settings}
                 title="Account settings"
                 description="Manage your sign-in details, two-factor authentication and active sessions."
             />
-            <AccountIdentityPanel data={account.data} onAction={state.setAction} />
-            <div className="grid gap-4 xl:grid-cols-2">
-                <SecurityKeysPanel
-                    data={account.data}
-                    onAction={state.setAction}
-                    notice={
-                        state.notice?.section === "keys"
-                            ? state.notice.message
-                            : undefined
-                    }
-                />
-                <AuthenticatorAppsPanel
-                    data={account.data}
-                    onAction={state.setAction}
-                    notice={
-                        state.notice?.section === "authenticators"
-                            ? state.notice.message
-                            : undefined
-                    }
-                />
-            </div>
-            <RecoveryCodesPanel
-                data={account.data}
-                onAction={state.setAction}
-                notice={
-                    state.notice?.section === "recovery"
-                        ? state.notice.message
-                        : undefined
-                }
+            <PageSections
+                label="Settings sections"
+                sections={[
+                    {
+                        id: "profile",
+                        label: "Account",
+
+                        content: (
+                            <div className="grid min-w-0 gap-4">
+                                <AccountIdentityPanel
+                                    data={account.data}
+                                    onAction={state.setAction}
+                                />
+                                <ProfilePanel
+                                    data={account.data}
+                                    onAction={state.setAction}
+                                    notice={
+                                        state.notice?.section === "profile"
+                                            ? state.notice.message
+                                            : undefined
+                                    }
+                                />
+                            </div>
+                        ),
+                    },
+                    {
+                        id: "sign-in",
+                        label: "Sign-in & recovery",
+
+                        content: (
+                            <div className="grid min-w-0 gap-4">
+                                <PasswordPanel
+                                    data={account.data}
+                                    onAction={state.setAction}
+                                    notice={
+                                        state.notice?.section === "password"
+                                            ? state.notice.message
+                                            : undefined
+                                    }
+                                />
+                                <div className="grid gap-4 xl:grid-cols-2">
+                                    <SecurityKeysPanel
+                                        data={account.data}
+                                        onAction={state.setAction}
+                                        notice={
+                                            state.notice?.section === "keys"
+                                                ? state.notice.message
+                                                : undefined
+                                        }
+                                    />
+                                    <AuthenticatorAppsPanel
+                                        data={account.data}
+                                        onAction={state.setAction}
+                                        notice={
+                                            state.notice?.section === "authenticators"
+                                                ? state.notice.message
+                                                : undefined
+                                        }
+                                    />
+                                </div>
+                                <RecoveryCodesPanel
+                                    data={account.data}
+                                    onAction={state.setAction}
+                                    notice={
+                                        state.notice?.section === "recovery"
+                                            ? state.notice.message
+                                            : undefined
+                                    }
+                                />
+                                <DisableMfaPanel
+                                    data={account.data}
+                                    onAction={state.setAction}
+                                />
+                            </div>
+                        ),
+                    },
+                    {
+                        id: "access",
+                        label: "Sessions & access",
+
+                        content: (
+                            <div className="grid min-w-0 gap-4">
+                                <SessionsPanel
+                                    data={account.data}
+                                    onAction={state.setAction}
+                                    notice={
+                                        state.notice?.section === "sessions"
+                                            ? state.notice.message
+                                            : undefined
+                                    }
+                                />
+                                <ApprovedApplicationsPanel
+                                    data={account.data}
+                                    onAction={state.setAction}
+                                    notice={
+                                        state.notice?.section === "applications"
+                                            ? state.notice.message
+                                            : undefined
+                                    }
+                                />
+                            </div>
+                        ),
+                    },
+                    ...(children
+                        ? [
+                              {
+                                  id: "connections",
+                                  label: "Computers & automation",
+                                  content: <div className="space-y-4">{children}</div>,
+                              },
+                          ]
+                        : []),
+                    {
+                        id: "activity",
+                        label: "Security activity",
+
+                        content: (
+                            <div className="grid min-w-0 gap-4">
+                                <ActivityPanel
+                                    client={client}
+                                    accountId={account.data.user.id}
+                                />
+                            </div>
+                        ),
+                    },
+                ]}
             />
-            <PasswordPanel
-                data={account.data}
-                onAction={state.setAction}
-                notice={
-                    state.notice?.section === "password"
-                        ? state.notice.message
-                        : undefined
-                }
-            />
-            <ProfilePanel
-                data={account.data}
-                onAction={state.setAction}
-                notice={
-                    state.notice?.section === "profile" ? state.notice.message : undefined
-                }
-            />
-            <SessionsPanel
-                data={account.data}
-                onAction={state.setAction}
-                notice={
-                    state.notice?.section === "sessions"
-                        ? state.notice.message
-                        : undefined
-                }
-            />
-            <ApprovedApplicationsPanel
-                data={account.data}
-                onAction={state.setAction}
-                notice={
-                    state.notice?.section === "applications"
-                        ? state.notice.message
-                        : undefined
-                }
-            />
-            <DisableMfaPanel data={account.data} onAction={state.setAction} />
-            {children}
-            <ActivityPanel client={client} accountId={account.data.user.id} />
             {state.action !== undefined && (
                 <AccountActionDialog
                     action={state.action}

@@ -23,16 +23,13 @@ export function RecoveryCodesDialog({
             <ul className="grid min-w-0 grid-cols-1 gap-2">
                 {codes.map((code) => (
                     <li key={code}>
-                        <code className="block min-w-0 rounded-lg border border-primary-700 bg-primary-900 p-2 text-center font-mono text-sm break-all whitespace-normal text-primary-100 select-all">
+                        <code className="block min-w-0 rounded-lg border border-primary-700 bg-surface-card p-2 text-center font-mono text-sm break-all whitespace-normal text-primary-100 select-all">
                             {code}
                         </code>
                     </li>
                 ))}
             </ul>
             <ActionGroup className="mt-4">
-                <Button size="sm" onClick={onClose}>
-                    I saved the codes
-                </Button>
                 <CopyTextButton label="Copy recovery codes" text={codes.join("\n")} />
                 <Button
                     variant="secondary"
@@ -41,6 +38,9 @@ export function RecoveryCodesDialog({
                 >
                     <Download aria-hidden="true" className="size-4" />
                     Download
+                </Button>
+                <Button size="sm" onClick={onClose}>
+                    I saved the codes
                 </Button>
             </ActionGroup>
         </Modal>

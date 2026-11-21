@@ -2,18 +2,39 @@ import type { MiraSwitch } from "@homelab/contracts/mira";
 import {
     Badge,
     Button,
-    Card,
+    CatalogRow,
     ErrorNotice,
+    formatDateTime,
     LoadingState,
-    SectionHeader,
+    SectionPanel,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
-import { Globe, Mail, Plug } from "lucide-react";
+import {
+    Cloud,
+    GitPullRequest,
+    Globe,
+    type LucideIcon,
+    Mail,
+    MessagesSquare,
+    Plug,
+    Send,
+    Terminal,
+} from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { MiraDisableDialog } from "./MiraDisableDialog";
+
+const integrationIcons: Partial<Record<string, LucideIcon>> = {
+    "integration:agentmail": Mail,
+    "integration:moltbook": MessagesSquare,
+    "integration:moltbook-publish": Send,
+    "integration:here-now": Globe,
+    "integration:daytona": Cloud,
+    "integration:github": GitPullRequest,
+    "code:main": Terminal,
+};
 
 /**
  * Show provisioned integration availability and independent human-controlled pauses.
@@ -42,48 +63,47 @@ export function MiraIntegrations() {
     );
     const error = status.error ?? controls.error ?? enable.error;
     return (
-        <Card className="space-y-4">
-            <SectionHeader
-                title="Integrations"
-                icon={Plug}
-                description="Manage Mira's connections and pause each one independently."
-            />
+        <SectionPanel title="Integrations" icon={Plug}>
             {error && <ErrorNotice error={error} />}
             {status.isPending && <LoadingState label="Loading integrations…" />}
-            {status.data?.map((integration) => {
-                const control = controls.data?.find(
-                    (entry) => entry.key === integration.key
-                );
-                let label = "Not configured";
-                if (integration.configured) label = control?.enabled ? "Ready" : "Paused";
-                if (integration.configured && control?.enabled && !integration.ready)
-                    label = "Offline";
-                if (integration.ready && control?.enabled && integration.lastSuccessAt)
-                    label = "Connected";
-                if (
-                    integration.configured &&
-                    control?.enabled &&
-                    integration.ready &&
-                    integration.message
-                )
-                    label = "Needs attention";
-                return (
-                    <section
-                        key={integration.key}
-                        className="space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4"
-                    >
-                        <SectionHeader
+            <ul className="divide-y divide-primary-700/70">
+                {status.data?.map((integration) => {
+                    const control = controls.data?.find(
+                        (entry) => entry.key === integration.key
+                    );
+                    let label = "Not configured";
+                    if (integration.configured) {
+                        label = "Status unavailable";
+                        if (control) label = control.enabled ? "Ready" : "Paused";
+                    }
+                    if (integration.configured && control?.enabled && !integration.ready)
+                        label = "Offline";
+                    if (
+                        integration.ready &&
+                        control?.enabled &&
+                        integration.lastSuccessAt
+                    )
+                        label = "Connected";
+                    if (
+                        integration.configured &&
+                        control?.enabled &&
+                        integration.ready &&
+                        integration.message
+                    )
+                        label = "Needs attention";
+                    return (
+                        <CatalogRow
+                            key={integration.key}
                             title={integration.title}
-                            icon={
-                                integration.key === "integration:agentmail" ? Mail : Globe
-                            }
-                            badge={<Badge tone={integrationTone(label)}>{label}</Badge>}
+                            icon={integrationIcons[integration.key] ?? Plug}
+                            status={<Badge tone={integrationTone(label)}>{label}</Badge>}
                             description={integration.description}
                             actions={
-                                control && (
+                                control &&
+                                (control.enabled || integration.configured) && (
                                     <Button
                                         variant="secondary"
-                                        className="w-full min-[30rem]:w-auto"
+                                        size="sm"
                                         disabled={!control.enabled && !integration.ready}
                                         busy={
                                             enable.isPending &&
@@ -102,22 +122,33 @@ export function MiraIntegrations() {
                                     </Button>
                                 )
                             }
-                        />
-                        {control && !control.enabled && (
-                            <p className="text-sm text-primary-400">{control.reason}</p>
-                        )}
-                        {integration.message && (
-                            <p className="text-sm text-primary-300">
-                                {integration.message}
-                            </p>
-                        )}
-                    </section>
-                );
-            })}
+                        >
+                            {control &&
+                                !control.enabled &&
+                                (control.version > 1 || control.until) && (
+                                    <p className="text-sm text-primary-400">
+                                        {[
+                                            control.reason,
+                                            control.until &&
+                                                `Resumes ${formatDateTime(control.until)}`,
+                                        ]
+                                            .filter(Boolean)
+                                            .join(" · ")}
+                                    </p>
+                                )}
+                            {integration.message && (
+                                <p className="text-sm text-primary-300">
+                                    {integration.message}
+                                </p>
+                            )}
+                        </CatalogRow>
+                    );
+                })}
+            </ul>
             {paused && (
                 <MiraDisableDialog {...paused} onClose={() => setPaused(undefined)} />
             )}
-        </Card>
+        </SectionPanel>
     );
 }
 

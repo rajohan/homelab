@@ -76,9 +76,9 @@ export function CodeLibrary({
                     proposal by asking Mira in Chat.
                 </p>
             )}
-            <div ref={scrollRoot} className="max-h-128 space-y-3 overflow-y-auto">
+            <div ref={scrollRoot} className="max-h-128 space-y-3 overflow-y-auto pe-3">
                 {rows.map((draft) => (
-                    <Card key={draft.id} className="space-y-3 bg-primary-900/40">
+                    <Card key={draft.id} className="space-y-3">
                         <SectionHeader
                             title={draft.content.title}
                             icon={GitPullRequest}

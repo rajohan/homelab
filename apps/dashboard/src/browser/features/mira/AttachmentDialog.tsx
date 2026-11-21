@@ -31,7 +31,7 @@ export function AttachmentDialog({
         >
             <div className="space-y-4">
                 <FileDropZone disabled={disabled} onFiles={onFiles}>
-                    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-primary-600 bg-primary-900 p-6 text-center">
+                    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-primary-600 bg-surface-card p-6 text-center">
                         <Upload
                             size={24}
                             aria-hidden="true"
@@ -55,7 +55,6 @@ export function AttachmentDialog({
                 </div>
                 {children}
                 <ActionGroup>
-                    <Button onClick={onClose}>Done</Button>
                     {onBrowse && (
                         <Button
                             variant="secondary"
@@ -66,6 +65,7 @@ export function AttachmentDialog({
                             Choose existing
                         </Button>
                     )}
+                    <Button onClick={onClose}>Done</Button>
                 </ActionGroup>
             </div>
         </Modal>

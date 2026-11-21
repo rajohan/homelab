@@ -1,4 +1,9 @@
-import { IconButton, type PopoverControl } from "@homelab/ui";
+import {
+    IconButton,
+    type PageOutline,
+    PageOutlineContext,
+    type PopoverControl,
+} from "@homelab/ui";
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useRef, useState } from "react";
@@ -14,6 +19,7 @@ import { Sidebar } from "./Sidebar";
  * @returns The component's rendered content for its current state.
  */
 export function Shell() {
+    const [outline, setOutline] = useState<PageOutline | null>(null);
     const location = useLocation();
     const chatWorkspace =
         location.pathname === "/mira" || location.pathname.startsWith("/mira/");
@@ -47,7 +53,6 @@ export function Shell() {
         "/settings": "Settings",
         "/infrastructure": "Infrastructure",
         "/jobs": "Jobs",
-        "/applications": "Applications",
         "/alerts": "Incidents",
         "/backups": "Backups",
         "/updates": "Updates",
@@ -58,27 +63,36 @@ export function Shell() {
     return (
         <JobActivityContext value={revealActivity}>
             <div
-                className={`${chatWorkspace ? "h-dvh overflow-hidden" : "min-h-dvh"} bg-primary-900 text-primary-50`}
+                className={`${chatWorkspace ? "h-dvh overflow-hidden" : "min-h-dvh"} bg-primary-950 text-primary-50`}
             >
                 <a
                     className="fixed top-3 left-3 z-50 -translate-y-24 rounded-lg bg-accent-700 px-4 py-3 text-sm font-semibold text-white focus:translate-y-0"
                     href="#main-content"
+                    onClick={(event) => {
+                        const main = document.querySelector<HTMLElement>("#main-content");
+                        if (main) {
+                            event.preventDefault();
+                            main.focus({ preventScroll: true });
+                            main.scrollIntoView({ block: "start" });
+                        }
+                    }}
                 >
                     Skip to content
                 </a>
                 <aside
-                    className={`fixed inset-y-0 left-0 hidden flex-col border-r border-primary-700 bg-primary-950 lg:flex ${compactNavigation ? "w-18" : "w-60 xl:w-64"}`}
+                    className={`fixed inset-y-0 left-0 hidden flex-col border-r border-primary-700 bg-primary-900 lg:flex ${compactNavigation ? "w-18" : "w-52"}`}
                 >
-                    <Sidebar compact={compactNavigation} />
+                    <Sidebar compact={compactNavigation} outline={outline} />
                 </aside>
                 <MobileNavigation
+                    outline={outline}
                     open={navigationPath === location.pathname}
                     onClose={() => setNavigationPath(undefined)}
                 />
                 <div
-                    className={`flex min-w-0 flex-col ${compactNavigation ? "lg:pl-18" : "lg:pl-60 xl:pl-64"} ${chatWorkspace ? "h-full min-h-0" : "min-h-dvh"}`}
+                    className={`flex min-w-0 flex-col ${compactNavigation ? "lg:pl-18" : "lg:pl-52"} ${chatWorkspace ? "h-full min-h-0" : "min-h-dvh"}`}
                 >
-                    <header className="sticky top-0 z-20 flex h-20 shrink-0 items-center justify-between gap-3 border-b border-primary-700 bg-primary-950/95 px-4 backdrop-blur-sm sm:px-5">
+                    <header className="h-shell-header sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 border-b border-primary-700 bg-primary-950/95 px-4 backdrop-blur-sm sm:px-5">
                         <div className="flex min-w-0 items-center gap-3">
                             <IconButton
                                 icon={Menu}
@@ -102,7 +116,7 @@ export function Shell() {
                                 className="min-w-0 text-sm font-medium"
                             >
                                 <ol className="flex min-w-0 items-center gap-3">
-                                    <li>
+                                    <li className="hidden sm:block">
                                         <Link
                                             to="/"
                                             className="rounded text-primary-400 hover:text-primary-50 focus-visible:outline-2 focus-visible:outline-accent-300"
@@ -110,7 +124,10 @@ export function Shell() {
                                             Homelab
                                         </Link>
                                     </li>
-                                    <li aria-hidden="true" className="text-primary-600">
+                                    <li
+                                        aria-hidden="true"
+                                        className="hidden text-primary-600 sm:block"
+                                    >
                                         /
                                     </li>
                                     <li className="min-w-0">
@@ -131,11 +148,13 @@ export function Shell() {
                         </div>
                     </header>
                     <main
-                        className={`mx-auto w-full max-w-400 min-w-0 flex-1 p-4 sm:p-5 ${chatWorkspace ? "flex min-h-0 flex-col overflow-hidden" : ""}`}
+                        className={`mx-auto w-full max-w-400 min-w-0 flex-1 ${chatWorkspace ? "flex min-h-0 flex-col overflow-hidden sm:p-3 xl:p-5" : "p-4 sm:p-5"}`}
                         id="main-content"
                         tabIndex={-1}
                     >
-                        <Outlet />
+                        <PageOutlineContext value={setOutline}>
+                            <Outlet />
+                        </PageOutlineContext>
                     </main>
                     {!chatWorkspace && (
                         <footer className="mx-auto w-full max-w-400 px-4 pt-2 pb-5 text-center text-xs text-primary-500 sm:px-5">

@@ -1,13 +1,17 @@
 import {
+    ActivityPanel,
+    EmptyState,
     ErrorNotice,
     LoadingState,
     Popover,
     type PopoverControl,
     queryRefresh,
+    SummaryStrip,
     VirtualList,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
-import { Cog } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { ArrowRight, Cog } from "lucide-react";
 import { type Ref, useState } from "react";
 
 import { api } from "../../api/client";
@@ -81,6 +85,7 @@ export function JobActivity({
     const running = runs.filter((run) => run.state === "running").length;
     const queued = runs.filter((run) => run.state === "queued").length;
     const active = running + queued;
+    const summary = query.isPending ? "Checking queue…" : "Your jobs";
     const label = query.isPending
         ? "Worker activity, loading"
         : `Worker activity, ${running} running, ${queued} queued`;
@@ -88,6 +93,7 @@ export function JobActivity({
         <>
             <Popover
                 controlRef={controlRef}
+                layout="feed"
                 label={query.isError ? "Worker activity, status unavailable" : label}
                 trigger={
                     <>
@@ -118,13 +124,21 @@ export function JobActivity({
                 }
             >
                 {({ close }) => (
-                    <section aria-label="Worker activity" className="space-y-4">
-                        <div>
-                            <h2 className="text-lg font-semibold">Worker activity</h2>
-                            <p className="mt-1 text-sm text-primary-400">
-                                Your active and recently completed jobs.
-                            </p>
-                        </div>
+                    <ActivityPanel
+                        title="Worker activity"
+                        icon={Cog}
+                        onClose={close}
+                        summary={query.isError ? "Status unavailable" : summary}
+                    >
+                        {query.data && !query.isError && (
+                            <SummaryStrip
+                                label="Your job counts"
+                                items={[
+                                    { label: "Running", value: running, tone: "info" },
+                                    { label: "Queued", value: queued },
+                                ]}
+                            />
+                        )}
                         {query.isPending && (
                             <LoadingState label="Loading job activity…" />
                         )}
@@ -138,9 +152,12 @@ export function JobActivity({
                             />
                         )}
                         {!query.isPending && !query.isError && runs.length === 0 && (
-                            <p className="rounded-lg border border-primary-700 bg-primary-900 p-4 text-sm text-primary-400">
-                                No active or recently completed jobs.
-                            </p>
+                            <EmptyState
+                                compact
+                                icon={Cog}
+                                title="No active jobs"
+                                description="Open job history to see earlier runs."
+                            />
                         )}
                         {runs.length > 0 && (
                             <VirtualList
@@ -148,7 +165,7 @@ export function JobActivity({
                                 rows={runs}
                                 getKey={(run) => run.id}
                                 className="max-h-[min(26rem,60dvh)]"
-                                itemClassName="pb-2 last-of-type:pb-0"
+                                itemClassName="pb-0"
                                 scrollbarGap
                                 renderItem={(run) => (
                                     <JobActivityItem
@@ -163,7 +180,26 @@ export function JobActivity({
                                 )}
                             />
                         )}
-                    </section>
+                        <div className="flex flex-wrap gap-x-4 border-t border-primary-700 pt-1">
+                            {(
+                                [
+                                    { hash: "queue", label: "Open queue" },
+                                    { hash: "history", label: "Job history" },
+                                ] as const
+                            ).map((item) => (
+                                <Link
+                                    key={item.hash}
+                                    to="/jobs"
+                                    hash={item.hash}
+                                    onClick={() => close()}
+                                    className="inline-flex min-h-11 items-center gap-1.5 rounded text-sm font-medium text-accent-300 hover:underline"
+                                >
+                                    {item.label}
+                                    <ArrowRight size={14} aria-hidden="true" />
+                                </Link>
+                            ))}
+                        </div>
+                    </ActivityPanel>
                 )}
             </Popover>
             {selected && (

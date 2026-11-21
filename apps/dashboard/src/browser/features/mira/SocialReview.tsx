@@ -60,7 +60,7 @@ export function SocialReview({
             size="wide"
         >
             <div className="space-y-4">
-                <Card className="space-y-4 bg-primary-900/40">
+                <Card className="space-y-4">
                     <SectionHeader
                         title={title}
                         icon={MessageSquare}
@@ -96,7 +96,7 @@ export function SocialReview({
                     </p>
                 )}
                 {draft.state === "verification_required" && draft.challenge && (
-                    <Card className="space-y-4 bg-primary-900/40">
+                    <Card className="space-y-4">
                         <SectionHeader
                             title="Provider verification"
                             icon={MessageSquare}
@@ -135,7 +135,7 @@ export function SocialReview({
                         "queued_verification",
                     ].includes(draft.state) && (
                         <Button
-                            variant="secondary"
+                            variant="danger"
                             busy={cancel.isPending}
                             disabled={approve.isPending || verify.isPending}
                             onClick={() =>
@@ -147,6 +147,20 @@ export function SocialReview({
                         >
                             Cancel action
                         </Button>
+                    )}
+                    {postId && (
+                        <a
+                            href={`https://www.moltbook.com/post/${encodeURIComponent(postId)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={buttonStyles({
+                                variant:
+                                    draft.state === "submitted" ? "primary" : "secondary",
+                            })}
+                        >
+                            <ExternalLink size={16} aria-hidden="true" />
+                            Open post
+                        </a>
                     )}
                     {draft.state === "draft" && (
                         <Button
@@ -178,17 +192,6 @@ export function SocialReview({
                         >
                             Submit answer
                         </Button>
-                    )}
-                    {postId && (
-                        <a
-                            href={`https://www.moltbook.com/post/${encodeURIComponent(postId)}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className={buttonStyles({ variant: "secondary" })}
-                        >
-                            <ExternalLink size={16} aria-hidden="true" />
-                            Open post
-                        </a>
                     )}
                 </ActionGroup>
             </div>

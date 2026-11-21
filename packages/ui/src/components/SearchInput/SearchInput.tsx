@@ -41,7 +41,10 @@ export function SearchInput({
             <Input
                 ref={input}
                 aria-label={label}
-                className="pr-12 pl-10 [&::-webkit-search-cancel-button]:appearance-none"
+                className={cn(
+                    "pl-10 [&::-webkit-search-cancel-button]:appearance-none",
+                    value ? "pr-12" : "pr-3"
+                )}
                 disabled={disabled}
                 maxLength={maxLength}
                 onChange={(event) => onChange(event.currentTarget.value)}

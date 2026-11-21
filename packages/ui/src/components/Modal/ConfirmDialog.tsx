@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 
 import { ErrorNotice } from "../Alert/ErrorNotice";
 import { ActionGroup } from "../Button/ActionGroup";
@@ -32,6 +32,7 @@ export function ConfirmDialog({
     confirmDisabled?: boolean;
     size?: "md" | "wide";
 }) {
+    const formId = useId();
     const [pending, setPending] = useState(false);
     const [error, setError] = useState<unknown>();
     return (
@@ -41,8 +42,30 @@ export function ConfirmDialog({
             onClose={onClose}
             dismissible={!pending}
             size={size}
+            footer={
+                <ActionGroup>
+                    <Button
+                        variant="secondary"
+                        onClick={onClose}
+                        disabled={pending}
+                        data-autofocus
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        type="submit"
+                        form={formId}
+                        variant={variant}
+                        busy={pending}
+                        disabled={confirmDisabled}
+                    >
+                        {confirmLabel}
+                    </Button>
+                </ActionGroup>
+            }
         >
             <Form
+                id={formId}
                 className="space-y-4"
                 onSubmit={async () => {
                     if (pending || confirmDisabled) return;
@@ -59,24 +82,6 @@ export function ConfirmDialog({
             >
                 {children}
                 {error !== undefined && <ErrorNotice error={error} />}
-                <ActionGroup>
-                    <Button
-                        type="submit"
-                        variant={variant}
-                        busy={pending}
-                        disabled={confirmDisabled}
-                    >
-                        {confirmLabel}
-                    </Button>
-                    <Button
-                        variant="secondary"
-                        onClick={onClose}
-                        disabled={pending}
-                        data-autofocus
-                    >
-                        Cancel
-                    </Button>
-                </ActionGroup>
             </Form>
         </Modal>
     );

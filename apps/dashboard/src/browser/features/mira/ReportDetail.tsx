@@ -80,22 +80,27 @@ export function ReportDetail({
                     ) : (
                         <Markdown>{report.markdown}</Markdown>
                     )}
-                    {report.conversationId && (
-                        <Link
-                            to="/mira/$conversationId"
-                            params={{ conversationId: report.conversationId }}
-                            className={buttonStyles({
-                                variant: "secondary",
-                                className: "w-full sm:w-auto",
-                            })}
-                        >
-                            Open conversation and run
-                        </Link>
-                    )}
-                    {!report.deleted && (
-                        <ActionGroup>
+                    <ActionGroup>
+                        {!report.deleted && (
+                            <Button variant="danger" onClick={() => setDeleting(true)}>
+                                <Trash2 size={16} aria-hidden="true" />
+                                Delete
+                            </Button>
+                        )}
+                        {report.conversationId && (
+                            <Link
+                                to="/mira/$conversationId"
+                                params={{ conversationId: report.conversationId }}
+                                className={buttonStyles({
+                                    variant: report.deleted ? "primary" : "secondary",
+                                })}
+                            >
+                                Open conversation and run
+                            </Link>
+                        )}
+                        {!report.deleted && (
                             <Button
-                                variant="secondary"
+                                variant="primary"
                                 busy={change.isPending}
                                 onClick={() =>
                                     change.mutate(
@@ -106,12 +111,8 @@ export function ReportDetail({
                                 <Archive size={16} aria-hidden="true" />
                                 {report.archivedAt ? "Restore" : "Archive"}
                             </Button>
-                            <Button variant="secondary" onClick={() => setDeleting(true)}>
-                                <Trash2 size={16} aria-hidden="true" />
-                                Delete
-                            </Button>
-                        </ActionGroup>
-                    )}
+                        )}
+                    </ActionGroup>
                 </div>
             )}
         </Modal>

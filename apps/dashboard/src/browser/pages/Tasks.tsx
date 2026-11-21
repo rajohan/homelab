@@ -1,11 +1,12 @@
 import { type MiraTask } from "@homelab/contracts/mira";
-import { Button, Card, PageHeader, SearchInput, Select } from "@homelab/ui";
-import { Plus } from "lucide-react";
+import { Button, FilterBar, PageHeader, SearchInput, Select } from "@homelab/ui";
+import { ListTodo, Plus, Users } from "lucide-react";
 import { useState } from "react";
 
 import { TaskBoard } from "../features/mira/TaskBoard";
 import { TaskDetail } from "../features/mira/TaskDetail";
 import { TaskEditor } from "../features/mira/TaskEditor";
+import { useTaskColumn } from "../features/mira/useTaskColumn";
 
 /**
  * Restore Mira's task board with independent state columns and shared responsive controls.
@@ -14,11 +15,18 @@ import { TaskEditor } from "../features/mira/TaskEditor";
 export function Tasks() {
     const [search, setSearch] = useState("");
     const [assignee, setAssignee] = useState<MiraTask["assignee"] | "all">("all");
+    const columns = {
+        todo: useTaskColumn("todo", search, assignee),
+        in_progress: useTaskColumn("in_progress", search, assignee),
+        blocked: useTaskColumn("blocked", search, assignee),
+        done: useTaskColumn("done", search, assignee),
+    };
     const [selected, setSelected] = useState<MiraTask>();
     const [editing, setEditing] = useState(false);
     return (
         <div className="space-y-4">
             <PageHeader
+                icon={ListTodo}
                 actions={
                     <Button
                         onClick={() => {
@@ -33,16 +41,20 @@ export function Tasks() {
                 title="Tasks"
                 description="Plan work, agree on completion criteria and follow progress."
             />
-            <Card className="grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_14rem]">
-                <SearchInput
-                    label="Search tasks"
-                    placeholder="Search tasks and labels…"
-                    value={search}
-                    onChange={setSearch}
-                    maxLength={160}
-                />
+            <FilterBar
+                search={
+                    <SearchInput
+                        label="Search tasks"
+                        placeholder="Search tasks and labels…"
+                        value={search}
+                        onChange={setSearch}
+                        maxLength={160}
+                    />
+                }
+            >
                 <Select
                     label="Filter by assignee"
+                    icon={Users}
                     value={assignee}
                     onChange={setAssignee}
                     options={[
@@ -51,8 +63,13 @@ export function Tasks() {
                         { value: "operator", label: "You" },
                     ]}
                 />
-            </Card>
-            <TaskBoard search={search} assignee={assignee} onSelect={setSelected} />
+            </FilterBar>
+            <TaskBoard
+                columns={columns}
+                search={search}
+                assignee={assignee}
+                onSelect={setSelected}
+            />
             {editing ? (
                 <TaskEditor
                     task={selected}

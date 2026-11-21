@@ -1,9 +1,13 @@
 import type { KoaContextWithOIDC } from "oidc-provider";
 
 import type { Principal } from "../security/accounts";
+import { logoutDocument, logoutStyleHash } from "./logoutDocument";
 
 const submit =
-    'document.getElementById("op.logoutForm").requestSubmit(document.getElementById("confirm-logout"));';
+    'const button=document.getElementById("confirm-logout");' +
+    "button.form.requestSubmit(button);" +
+    'document.getElementById("logout-controls").hidden=true;' +
+    'document.getElementById("logout-progress").hidden=false;';
 
 /**
  * Finish a verified app-initiated logout without asking the user a second time.
@@ -43,13 +47,11 @@ export function renderLogout(
     // validated return origin, never a wildcard or an unregistered destination.
     context.set(
         "Content-Security-Policy",
-        `default-src 'none'; script-src ${scripts}; form-action 'self'${destination}; frame-ancestors 'none'; base-uri 'none'`
+        `default-src 'none'; script-src ${scripts}; style-src 'sha256-${logoutStyleHash}'; img-src data:; form-action 'self'${destination}; frame-ancestors 'none'; base-uri 'none'`
     );
-    const title = automatic ? "Signing out" : "Sign out of Homelab?";
-    const button =
-        '<button type="submit" form="op.logoutForm" name="logout" value="yes">Sign out</button>';
-    const content = automatic
-        ? `${form}<button hidden id="confirm-logout" type="submit" form="op.logoutForm" name="logout" value="yes"></button><script>${submit}</script><noscript><p>Enable JavaScript or select Sign out to continue.</p>${button}</noscript>`
-        : `<h1>${title}</h1><p>This ends this browser's identity session and its connected grants.</p>${form}${button}<p><a href="/account">Cancel</a></p>`;
-    context.body = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title><main>${content}</main></html>`;
+    context.body = logoutDocument(
+        automatic ? "finishing" : "confirm",
+        form,
+        automatic ? submit : undefined
+    );
 }

@@ -1,4 +1,4 @@
-import { formatMetric, utilization } from "@homelab/ui";
+import { formatMetric, ReadingBar, utilization } from "@homelab/ui";
 
 /**
  * Display measured capacity without implying missing or zero capacity is healthy.
@@ -30,21 +30,10 @@ export function ResourceUsage({
                     / {formatMetric(total, "bytes")}
                 </span>
             </p>
-            {percent !== null && (
-                <div
-                    className="h-1.5 overflow-hidden rounded-full bg-primary-700"
-                    aria-hidden="true"
-                >
-                    <div
-                        className={
-                            percent >= 90
-                                ? "h-full rounded-full bg-red-400"
-                                : "h-full rounded-full bg-accent-400"
-                        }
-                        style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
-                    />
-                </div>
-            )}
+            <ReadingBar
+                percent={percent}
+                tone={percent !== null && percent >= 90 ? "warning" : "accent"}
+            />
             {description && (
                 <p className="text-xs wrap-anywhere text-primary-400">{description}</p>
             )}

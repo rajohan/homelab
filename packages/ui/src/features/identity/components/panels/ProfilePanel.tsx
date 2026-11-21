@@ -26,7 +26,7 @@ export function ProfilePanel({ data, onAction, notice }: AccountPanelProps) {
                 </Button>
             }
         >
-            <p className="rounded-lg border border-primary-700 bg-primary-900/40 px-4 py-3 text-sm font-medium wrap-anywhere text-primary-100">
+            <p className="rounded-lg border border-primary-700 bg-surface-card px-4 py-3 text-sm font-medium wrap-anywhere text-primary-100">
                 {data.user.email}
             </p>
             {notice && <SuccessNotice>{notice}</SuccessNotice>}

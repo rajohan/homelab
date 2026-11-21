@@ -1,4 +1,4 @@
-import { Button } from "@homelab/ui";
+import { Button, IconButton } from "@homelab/ui";
 import { ArrowUpCircle } from "lucide-react";
 import { useState } from "react";
 
@@ -23,16 +23,26 @@ export function UpdateBatchAction({
     const [open, setOpen] = useState(false);
     return (
         <>
-            <Button
-                variant="secondary"
-                className={`w-full ${className ?? ""}`}
-                disabled={disabled}
-                aria-label={label ? `Update all on ${label}` : "Update all hosts"}
-                onClick={() => setOpen(true)}
-            >
-                <ArrowUpCircle className="size-4 shrink-0" aria-hidden="true" /> Update
-                all
-            </Button>
+            {source && label ? (
+                <IconButton
+                    icon={ArrowUpCircle}
+                    label={`Update all on ${label}`}
+                    variant="ghost"
+                    disabled={disabled}
+                    onClick={() => setOpen(true)}
+                />
+            ) : (
+                <Button
+                    variant="secondary"
+                    className={`w-full ${className ?? ""}`}
+                    disabled={disabled}
+                    aria-label={label ? `Update all on ${label}` : "Update all hosts"}
+                    onClick={() => setOpen(true)}
+                >
+                    <ArrowUpCircle className="size-4 shrink-0" aria-hidden="true" />{" "}
+                    Update all
+                </Button>
+            )}
             {open && (
                 <UpdateBatchDialog
                     {...(source ? { source } : {})}

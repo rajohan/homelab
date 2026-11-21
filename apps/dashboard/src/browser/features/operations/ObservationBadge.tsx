@@ -2,7 +2,7 @@ import { Badge } from "@homelab/ui";
 
 /**
  * Share collection freshness presentation without mistaking it for resource health.
- * @returns A compact badge for unconfigured, missing, stale or current observations.
+ * @returns A compact badge for unconfigured, missing or stale observations.
  */
 export function ObservationBadge({
     configured,
@@ -15,9 +15,6 @@ export function ObservationBadge({
 }) {
     if (!configured) return <Badge tone="neutral">Not configured</Badge>;
     if (!available) return <Badge tone="warning">Awaiting data</Badge>;
-    return (
-        <Badge tone={stale ? "warning" : "positive"}>
-            {stale ? "Stale data" : "Live data"}
-        </Badge>
-    );
+    if (stale) return <Badge tone="warning">Stale data</Badge>;
+    return null;
 }

@@ -80,7 +80,7 @@ export function ChatTranscript({
         return () => resize.disconnect();
     }, []);
     return (
-        <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className="relative flex min-h-24 flex-1 flex-col">
             <div
                 ref={viewport}
                 className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain [overflow-anchor:none]"
@@ -95,7 +95,10 @@ export function ChatTranscript({
                     setShowJump(!following.current);
                 }}
             >
-                <div ref={content} className="space-y-5 p-4 sm:p-5">
+                <div
+                    ref={content}
+                    className="mx-auto w-full max-w-3xl space-y-6 px-4 py-5 sm:space-y-8 sm:px-6 sm:py-8"
+                >
                     <InfiniteScrollTrigger
                         {...continuation}
                         rootRef={viewport}
@@ -104,7 +107,7 @@ export function ChatTranscript({
                         onLoadMore={loadOlder}
                     />
                     {messages.length === 0 && (
-                        <p className="py-12 text-center text-sm text-primary-400">
+                        <p className="grid min-h-[min(32dvh,14rem)] place-items-center px-4 text-center text-lg font-medium tracking-tight text-primary-200">
                             Start a conversation with Mira.
                         </p>
                     )}
