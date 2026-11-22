@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/rajohan/homelab/compare/v0.22.0...v0.23.0) (2026-11-22)
+
+
+### Features
+
+* **dashboard:** redesign the homelab workspace and shared interface ([#252](https://github.com/rajohan/homelab/issues/252)) ([dd5e168](https://github.com/rajohan/homelab/commit/dd5e16851ff155cdef6a979d89920f2311b02836))
+
 ## [0.22.0](https://github.com/rajohan/homelab/compare/v0.21.2...v0.22.0) (2026-11-19)
 
 
