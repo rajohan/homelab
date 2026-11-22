@@ -85,7 +85,7 @@ export function DaytonaDetails({
             dismissible={!busy}
         >
             <div className="space-y-4">
-                <Card className="space-y-4 bg-primary-900/40">
+                <Card className="space-y-4">
                     <SectionHeader
                         title={job.content.title}
                         icon={job.executionTarget === "main" ? Server : Cloud}
@@ -131,7 +131,7 @@ export function DaytonaDetails({
                     {job.message && (
                         <p className="text-sm text-primary-300">{job.message}</p>
                     )}
-                    <pre className="max-h-72 overflow-auto rounded-lg border border-primary-700 bg-primary-950/40 p-3 text-sm wrap-anywhere whitespace-pre-wrap">
+                    <pre className="max-h-72 overflow-auto rounded-lg border border-primary-700 bg-surface-card p-3 text-sm wrap-anywhere whitespace-pre-wrap">
                         {job.content.command}
                     </pre>
                 </Card>
@@ -152,7 +152,7 @@ export function DaytonaDetails({
                     </p>
                 )}
                 {(job.content.inputs.length > 0 || job.content.outputs.length > 0) && (
-                    <Card className="space-y-3 bg-primary-900/40">
+                    <Card className="space-y-3">
                         <SectionHeader title="Selected files" icon={File} />
                         <p className="text-sm wrap-anywhere text-primary-300">
                             Inputs:{" "}
@@ -173,7 +173,7 @@ export function DaytonaDetails({
                     </Card>
                 )}
                 {(job.stdout || job.stderr || job.output) && (
-                    <Card className="space-y-3 bg-primary-900/40">
+                    <Card className="space-y-3">
                         <SectionHeader title="Logs" icon={ScrollText} />
                         {(
                             [
@@ -188,7 +188,7 @@ export function DaytonaDetails({
                                     <p className="mb-2 text-xs text-primary-400">
                                         {label}
                                     </p>
-                                    <pre className="max-h-72 overflow-auto rounded-lg border border-primary-700 bg-primary-950/40 p-3 text-xs wrap-anywhere whitespace-pre-wrap">
+                                    <pre className="max-h-72 overflow-auto rounded-lg border border-primary-700 bg-surface-card p-3 text-xs wrap-anywhere whitespace-pre-wrap">
                                         {text}
                                     </pre>
                                 </div>
@@ -206,6 +206,16 @@ export function DaytonaDetails({
                 )}
                 {(canRecover || job.state === "draft" || canCancel) && (
                     <ActionGroup>
+                        {canCancel && (
+                            <Button
+                                variant="danger"
+                                busy={cancel.isPending}
+                                disabled={busy}
+                                onClick={() => void cancelJob().catch(() => {})}
+                            >
+                                Cancel job
+                            </Button>
+                        )}
                         {canRecover && (
                             <Button
                                 variant="secondary"
@@ -230,16 +240,6 @@ export function DaytonaDetails({
                             >
                                 Approve and run on{" "}
                                 {job.executionTarget === "main" ? "Main" : "Daytona"}
-                            </Button>
-                        )}
-                        {canCancel && (
-                            <Button
-                                variant="secondary"
-                                busy={cancel.isPending}
-                                disabled={busy}
-                                onClick={() => void cancelJob().catch(() => {})}
-                            >
-                                Cancel job
                             </Button>
                         )}
                     </ActionGroup>

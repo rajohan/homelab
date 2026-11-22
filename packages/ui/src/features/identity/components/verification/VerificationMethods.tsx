@@ -2,7 +2,13 @@ import { passwordPolicy } from "@homelab/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 
-import { Button, ErrorNotice, FieldsForm, LoadingState } from "../../../../index";
+import {
+    ActionGroup,
+    Button,
+    ErrorNotice,
+    FieldsForm,
+    LoadingState,
+} from "../../../../index";
 import type { IdentityClient } from "../../api/IdentityClient";
 
 /**
@@ -109,43 +115,42 @@ export function VerificationMethods({
     return frame(
         <div className="grid grid-cols-1 gap-3">
             {error !== undefined && <ErrorNotice error={error} />}
-            {available.includes("webauthn") && (
-                <Button
-                    fullWidth
-                    disabled={busy}
-                    onClick={() => {
-                        setBusy(true);
-                        setError(undefined);
-                        void client
-                            .securityKeyProof()
-                            .then(onVerified)
-                            .catch(setError)
-                            .finally(() => setBusy(false));
-                    }}
-                >
-                    {busy ? "Waiting for your security key…" : "Use security key"}
-                </Button>
-            )}
-            {available.includes("totp") && (
-                <Button
-                    fullWidth
-                    variant={available.includes("webauthn") ? "secondary" : "primary"}
-                    disabled={busy}
-                    onClick={() => setCodeMethod("totp")}
-                >
-                    Use authenticator app
-                </Button>
-            )}
-            {methods.data.recoveryAvailable && (
-                <Button
-                    fullWidth
-                    variant="ghost"
-                    disabled={busy}
-                    onClick={() => setCodeMethod("recovery")}
-                >
-                    Use recovery code
-                </Button>
-            )}
+            <ActionGroup stacked>
+                {available.includes("webauthn") && (
+                    <Button
+                        disabled={busy}
+                        onClick={() => {
+                            setBusy(true);
+                            setError(undefined);
+                            void client
+                                .securityKeyProof()
+                                .then(onVerified)
+                                .catch(setError)
+                                .finally(() => setBusy(false));
+                        }}
+                    >
+                        {busy ? "Waiting for your security key…" : "Use security key"}
+                    </Button>
+                )}
+                {available.includes("totp") && (
+                    <Button
+                        variant={available.includes("webauthn") ? "secondary" : "primary"}
+                        disabled={busy}
+                        onClick={() => setCodeMethod("totp")}
+                    >
+                        Use authenticator app
+                    </Button>
+                )}
+                {methods.data.recoveryAvailable && (
+                    <Button
+                        variant="ghost"
+                        disabled={busy}
+                        onClick={() => setCodeMethod("recovery")}
+                    >
+                        Use recovery code
+                    </Button>
+                )}
+            </ActionGroup>
         </div>
     );
 }

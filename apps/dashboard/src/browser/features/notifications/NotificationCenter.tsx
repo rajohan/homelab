@@ -24,6 +24,7 @@ export function NotificationCenter() {
     return (
         <Popover
             label={label}
+            layout="feed"
             trigger={
                 <>
                     <Bell size={20} aria-hidden="true" />
@@ -44,7 +45,7 @@ export function NotificationCenter() {
                 </>
             }
         >
-            <NotificationPanel />
+            {({ close }) => <NotificationPanel onClose={close} />}
         </Popover>
     );
 }

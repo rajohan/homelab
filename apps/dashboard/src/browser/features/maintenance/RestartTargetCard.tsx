@@ -24,7 +24,7 @@ export function RestartTargetCard({
     if (required !== null)
         requirement = required ? "Restart required" : "No restart required";
     return (
-        <div className="@container/restart rounded-lg border border-primary-700 bg-primary-950/40 p-4">
+        <div className="@container/restart rounded-lg border border-primary-700 bg-surface-card p-4">
             <div className="grid gap-3 @min-[40rem]/restart:grid-cols-[minmax(0,1fr)_auto]">
                 <div className="flex flex-wrap items-center gap-2">
                     <h4 className="font-medium">{plan.label}</h4>

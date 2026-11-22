@@ -1,6 +1,6 @@
 import type { MiraMessage } from "@homelab/contracts/mira";
 import { Badge, formatDateTime, IconButton, Markdown } from "@homelab/ui";
-import { Square, Volume2 } from "lucide-react";
+import { AudioLines, Square, Volume2 } from "lucide-react";
 
 import { MessageAttachments } from "./MessageAttachments";
 import { miraStatusTone } from "./statusTone";
@@ -27,15 +27,30 @@ export function ChatMessage({
             className={`flex min-w-0 ${user ? "justify-end" : "justify-start"}`}
         >
             <div
-                className={`max-w-[94%] min-w-0 rounded-2xl px-4 py-3 sm:max-w-[88%] ${user ? "bg-accent-700 text-white" : "bg-primary-950 text-primary-100"}`}
+                className={`min-w-0 ${user ? "max-w-[92%] rounded-2xl rounded-br-md bg-primary-800 px-4 py-3 text-primary-100 sm:max-w-[82%]" : "w-full text-primary-100"}`}
             >
                 <div
-                    className={`mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold ${user ? "text-white/80" : "text-primary-400"}`}
+                    className={`mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold ${user ? "text-primary-300" : "text-primary-400"}`}
                 >
-                    <span>{message.role === "user" ? "You" : "Mira"}</span>
+                    <span
+                        className={
+                            user
+                                ? "text-primary-300"
+                                : "inline-flex items-center gap-2 text-sm font-semibold text-primary-50"
+                        }
+                    >
+                        {!user && (
+                            <AudioLines
+                                aria-hidden="true"
+                                size={18}
+                                className="text-accent-300"
+                            />
+                        )}
+                        {user ? "You" : "Mira"}
+                    </span>
                     <time
                         dateTime={message.createdAt}
-                        className="ml-auto font-normal tabular-nums"
+                        className="font-normal tabular-nums"
                     >
                         {formatDateTime(message.createdAt)}
                     </time>
@@ -44,23 +59,23 @@ export function ChatMessage({
                             {message.state.replaceAll("_", " ")}
                         </Badge>
                     )}
+                    {!user &&
+                        message.content &&
+                        message.state === "completed" &&
+                        onReadAloud && (
+                            <IconButton
+                                icon={reading ? Square : Volume2}
+                                label={
+                                    reading ? "Stop reading this message" : "Read aloud"
+                                }
+                                className="ml-auto"
+                                onClick={() => onReadAloud(message)}
+                            />
+                        )}
                 </div>
-                {!user &&
-                    message.content &&
-                    message.state === "completed" &&
-                    onReadAloud && (
-                        <IconButton
-                            icon={reading ? Square : Volume2}
-                            label={reading ? "Stop reading this message" : "Read aloud"}
-                            className="float-right ml-2 size-8"
-                            onClick={() => onReadAloud(message)}
-                        />
-                    )}
-                {message.content ? (
-                    <Markdown tone={user ? "onAccent" : "default"}>
-                        {message.content}
-                    </Markdown>
-                ) : null}
+                <div className="[&_.prose]:text-base [&_.prose]:leading-relaxed">
+                    {message.content ? <Markdown>{message.content}</Markdown> : null}
+                </div>
                 {message.attachmentIds.length > 0 && (
                     <MessageAttachments ids={message.attachmentIds} />
                 )}

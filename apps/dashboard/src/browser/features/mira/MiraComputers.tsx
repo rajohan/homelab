@@ -106,17 +106,17 @@ export function MiraComputers() {
                 </div>
             )}
             {query.data?.length === 0 && (
-                <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
+                <p className="rounded-lg border border-primary-700 bg-surface-empty p-4 text-sm text-primary-400">
                     No computers paired yet.
                 </p>
             )}
-            <div className="max-h-120 space-y-3 overflow-y-auto overscroll-contain">
+            <div className="max-h-120 space-y-3 overflow-y-auto overscroll-contain pe-3">
                 {query.data?.map((computer) => {
                     const status = computerStatus(computer, query.dataUpdatedAt);
                     return (
                         <section
                             key={computer.id}
-                            className="@container/computer rounded-lg border border-primary-700 bg-primary-950/40 p-4"
+                            className="@container/computer rounded-lg border border-primary-700 bg-surface-card p-4"
                         >
                             <div className="grid gap-3 @min-[32rem]/computer:grid-cols-[minmax(0,1fr)_auto] @min-[32rem]/computer:items-center">
                                 <SectionHeader

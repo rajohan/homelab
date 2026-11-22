@@ -6,6 +6,7 @@ import {
     LoadingState,
     queryRefresh,
     SectionHeader,
+    SummaryStrip,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Server } from "lucide-react";
@@ -50,32 +51,27 @@ export function InfrastructureSummary() {
             {query.isError && <ErrorNotice error={query.error} />}
             {snapshot && (
                 <>
-                    <dl className="grid gap-4 sm:grid-cols-3">
-                        <div>
-                            <dt className="text-sm text-primary-400">
-                                Reachable targets
-                            </dt>
-                            <dd className="mt-1 text-2xl font-semibold">
-                                {snapshot.reachableTargets} / {snapshot.totalTargets}
-                            </dd>
-                        </div>
-                        <div>
-                            <dt className="text-sm text-primary-400">
-                                Unreachable targets
-                            </dt>
-                            <dd className="mt-1 text-2xl font-semibold">
-                                {snapshot.totalTargets - snapshot.reachableTargets}
-                            </dd>
-                        </div>
-                        <div>
-                            <dt className="text-sm text-primary-400">
-                                Firing alert samples
-                            </dt>
-                            <dd className="mt-1 text-2xl font-semibold">
-                                {snapshot.firingAlerts ?? "Not reported"}
-                            </dd>
-                        </div>
-                    </dl>
+                    <SummaryStrip
+                        label="Monitoring counts"
+                        items={[
+                            {
+                                label: "Reachable targets",
+                                value: `${snapshot.reachableTargets} / ${snapshot.totalTargets}`,
+                            },
+                            {
+                                label: "Unreachable targets",
+                                value: snapshot.totalTargets - snapshot.reachableTargets,
+                                attention:
+                                    !stale &&
+                                    snapshot.totalTargets > snapshot.reachableTargets,
+                            },
+                            {
+                                label: "Firing alert samples",
+                                value: snapshot.firingAlerts ?? "Not reported",
+                                attention: !stale && (snapshot.firingAlerts ?? 0) > 0,
+                            },
+                        ]}
+                    />
                     <p className="text-sm text-primary-400">
                         Collected {formatDateTime(snapshot.capturedAt)}. Targets are
                         scrape endpoints, not a count of physical servers. Watchdog is
@@ -84,7 +80,7 @@ export function InfrastructureSummary() {
                 </>
             )}
             {!query.isPending && !query.isError && !snapshot && (
-                <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
+                <p className="rounded-lg border border-primary-700 bg-surface-empty p-4 text-sm text-primary-400">
                     No snapshot yet. Configure the metrics endpoint and start the worker
                     to collect one.
                 </p>

@@ -1,0 +1,142 @@
+import { Check, CircleAlert, Info, TriangleAlert } from "lucide-react";
+import type { ReactNode } from "react";
+
+import { formatDateTimeParts } from "../../lib/formatDateTime";
+import type { InfiniteScrollContinuation } from "../InfiniteScrollTrigger/InfiniteScrollTrigger";
+import { VirtualList } from "../Virtualizer/VirtualList";
+import { BreakableName } from "./BreakableName";
+
+type EventTone = "positive" | "warning" | "danger" | "neutral";
+const marks = {
+    positive: "border-emerald-300 bg-emerald-300",
+    warning: "border-amber-300 bg-amber-300",
+    danger: "border-rose-400 bg-rose-400",
+    neutral: "border-primary-400 bg-primary-900",
+};
+const feedMarks = {
+    positive: { icon: Check, color: "text-emerald-300" },
+    warning: { icon: TriangleAlert, color: "text-amber-300" },
+    danger: { icon: CircleAlert, color: "text-rose-300" },
+    neutral: { icon: Info, color: "text-primary-400" },
+};
+const dayLabel = new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+});
+
+/** Lay out recorded events by day, keeping exact times and existing detail links within reach.
+ * @returns A chronological list with status markers, dates and optional event controls.
+ */
+export function EventTimeline({
+    events,
+    presentation = "timeline",
+    scroll,
+}: {
+    readonly scroll?: { label: string; continuation: InfiniteScrollContinuation };
+    readonly presentation?: "timeline" | "feed";
+    readonly events: readonly {
+        id: string;
+        time: string;
+        title: ReactNode;
+        detail: ReactNode;
+        tone: EventTone;
+        label?: string | undefined;
+    }[];
+}) {
+    const feed = presentation === "feed";
+    const renderEvent = (event: (typeof events)[number], index: number) => {
+        const [date, time] = formatDateTimeParts(event.time);
+        const previous = events[index - 1];
+        const newDay = !previous || date !== formatDateTimeParts(previous.time)[0];
+        const marker = feedMarks[event.tone];
+        return (
+            <>
+                {newDay && (
+                    <p
+                        className={
+                            feed
+                                ? "pb-1 text-xs font-medium text-primary-400"
+                                : "pt-3 pb-2 text-xs font-semibold text-primary-300"
+                        }
+                    >
+                        {feed && Number.isFinite(Date.parse(event.time))
+                            ? dayLabel.format(new Date(event.time))
+                            : date}
+                    </p>
+                )}
+                <div
+                    className={
+                        feed
+                            ? "relative ml-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 border-l border-primary-700 py-1 pl-5"
+                            : "relative ml-1 grid min-w-0 grid-cols-[3.8rem_minmax(0,1fr)] gap-2 border-l border-primary-700 py-2 pl-4"
+                    }
+                >
+                    <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute top-0 left-0 row-start-1 grid h-lh -translate-x-1/2 place-items-center text-sm"
+                    >
+                        {feed ? (
+                            <span
+                                className={`grid size-5 place-items-center rounded-full bg-primary-900 ${marker.color}`}
+                            >
+                                <marker.icon size={14} />
+                            </span>
+                        ) : (
+                            <span
+                                className={`size-2 rounded-full border ${marks[event.tone]}`}
+                            />
+                        )}
+                    </span>
+                    <time
+                        dateTime={event.time}
+                        className={`text-xs leading-5 text-primary-400 tabular-nums ${feed ? "col-start-2 row-start-2 @min-[24rem]/events:row-start-1" : ""}`}
+                    >
+                        {time}
+                    </time>
+                    <div className={feed ? "contents" : "min-w-0 text-sm"}>
+                        <div
+                            className={`min-w-0 text-sm font-medium wrap-anywhere text-primary-50 ${feed ? "col-span-2 row-start-1 @min-[24rem]/events:col-span-1" : ""}`}
+                        >
+                            <BreakableName>{event.title}</BreakableName>
+                        </div>
+                        {(event.label || event.detail) && (
+                            <div
+                                className={`text-xs leading-relaxed wrap-anywhere text-primary-400 ${feed ? "col-start-1 row-start-2 min-w-0 pb-1 @min-[24rem]/events:col-span-2" : "mt-0.5"}`}
+                            >
+                                {event.label && (
+                                    <span className={marker.color}>{event.label}</span>
+                                )}
+                                {event.label && event.detail && (
+                                    <span aria-hidden="true"> · </span>
+                                )}
+                                {event.detail}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </>
+        );
+    };
+    if (scroll)
+        return (
+            <VirtualList
+                label={scroll.label}
+                rows={events}
+                getKey={(event) => event.id}
+                renderItem={renderEvent}
+                continuation={scroll.continuation}
+                className="@container/events"
+                scrollbarGap
+                itemClassName="pb-0"
+            />
+        );
+    return (
+        <ol className="@container/events min-w-0">
+            {events.map((event, index) => (
+                <li key={event.id}>{renderEvent(event, index)}</li>
+            ))}
+        </ol>
+    );
+}

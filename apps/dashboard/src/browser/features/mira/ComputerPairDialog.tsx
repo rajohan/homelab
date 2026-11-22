@@ -1,4 +1,5 @@
 import {
+    ActionGroup,
     Button,
     CopyTextButton,
     ErrorNotice,
@@ -33,6 +34,7 @@ export function ComputerPairDialog({ onClose }: { readonly onClose: () => void }
         setTicket({ token: result.token, expiresAt: result.expiresAt });
         // The mutation cache must not retain the one-time secret after this dialog closes.
     });
+    const canPairHere = hasDesktopBridge();
     return (
         <Modal
             title="Pair a computer"
@@ -46,23 +48,8 @@ export function ComputerPairDialog({ onClose }: { readonly onClose: () => void }
         >
             {ticket ? (
                 <div className="space-y-4">
-                    {hasDesktopBridge() && (
-                        <Button
-                            fullWidth
-                            disabled={localPair.isPending}
-                            onClick={() => {
-                                if (Date.parse(ticket.expiresAt) <= Date.now()) {
-                                    setTicket(undefined);
-                                    return;
-                                }
-                                localPair.mutate(ticket.token);
-                            }}
-                        >
-                            Pair this Windows PC
-                        </Button>
-                    )}
                     {localPair.error && <ErrorNotice error={localPair.error} />}
-                    <div className="flex items-start gap-2 rounded-lg border border-primary-700 bg-primary-950/40 p-3">
+                    <div className="flex items-start gap-2 rounded-lg border border-primary-700 bg-surface-card p-3">
                         <code className="min-w-0 flex-1 text-sm break-all">
                             {ticket.token}
                         </code>
@@ -75,9 +62,28 @@ export function ComputerPairDialog({ onClose }: { readonly onClose: () => void }
                         Pairing connects this computer to your account. Screen and input
                         access require a separate permission.
                     </p>
-                    <Button fullWidth onClick={onClose}>
-                        Done
-                    </Button>
+                    <ActionGroup>
+                        <Button
+                            variant={canPairHere ? "secondary" : "primary"}
+                            onClick={onClose}
+                        >
+                            Done
+                        </Button>
+                        {canPairHere && (
+                            <Button
+                                disabled={localPair.isPending}
+                                onClick={() => {
+                                    if (Date.parse(ticket.expiresAt) <= Date.now()) {
+                                        setTicket(undefined);
+                                        return;
+                                    }
+                                    localPair.mutate(ticket.token);
+                                }}
+                            >
+                                Pair this Windows PC
+                            </Button>
+                        )}
+                    </ActionGroup>
                 </div>
             ) : (
                 <FieldsForm

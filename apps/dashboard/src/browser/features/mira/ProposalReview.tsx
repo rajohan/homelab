@@ -79,7 +79,7 @@ export function ProposalReview({
                 {proposal.message && (
                     <p className="text-sm text-primary-400">{proposal.message}</p>
                 )}
-                <dl className="divide-y divide-primary-700 rounded-lg border border-primary-700 bg-primary-900/40">
+                <dl className="divide-y divide-primary-700 rounded-lg border border-primary-700 bg-surface-card">
                     {fields.map(([key, value]) => (
                         <div key={key} className="space-y-1 p-3">
                             <dt className="text-xs font-medium text-primary-400">
@@ -92,7 +92,14 @@ export function ProposalReview({
                     ))}
                 </dl>
                 {decide.error && <ErrorNotice error={decide.error} />}
-                <ActionGroup className="justify-end">
+                <ActionGroup>
+                    <Button
+                        variant="danger"
+                        disabled={decide.isPending}
+                        onClick={() => void submit(false).catch(() => {})}
+                    >
+                        Reject
+                    </Button>
                     <Button
                         busy={decide.isPending}
                         onClick={() => void submit(true).catch(() => {})}
@@ -100,13 +107,6 @@ export function ProposalReview({
                         {proposal.tool === "mira_homelab_command"
                             ? "Allow once"
                             : "Approve change"}
-                    </Button>
-                    <Button
-                        variant="secondary"
-                        disabled={decide.isPending}
-                        onClick={() => void submit(false).catch(() => {})}
-                    >
-                        Reject
                     </Button>
                 </ActionGroup>
             </div>

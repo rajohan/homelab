@@ -16,7 +16,7 @@ export function FactorList({
     const factors = data.factors.filter((factor) => factor.kind === kind);
     if (factors.length === 0)
         return (
-            <p className="rounded-lg border border-primary-700 bg-primary-900/40 p-3 text-sm text-primary-400">
+            <p className="rounded-lg border border-primary-700 bg-surface-empty p-3 text-sm text-primary-400">
                 No {kind === "webauthn" ? "security keys" : "authenticator apps"}{" "}
                 registered.
             </p>
@@ -26,7 +26,7 @@ export function FactorList({
             {factors.map((factor) => (
                 <li
                     key={factor.id}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-700 bg-primary-900/40 p-3"
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-700 bg-surface-card p-3"
                 >
                     <div className="min-w-0 flex-1">
                         <p className="font-medium wrap-anywhere">{factor.label}</p>

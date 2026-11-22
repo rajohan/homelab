@@ -33,7 +33,7 @@ export function DesktopComputer() {
     if (!hasDesktopBridge()) return null;
     const current = state.data;
     return (
-        <section className="@container/desktop space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
+        <section className="@container/desktop space-y-3 rounded-lg border border-primary-700 bg-surface-card p-4">
             <SectionHeader
                 title="This Windows PC"
                 icon={Monitor}

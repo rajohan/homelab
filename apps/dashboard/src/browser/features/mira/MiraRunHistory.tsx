@@ -1,5 +1,5 @@
 import type { TableCursor, TableSort } from "@homelab/contracts/tableSort";
-import { Button, Card, ErrorNotice, LoadingState, SectionHeader } from "@homelab/ui";
+import { Button, ErrorNotice, LoadingState, SectionPanel } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { History } from "lucide-react";
 import { useState } from "react";
@@ -12,7 +12,9 @@ import { MiraRunTable } from "./MiraRunTable";
  * Reuse agent execution history in Jobs and Mira without copying run records.
  * @returns Bounded durable run outcomes, stop controls and conversation links.
  */
-export function MiraRunHistory() {
+export function MiraRunHistory({
+    title = "Mira runs",
+}: { readonly title?: string } = {}) {
     const [needsReview, setNeedsReview] = useState(false);
     const [sort, setSort] = useState<TableSort | null>(null);
     const query = useInfiniteQuery({
@@ -32,22 +34,21 @@ export function MiraRunHistory() {
     const stop = useOperation((id: string) => api.mira.runs.cancel.mutate({ id }));
     const rows = query.data?.pages.flatMap((page) => page.rows) ?? [];
     return (
-        <Card className="space-y-4">
-            <SectionHeader
-                title="Mira runs"
-                icon={History}
-                description="Agent work and outcomes across chat and automations."
-                actions={
-                    <Button
-                        size="sm"
-                        variant={needsReview ? "primary" : "secondary"}
-                        aria-pressed={needsReview}
-                        onClick={() => setNeedsReview(!needsReview)}
-                    >
-                        Needs review
-                    </Button>
-                }
-            />
+        <SectionPanel
+            title={title}
+            icon={History}
+            description="Agent work and outcomes across chat and automations."
+            actions={
+                <Button
+                    size="sm"
+                    variant={needsReview ? "primary" : "secondary"}
+                    aria-pressed={needsReview}
+                    onClick={() => setNeedsReview(!needsReview)}
+                >
+                    Needs review
+                </Button>
+            }
+        >
             {query.isPending && <LoadingState label="Loading Mira runs…" />}
             {(query.error || stop.error) && (
                 <ErrorNotice error={query.error ?? stop.error} />
@@ -72,10 +73,10 @@ export function MiraRunHistory() {
                 />
             )}
             {!query.isPending && !query.isError && rows.length === 0 && (
-                <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
+                <p className="py-1 text-sm text-primary-400">
                     {needsReview ? "No runs need review." : "No Mira runs yet."}
                 </p>
             )}
-        </Card>
+        </SectionPanel>
     );
 }

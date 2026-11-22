@@ -2,14 +2,15 @@ import { jobStates } from "@homelab/contracts/operations";
 import {
     Badge,
     Button,
-    Card,
     ConfirmDialog,
-    DataTable,
+    DetailEntry,
+    DetailFacts,
+    DetailList,
     ErrorNotice,
     formatDateTime,
     LoadingState,
-    queryRefresh,
-    SectionHeader,
+    SectionPanel,
+    SummaryStrip,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Cpu, Pause, Play } from "lucide-react";
@@ -17,6 +18,12 @@ import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { workerOverviewQuery } from "./workerOverviewQuery";
+
+function processState(worker: { readonly draining: boolean; readonly online: boolean }) {
+    if (worker.draining) return "Stopped";
+    return worker.online ? "Online" : "Offline";
+}
 
 /**
  * Display durable worker control, all queue counts and the live process inventory.
@@ -27,12 +34,7 @@ export function WorkerPanel() {
         version: number;
         paused: boolean;
     }>();
-    const query = useQuery({
-        queryKey: ["operations", "worker"],
-        queryFn: ({ signal }) => api.worker.overview.query(undefined, { signal }),
-        ...queryRefresh("fast"),
-        retry: false,
-    });
+    const query = useQuery(workerOverviewQuery);
     const toggle = useOperation((input: { version: number; paused: boolean }, signal) =>
         api.worker.setPaused.mutate(input, { signal })
     );
@@ -41,135 +43,115 @@ export function WorkerPanel() {
     const availabilityTone = online.length > 0 ? "positive" : "warning";
     const availabilityLabel = online.length > 0 ? "Running" : "Offline";
     return (
-        <Card className="@container">
-            <div className="grid gap-4 @min-[48rem]:grid-cols-[minmax(0,1fr)_auto]">
-                <SectionHeader
-                    title="Worker"
-                    description="Pause new work while current jobs finish. The setting is shared by all workers and survives restarts."
-                    icon={Cpu}
-                    compactActions
-                    badge={
-                        data && (
-                            <Badge
-                                tone={data.control.paused ? "neutral" : availabilityTone}
-                            >
-                                {data.control.paused ? "Paused" : availabilityLabel}
-                            </Badge>
-                        )
-                    }
-                />
-                <div className="col-span-full space-y-4">
-                    {query.isPending && <LoadingState label="Loading worker status…" />}
-                    {query.isError && <ErrorNotice error={query.error} />}
-                    {data && (
-                        <>
-                            <dl className="grid grid-cols-2 gap-3 @min-[28rem]:grid-cols-3 @min-[56rem]:grid-cols-6">
-                                {jobStates.map((state) => (
-                                    <div
-                                        key={state}
-                                        className="rounded-lg border border-primary-700 bg-primary-900/40 p-3"
-                                    >
-                                        <dt className="text-xs text-primary-400 capitalize">
-                                            {state.replaceAll("_", " ")}
-                                        </dt>
-                                        <dd className="mt-1 text-2xl font-semibold tabular-nums">
-                                            {data.counts.find(
-                                                (count) => count.state === state
-                                            )?.count ?? 0}
-                                        </dd>
-                                    </div>
-                                ))}
-                            </dl>
-                            {data.control.paused && (
-                                <p className="rounded-lg border border-primary-700 bg-primary-900/40 p-3 text-sm text-primary-300">
-                                    Scheduled submissions and new job claims are paused.
-                                    Manual requests stay queued until you resume. Running
-                                    jobs finish normally.
-                                </p>
+        <>
+            <SectionPanel
+                title="Worker"
+                description="Pause new work while current jobs finish. The setting is shared by all workers and survives restarts."
+                icon={Cpu}
+                badge={
+                    data && (
+                        <Badge tone={data.control.paused ? "neutral" : availabilityTone}>
+                            {data.control.paused ? "Paused" : availabilityLabel}
+                        </Badge>
+                    )
+                }
+                actions={
+                    data && (
+                        <Button
+                            size="sm"
+                            variant="secondary"
+                            aria-label={
+                                data.control.paused ? "Resume worker" : "Pause worker"
+                            }
+                            onClick={() => setConfirmation(data.control)}
+                        >
+                            {data.control.paused ? (
+                                <Play size={16} aria-hidden="true" />
+                            ) : (
+                                <Pause size={16} aria-hidden="true" />
                             )}
-                            <DataTable
-                                label="Workers"
-                                compact
-                                rows={data.workers}
-                                getKey={(worker) => worker.id}
-                                columns={[
-                                    {
-                                        id: "id",
-                                        sortValue: (row) => row.id,
-                                        label: "Worker",
-                                        mobile: "title",
-                                        render: (worker) => worker.id.slice(0, 8),
-                                    },
-                                    {
-                                        id: "state",
-                                        sortValue: (row) => {
-                                            if (row.draining) return "Stopped";
-                                            return row.online ? "Online" : "Offline";
-                                        },
-                                        label: "Status",
-                                        render: (worker) => {
-                                            const availability = worker.online
-                                                ? "Online"
-                                                : "Offline";
-                                            return (
-                                                <Badge
-                                                    tone={
-                                                        worker.online
-                                                            ? "positive"
-                                                            : "neutral"
-                                                    }
-                                                >
-                                                    {worker.draining
-                                                        ? "Stopped"
-                                                        : availability}
-                                                </Badge>
-                                            );
-                                        },
-                                    },
-                                    {
-                                        id: "capacity",
-                                        sortValue: (row) => row.active,
-                                        label: "Active / capacity",
-                                        render: (worker) =>
-                                            `${worker.active} / ${worker.capacity}`,
-                                    },
-                                    {
-                                        id: "version",
-                                        sortValue: (row) => row.version,
-                                        label: "Version",
-                                        render: (worker) => worker.version,
-                                    },
-                                    {
-                                        id: "heartbeat",
-                                        sortValue: (row) => row.heartbeatAt,
-                                        label: "Last heartbeat",
-                                        render: (worker) =>
-                                            formatDateTime(worker.heartbeatAt),
-                                    },
-                                ]}
-                            />
-                        </>
-                    )}
-                </div>
+                            {data.control.paused ? "Resume" : "Pause"}
+                        </Button>
+                    )
+                }
+            >
+                {query.isPending && <LoadingState label="Loading worker status…" />}
+                {query.isError && <ErrorNotice error={query.error} />}
                 {data && (
-                    <Button
-                        size="sm"
-                        variant="secondary"
-                        className="w-full @min-[48rem]:col-start-2 @min-[48rem]:row-start-1 @min-[48rem]:w-auto @min-[48rem]:self-start"
-                        aria-label={
-                            data.control.paused ? "Resume worker" : "Pause worker"
-                        }
-                        onClick={() => setConfirmation(data.control)}
-                    >
-                        {data.control.paused ? (
-                            <Play size={16} aria-hidden="true" />
-                        ) : (
-                            <Pause size={16} aria-hidden="true" />
+                    <>
+                        <SummaryStrip
+                            label="Job counts by state"
+                            items={jobStates.map((state) => ({
+                                label:
+                                    state.charAt(0).toUpperCase() +
+                                    state.slice(1).replaceAll("_", " "),
+                                tone: state === "running" ? "info" : "neutral",
+                                value:
+                                    data.counts.find((count) => count.state === state)
+                                        ?.count ?? 0,
+                            }))}
+                        />
+                        {data.control.paused && (
+                            <p className="rounded-lg border border-primary-700 bg-surface-card p-3 text-sm text-primary-300">
+                                Scheduled submissions and new job claims are paused.
+                                Manual requests stay queued until you resume. Running jobs
+                                finish normally.
+                            </p>
                         )}
-                        {data.control.paused ? "Resume" : "Pause"}
-                    </Button>
+                    </>
                 )}
-            </div>
+            </SectionPanel>
+            {data && (
+                <div className="mt-4">
+                    <DetailList
+                        icon={Cpu}
+                        title="Worker processes"
+                        rows={data.workers}
+                        getKey={(worker) => worker.id}
+                        sorts={[
+                            { label: "Worker", value: (row) => row.id },
+                            {
+                                label: "Status",
+                                value: (row) => processState(row),
+                            },
+                            { label: "Active / capacity", value: (row) => row.active },
+                            { label: "Version", value: (row) => row.version },
+                            { label: "Last heartbeat", value: (row) => row.heartbeatAt },
+                        ]}
+                        empty="No worker processes reported."
+                        render={(worker) => (
+                            <DetailEntry
+                                name={worker.id.slice(0, 8)}
+                                accessory={
+                                    <Badge
+                                        tone={
+                                            worker.online && !worker.draining
+                                                ? "positive"
+                                                : "neutral"
+                                        }
+                                    >
+                                        {processState(worker)}
+                                    </Badge>
+                                }
+                            >
+                                <DetailFacts
+                                    items={[
+                                        {
+                                            label: "Active / capacity",
+                                            value: `${worker.active} / ${worker.capacity}`,
+                                        },
+                                        { label: "Version", value: worker.version },
+                                        {
+                                            label: "Last heartbeat",
+                                            value: formatDateTime(worker.heartbeatAt),
+                                        },
+                                    ]}
+                                />
+                            </DetailEntry>
+                        )}
+                    />
+                </div>
+            )}
             {confirmation && (
                 <ConfirmDialog
                     title={confirmation.paused ? "Resume worker?" : "Pause worker?"}
@@ -190,6 +172,6 @@ export function WorkerPanel() {
                     }}
                 />
             )}
-        </Card>
+        </>
     );
 }

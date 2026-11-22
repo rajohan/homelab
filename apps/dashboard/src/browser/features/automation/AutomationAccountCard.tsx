@@ -37,11 +37,11 @@ export function AutomationAccountCard({
                     <Badge key={capability}>{capability}</Badge>
                 ))}
             </div>
-            <div className="max-h-72 space-y-2 overflow-auto">
+            <div className="max-h-72 space-y-2 overflow-auto pe-3">
                 {credentials.map((credential) => (
                     <div
                         key={credential.id}
-                        className="@container/credential flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-700 bg-primary-950/40 p-3"
+                        className="@container/credential flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-700 bg-surface-card p-3"
                     >
                         <div className="min-w-0 grow basis-64 text-sm">
                             <p className="font-mono">{credential.prefix.slice(0, 13)}…</p>
@@ -80,17 +80,17 @@ export function AutomationAccountCard({
             </div>
             {!account.disabledAt && (
                 <ActionGroup stretch={false}>
-                    <Button onClick={() => onAction({ kind: "rotate", account })}>
-                        Create replacement token
-                    </Button>
-                    <Button variant="secondary" onClick={onEdit}>
-                        Edit permissions
-                    </Button>
                     <Button
                         variant="danger"
                         onClick={() => onAction({ kind: "disable", account })}
                     >
                         Disable account
+                    </Button>
+                    <Button variant="secondary" onClick={onEdit}>
+                        Edit permissions
+                    </Button>
+                    <Button onClick={() => onAction({ kind: "rotate", account })}>
+                        Create replacement token
                     </Button>
                 </ActionGroup>
             )}

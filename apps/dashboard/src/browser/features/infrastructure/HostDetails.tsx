@@ -2,12 +2,13 @@ import type {
     InfrastructureHost,
     InfrastructureInventory,
 } from "@homelab/contracts/infrastructure";
-import { formatMetric, Modal, Select } from "@homelab/ui";
-import { useState } from "react";
+import { DetailSection, formatDateTime, Modal, SectionJumpMenu } from "@homelab/ui";
+import { Gauge, Server } from "lucide-react";
+import { useId, useRef } from "react";
 
-import { HostHistory } from "./HostHistory";
+import { hostInventorySections } from "./hostInventorySections";
+import { HostReadings } from "./HostReadings";
 import { HostResources } from "./HostResources";
-import { MetricStat } from "./MetricStat";
 import { ResourceStatus } from "./ResourceStatus";
 
 /**
@@ -18,75 +19,72 @@ export function HostDetails({
     host,
     inventory,
     onClose,
+    stale = false,
 }: {
     readonly host: InfrastructureHost;
     readonly inventory: InfrastructureInventory;
+    readonly stale?: boolean;
     readonly onClose: () => void;
 }) {
-    const [section, setSection] = useState("history");
+    const prefix = useId();
+    const scrollRef = useRef<HTMLElement>(null);
+    const scoped = hostInventorySections(host, inventory, prefix);
+    const options = Object.values(scoped.sections).filter((section) => section.visible);
+    const kind = {
+        node: "Proxmox node",
+        host: "Physical host",
+        vm: "Virtual machine",
+        container: "Container",
+    }[host.kind];
+    const identity = [
+        kind,
+        host.guestId,
+        host.node && host.node !== host.name ? host.node : undefined,
+    ]
+        .filter(Boolean)
+        .join(" · ");
     return (
         <Modal
+            icon={Server}
             title={host.name}
-            titleAccessory={<ResourceStatus state={host.state} />}
-            description={`${host.guestId ?? host.kind}${host.node ? ` · ${host.node}` : ""}`}
+            titleAccessory={<ResourceStatus state={stale ? "unknown" : host.state} />}
+            description={identity}
+            contentRef={scrollRef}
+            navigation={
+                <SectionJumpMenu
+                    label="Jump to host section"
+                    scrollRef={scrollRef}
+                    sections={options}
+                />
+            }
             onClose={onClose}
             size="wide"
         >
             <div className="space-y-5">
-                <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    <MetricStat
-                        label="CPU"
-                        value={formatMetric(host.cpuPercent, "percent")}
-                        detail={`${host.cores ?? "Unknown"} cores`}
-                    />
-                    <MetricStat
-                        label="Memory used"
-                        value={formatMetric(host.memoryUsed, "bytes")}
-                        detail={
-                            host.memorySource === "guest"
-                                ? "OS total minus available"
-                                : "Hypervisor reported"
-                        }
-                    />
-                    <MetricStat
-                        label="Assigned memory"
-                        value={formatMetric(host.allocatedMemory, "bytes")}
-                        detail={`${host.memorySource === "guest" ? "OS total" : "Reported capacity"}: ${formatMetric(host.memoryTotal, "bytes")}`}
-                    />
-                    <MetricStat
-                        label="Uptime"
-                        value={formatMetric(host.uptime, "seconds")}
-                    />
-                    <MetricStat
-                        label="Swap used"
-                        value={formatMetric(host.swapUsed, "bytes")}
-                        detail={`Total: ${formatMetric(host.swapTotal, "bytes")}`}
-                    />
-                    <MetricStat
-                        label="Load average"
-                        value={host.load
-                            .map((value) => (value === null ? "—" : formatMetric(value)))
-                            .join(" / ")}
-                        detail="1 / 5 / 15 minutes"
-                    />
-                </dl>
-                <Select
-                    label="Resource details"
-                    value={section}
-                    onChange={setSection}
-                    options={[
-                        { value: "history", label: "History" },
-                        { value: "filesystems", label: "Filesystems" },
-                        { value: "network", label: "Network interfaces" },
-                        { value: "disks", label: "Disk I/O" },
-                        { value: "applications", label: "Applications" },
-                    ]}
-                />
-                {section === "history" ? (
-                    <HostHistory host={host} inventory={inventory} />
-                ) : (
-                    <HostResources host={host} inventory={inventory} section={section} />
+                {stale && (
+                    <p className="text-sm text-amber-300">
+                        Last observation {formatDateTime(inventory.capturedAt)} · Current
+                        readings unavailable
+                    </p>
                 )}
+                <DetailSection
+                    icon={Gauge}
+                    title="Resource usage"
+                    anchor={scoped.sections.usage.value}
+                >
+                    <HostReadings
+                        detailed
+                        host={host}
+                        filesystems={inventory.filesystems}
+                        stale={stale}
+                    />
+                </DetailSection>
+                <HostResources
+                    scoped={scoped}
+                    host={host}
+                    inventory={inventory}
+                    stale={stale}
+                />
             </div>
         </Modal>
     );

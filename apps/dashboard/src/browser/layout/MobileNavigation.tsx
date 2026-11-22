@@ -1,4 +1,5 @@
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@headlessui/react";
+import type { PageOutline } from "@homelab/ui";
 
 import { Sidebar } from "./Sidebar";
 
@@ -8,8 +9,10 @@ import { Sidebar } from "./Sidebar";
  */
 export function MobileNavigation({
     open,
+    outline,
     onClose,
 }: {
+    readonly outline: PageOutline | null;
     readonly open: boolean;
     readonly onClose: () => void;
 }) {
@@ -25,7 +28,7 @@ export function MobileNavigation({
                     className="flex w-72 max-w-[90vw] flex-col border-r border-primary-700 bg-primary-950 shadow-2xl transition duration-200 data-closed:-translate-x-full motion-reduce:transition-none"
                 >
                     <DialogTitle className="sr-only">Homelab navigation</DialogTitle>
-                    <Sidebar onClose={onClose} onNavigate={onClose} />
+                    <Sidebar outline={outline} onClose={onClose} onNavigate={onClose} />
                 </DialogPanel>
             </div>
         </Dialog>

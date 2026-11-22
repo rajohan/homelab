@@ -198,6 +198,13 @@ export function TaskEditor({
                 {save.error && <ErrorNotice error={save.error} />}
                 <ActionGroup>
                     <Button
+                        variant="secondary"
+                        onClick={onClose}
+                        disabled={save.isPending}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
                         type="submit"
                         busy={save.isPending}
                         disabled={
@@ -206,13 +213,6 @@ export function TaskEditor({
                         }
                     >
                         Save task
-                    </Button>
-                    <Button
-                        variant="secondary"
-                        onClick={onClose}
-                        disabled={save.isPending}
-                    >
-                        Cancel
                     </Button>
                 </ActionGroup>
             </form>

@@ -19,13 +19,13 @@ export function AuthFrame({
     readonly footer?: ReactNode;
 }) {
     return (
-        <main className="flex min-h-dvh flex-col items-center justify-center px-4 py-10 sm:py-16">
+        <main className="flex min-h-dvh flex-col items-center justify-center bg-primary-950 px-4 py-10 sm:py-16">
             <div className="w-full max-w-md">
                 <div className="mb-8 flex justify-center">
                     <Brand subtitle="Your homelab. One account." />
                 </div>
                 <Card className="overflow-hidden p-0 shadow-xl shadow-black/10 sm:p-0">
-                    <div className="border-b border-primary-700 bg-primary-900/30 px-6 py-5 sm:px-8 sm:py-6">
+                    <div className="border-b border-primary-700 bg-surface-heading px-6 py-5 sm:px-8 sm:py-6">
                         <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
                         {description && (
                             <p className="mt-2 text-sm leading-6 text-primary-400">
@@ -35,7 +35,7 @@ export function AuthFrame({
                     </div>
                     <div className="space-y-5 p-6 sm:p-8">{children}</div>
                     {footer && (
-                        <div className="border-t border-primary-700 px-6 py-4 text-center text-sm">
+                        <div className="border-t border-primary-700 bg-surface-panel px-6 py-4 text-center text-sm">
                             {footer}
                         </div>
                     )}

@@ -73,7 +73,7 @@ export function FileLibrary({
                 {query.data?.pages
                     .flatMap((page) => page.rows)
                     .map((file) => (
-                        <Card key={file.id} className="space-y-3 bg-primary-900/40">
+                        <Card key={file.id} className="space-y-3">
                             <SectionHeader
                                 title={
                                     <button

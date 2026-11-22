@@ -30,8 +30,8 @@ export function MarkdownCodeBlock({
               .toLowerCase()
         : "";
     return (
-        <div className="not-prose my-4 min-w-0 overflow-hidden rounded-lg border border-primary-700 bg-primary-950">
-            <div className="flex items-center justify-between gap-3 border-b border-primary-700 bg-primary-900/60 px-3 py-1">
+        <div className="not-prose my-4 min-w-0 overflow-hidden rounded-lg border border-primary-700 bg-surface-card">
+            <div className="flex items-center justify-between gap-3 border-b border-primary-700 bg-surface-heading px-3 py-1">
                 <span className="truncate font-mono text-xs text-primary-300">
                     {language || "text"}
                 </span>

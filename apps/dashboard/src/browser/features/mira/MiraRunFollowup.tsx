@@ -40,7 +40,7 @@ export function MiraRunFollowup({
     const resolution = run.followupResolution ?? operation.data;
     if (resolution)
         return (
-            <div className="space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4">
+            <div className="space-y-3 rounded-lg border border-primary-700 bg-surface-card p-4">
                 <SectionHeader
                     title="Follow-up closed"
                     icon={ClipboardCheck}
@@ -73,7 +73,7 @@ export function MiraRunFollowup({
         );
     return (
         <form
-            className="space-y-4 rounded-lg border border-primary-700 bg-primary-950/40 p-4"
+            className="space-y-4 rounded-lg border border-primary-700 bg-surface-card p-4"
             onSubmit={(event) => {
                 event.preventDefault();
                 if (reason.trim().length < 4 || operation.isPending) return;

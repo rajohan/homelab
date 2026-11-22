@@ -1,6 +1,8 @@
-import { PageHeader } from "@homelab/ui";
+import { PageHeader, PageSections } from "@homelab/ui";
+import { BellRing } from "lucide-react";
 
 import { AlertsPanel } from "../features/alerts/AlertsPanel";
+import { IncidentFromLocation } from "../features/alerts/IncidentFromLocation";
 import { RulesPanel } from "../features/alerts/RulesPanel";
 
 /**
@@ -11,13 +13,27 @@ export function Alerts() {
     return (
         <>
             <PageHeader
+                icon={BellRing}
                 title="Monitoring incidents"
                 description="Current monitoring problems and recorded resolutions."
             />
-            <div className="space-y-6">
-                <AlertsPanel />
-                <RulesPanel />
-            </div>
+            <PageSections
+                label="Alerts sections"
+                sections={[
+                    {
+                        id: "incidents",
+                        label: "Current incidents",
+                        content: <AlertsPanel state="current" />,
+                    },
+                    {
+                        id: "resolved",
+                        label: "Resolution history",
+                        content: <AlertsPanel state="resolved" />,
+                    },
+                    { id: "rules", label: "Monitoring rules", content: <RulesPanel /> },
+                ]}
+            />
+            <IncidentFromLocation />
         </>
     );
 }

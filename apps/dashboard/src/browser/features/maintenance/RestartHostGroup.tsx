@@ -1,4 +1,4 @@
-import { Badge, SectionIcon } from "@homelab/ui";
+import { Badge, HeadingLabel } from "@homelab/ui";
 import { Server } from "lucide-react";
 import { useId } from "react";
 
@@ -26,9 +26,8 @@ export function RestartHostGroup({
     return (
         <section aria-labelledby={heading} className="space-y-3">
             <div className="flex items-center gap-3">
-                <SectionIcon icon={Server} />
-                <h3 id={heading} className="font-semibold">
-                    {group.host.label}
+                <h3 id={heading} className="min-w-0 font-semibold">
+                    <HeadingLabel icon={Server}>{group.host.label}</HeadingLabel>
                 </h3>
                 {group.required > 0 && (
                     <Badge className="self-center" tone="warning">

@@ -7,7 +7,7 @@ import { useOperation } from "../operations/useOperation";
 
 /**
  * Submit one manual automation request with the same identity through uncertain network responses.
- * @returns A full-width run action; a confirmed response permits a later distinct invocation.
+ * @returns A run action; a confirmed response permits a later distinct invocation.
  */
 export function RunAutomationButton({
     id,
@@ -30,7 +30,8 @@ export function RunAutomationButton({
         <div className="space-y-3">
             {run.error && <ErrorNotice error={run.error} />}
             <Button
-                fullWidth
+                size="sm"
+                variant="secondary"
                 busy={run.isPending}
                 onClick={() =>
                     void run

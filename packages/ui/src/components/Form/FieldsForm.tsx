@@ -148,15 +148,6 @@ export function FieldsForm({
                     {children && <Fieldset disabled={submitting}>{children}</Fieldset>}
                     {error !== undefined && <ErrorNotice error={error} />}
                     <ActionGroup>
-                        <Button
-                            type="submit"
-                            variant={submitVariant}
-                            busy={submitting}
-                            disabled={!canSubmit || isSubmitDisabled?.(values)}
-                            fullWidth={onCancel === undefined}
-                        >
-                            {submitLabel}
-                        </Button>
                         {onCancel && (
                             <Button
                                 variant="secondary"
@@ -166,6 +157,15 @@ export function FieldsForm({
                                 {cancelLabel}
                             </Button>
                         )}
+                        <Button
+                            type="submit"
+                            variant={submitVariant}
+                            busy={submitting}
+                            disabled={!canSubmit || isSubmitDisabled?.(values)}
+                            fullWidth={onCancel === undefined}
+                        >
+                            {submitLabel}
+                        </Button>
                     </ActionGroup>
                 </Form>
             )}

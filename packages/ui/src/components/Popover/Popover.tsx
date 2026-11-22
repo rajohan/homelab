@@ -24,9 +24,11 @@ export function Popover({
     controlRef,
     anchor = "bottom end",
     panelClassName,
+    layout = "default",
     disabled = false,
 }: {
     readonly anchor?: "top start" | "bottom end";
+    readonly layout?: "default" | "feed";
     readonly panelClassName?: string;
     readonly disabled?: boolean;
     readonly label: string;
@@ -61,7 +63,8 @@ export function Popover({
                 anchor={{ to: anchor, gap: 8, padding: 8 }}
                 transition
                 className={cn(
-                    "z-40 flex w-[min(34rem,calc(100vw-1rem))] flex-col overflow-hidden! rounded-xl border border-primary-700 bg-primary-800 p-4 text-primary-50 shadow-2xl shadow-black/50 transition duration-150 data-closed:opacity-0 motion-reduce:transition-none sm:p-5",
+                    "z-40 flex w-[min(34rem,calc(100vw-1rem))] flex-col overflow-hidden! rounded-xl border border-primary-700 bg-surface-panel p-4 text-primary-50 shadow-2xl shadow-black/50 transition duration-150 data-closed:opacity-0 motion-reduce:transition-none sm:p-5",
+                    layout === "feed" && "w-[min(31rem,calc(100vw-1rem))] p-0 sm:p-0",
                     panelClassName
                 )}
             >

@@ -80,7 +80,7 @@ export function MemoryLibrary({ onClose }: { readonly onClose: () => void }) {
                 {query.data?.pages
                     .flatMap((page) => page.rows)
                     .map((memory) => (
-                        <Card key={memory.id} className="space-y-3 bg-primary-900/40">
+                        <Card key={memory.id} className="space-y-3">
                             <SectionHeader
                                 title={memory.title}
                                 icon={Brain}

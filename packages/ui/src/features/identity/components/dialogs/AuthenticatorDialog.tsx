@@ -51,7 +51,7 @@ export function AuthenticatorDialog({
                         <p className="text-sm font-medium text-primary-200">
                             Manual setup key
                         </p>
-                        <div className="mt-2 flex min-w-0 items-center gap-2 rounded-lg border border-primary-700 bg-primary-900 p-2">
+                        <div className="mt-2 flex min-w-0 items-center gap-2 rounded-lg border border-primary-700 bg-surface-card p-2">
                             <code className="min-w-0 flex-1 p-1 font-mono text-xs break-all text-primary-100 select-all">
                                 {enrollment.secret}
                             </code>

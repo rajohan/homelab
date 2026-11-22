@@ -11,7 +11,7 @@ import {
     TextFilePreview,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink } from "lucide-react";
+import { BookOpen, ExternalLink } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
@@ -51,6 +51,7 @@ export function SkillDetails({
     });
     return (
         <Modal
+            icon={BookOpen}
             title={skill.title}
             titleAccessory={<Badge>{skill.version}</Badge>}
             description="Skills use the tools and permissions available to the current run."
@@ -98,13 +99,13 @@ export function SkillDetails({
                                 >
                                     Previous section
                                 </Button>
-                                <span className="text-sm text-primary-400">
+                                <span className="self-center text-center text-sm text-primary-400">
                                     Characters {offset + 1}–
                                     {offset + query.data.content.length} of{" "}
                                     {query.data.totalCharacters}
                                 </span>
                                 <Button
-                                    variant="secondary"
+                                    variant="primary"
                                     disabled={query.data.nextOffset === null}
                                     onClick={() => {
                                         const next = query.data?.nextOffset;

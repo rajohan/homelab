@@ -13,7 +13,6 @@ export function SessionsPanel({ data, onAction, notice }: AccountPanelProps) {
         <SettingsSection
             id="account-sessions"
             title="Active sessions"
-            description="Sessions expire after inactivity and can be revoked independently."
             icon={Monitor}
             actions={
                 <ActionGroup>
@@ -35,7 +34,7 @@ export function SessionsPanel({ data, onAction, notice }: AccountPanelProps) {
                 {data.sessions.map((session) => (
                     <li
                         key={session.id}
-                        className="flex flex-col gap-3 rounded-lg border border-primary-700 bg-primary-900/40 p-3 min-[30rem]:flex-row min-[30rem]:items-center min-[30rem]:justify-between"
+                        className="flex flex-col gap-3 rounded-lg border border-primary-700 bg-surface-card p-3 min-[30rem]:flex-row min-[30rem]:items-center min-[30rem]:justify-between"
                     >
                         <div className="min-w-0 flex-1">
                             <p className="flex flex-wrap items-center gap-2 text-sm font-medium">

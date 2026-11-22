@@ -1,4 +1,4 @@
-import { Button, CopyTextButton, Modal } from "@homelab/ui";
+import { ActionGroup, Button, CopyTextButton, Modal } from "@homelab/ui";
 
 /**
  * Display newly issued bearer material only in the creating browser's transient state.
@@ -18,13 +18,13 @@ export function AutomationTokenDialog({
             onClose={onClose}
         >
             <div className="space-y-4">
-                <div className="flex items-start gap-2 rounded-lg border border-primary-700 bg-primary-950/50 p-3">
+                <div className="flex items-start gap-2 rounded-lg border border-primary-700 bg-surface-card p-3">
                     <code className="min-w-0 flex-1 text-sm break-all">{token}</code>
                     <CopyTextButton text={token} label="Copy access token" />
                 </div>
-                <Button fullWidth onClick={onClose}>
-                    Done
-                </Button>
+                <ActionGroup>
+                    <Button onClick={onClose}>Done</Button>
+                </ActionGroup>
             </div>
         </Modal>
     );

@@ -1,6 +1,6 @@
-import { Button, ErrorNotice, LoadingState, SectionHeader } from "@homelab/ui";
+import { Button, DetailSection, ErrorNotice, LoadingState } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Activity, ClipboardCheck, Play } from "lucide-react";
+import { ClipboardCheck, Play, Workflow } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
@@ -38,25 +38,24 @@ export function TaskExecution({
     const startLabel = rows.length > 0 ? "Continue work" : "Start work";
     const active = rows.some((run) => ["queued", "running"].includes(run.state));
     return (
-        <section className="space-y-3 border-t border-primary-700 pt-4">
-            <SectionHeader
-                title="Work"
-                icon={Activity}
-                actions={
-                    first &&
-                    !query.isError &&
-                    (first.reviewRunId || (canStart && !active)) ? (
-                        <Button onClick={() => onStart(first.version, first.reviewRunId)}>
-                            {first.reviewRunId ? (
-                                <ClipboardCheck size={16} aria-hidden="true" />
-                            ) : (
-                                <Play size={16} aria-hidden="true" />
-                            )}
-                            {first.reviewRunId ? "Review uncertain run" : startLabel}
-                        </Button>
-                    ) : undefined
-                }
-            />
+        <DetailSection
+            icon={Workflow}
+            title="Work"
+            actions={
+                first &&
+                !query.isError &&
+                (first.reviewRunId || (canStart && !active)) ? (
+                    <Button onClick={() => onStart(first.version, first.reviewRunId)}>
+                        {first.reviewRunId ? (
+                            <ClipboardCheck size={16} aria-hidden="true" />
+                        ) : (
+                            <Play size={16} aria-hidden="true" />
+                        )}
+                        {first.reviewRunId ? "Review uncertain run" : startLabel}
+                    </Button>
+                ) : undefined
+            }
+        >
             {query.isPending && <LoadingState label="Loading task runs…" />}
             {(query.error || stop.error) && (
                 <ErrorNotice error={query.error ?? stop.error} />
@@ -85,6 +84,6 @@ export function TaskExecution({
                         : "Assign an unfinished task to Mira to start work."}
                 </p>
             )}
-        </section>
+        </DetailSection>
     );
 }

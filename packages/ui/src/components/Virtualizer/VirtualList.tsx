@@ -19,12 +19,12 @@ export function VirtualList<T>({
     continuation,
     className,
     itemClassName,
-    scrollbarGap = false,
+    scrollbarGap = true,
 }: {
     readonly label: string;
     readonly rows: readonly T[];
     readonly getKey: (row: T) => string;
-    readonly renderItem: (row: T) => ReactNode;
+    readonly renderItem: (row: T, index: number) => ReactNode;
     readonly continuation?: InfiniteScrollContinuation;
     readonly className?: string;
     readonly itemClassName?: string;
@@ -53,7 +53,7 @@ export function VirtualList<T>({
                     <ul
                         className={
                             scrollbarGap && totalSize > viewportHeight
-                                ? "pe-2"
+                                ? "pe-3"
                                 : undefined
                         }
                     >
@@ -67,7 +67,7 @@ export function VirtualList<T>({
                                     ref={measureElement}
                                     className={cn("pb-3", itemClassName)}
                                 >
-                                    {renderItem(row)}
+                                    {renderItem(row, item.index)}
                                 </li>
                             );
                         })}

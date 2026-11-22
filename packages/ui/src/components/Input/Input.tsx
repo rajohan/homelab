@@ -30,7 +30,7 @@ export function Input({
             }
             ref={ref}
             type={type}
-            className={cn(inputStyles, className)}
+            className={cn(inputStyles, "block", className)}
         />
     );
 }

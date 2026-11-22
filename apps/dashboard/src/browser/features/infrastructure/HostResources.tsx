@@ -2,216 +2,186 @@ import type {
     InfrastructureHost,
     InfrastructureInventory,
 } from "@homelab/contracts/infrastructure";
-import { DataTable, formatMetric, Switch } from "@homelab/ui";
+import { DetailEntry, DetailFacts, DetailList, formatMetric, Switch } from "@homelab/ui";
+import { FolderTree, HardDrive, Network } from "lucide-react";
 import { useState } from "react";
 
-import { ApplicationInventory } from "./ApplicationInventory";
+import { HostApplications } from "./HostApplications";
+import { HostHistory } from "./HostHistory";
+import type { hostInventorySections } from "./hostInventorySections";
 import { ResourceUsage } from "./ResourceUsage";
+import { StoragePools } from "./StoragePools";
 
 function booleanLabel(value: boolean | null, yes: string, no: string): string {
     if (value === null) return "Unknown";
     return value ? yes : no;
 }
 
-/**
- * Show individual guest resources without combining aliases or virtual network traffic.
- * @returns The requested host-scoped resource table.
+/** Keep each host's mounted capacity, storage pools and device measurements in a single scrollable view.
+ * @returns Independently sortable inventories with their original measured units.
  */
 export function HostResources({
-    inventory,
     host,
-    section,
+    inventory,
+    scoped,
+    stale,
 }: {
-    readonly inventory: InfrastructureInventory;
     readonly host: InfrastructureHost;
-    readonly section: string;
+    readonly inventory: InfrastructureInventory;
+    readonly scoped: ReturnType<typeof hostInventorySections>;
+    readonly stale: boolean;
 }) {
     const [virtual, setVirtual] = useState(false);
-    if (section === "applications")
-        return (
-            <ApplicationInventory
+    const { filesystems, pools, networks, disks, sections } = scoped;
+    return (
+        <>
+            <HostHistory
+                host={host}
+                inventory={inventory}
+                anchor={sections.history.value}
+            />
+            {!host.guestMetricsAvailable && (
+                <p className="text-sm leading-relaxed text-primary-400">
+                    Guest measurements are unavailable. Check the guest exporter for
+                    current filesystem, network and disk readings.
+                </p>
+            )}
+            {sections.mounts.visible && (
+                <DetailList
+                    icon={FolderTree}
+                    title="Filesystems"
+                    anchor={sections.mounts.value}
+                    rows={filesystems}
+                    getKey={(row) => row.id}
+                    description={
+                        filesystems.some((row) => row.type === "zfs")
+                            ? "ZFS datasets can share free space."
+                            : undefined
+                    }
+                    empty="No mounts reported for this host."
+                    sorts={[
+                        { label: "Mount", value: (row) => row.mount },
+                        { label: "Used", value: (row) => row.used },
+                        { label: "Available", value: (row) => row.available },
+                        { label: "Access", value: (row) => row.readOnly },
+                    ]}
+                    render={(row) => (
+                        <DetailEntry
+                            name={row.mount}
+                            description={`${row.device} · ${row.type} · ${booleanLabel(row.readOnly, "Read only", "Read / write")}`}
+                        >
+                            <ResourceUsage
+                                used={row.used}
+                                total={row.size}
+                                description={`${formatMetric(row.available, "bytes")} available`}
+                            />
+                        </DetailEntry>
+                    )}
+                />
+            )}
+            {sections.pools.visible && (
+                <StoragePools pools={pools} anchor={sections.pools.value} />
+            )}
+            <HostApplications
+                capturedAt={inventory.capturedAt}
+                cores={host.cores}
+                anchor={sections.applications.value}
                 applications={inventory.applications.filter(
                     (row) => row.host === host.host
                 )}
+                stale={stale}
             />
-        );
-    if (
-        !host.guestMetricsAvailable &&
-        !(
-            section === "filesystems" &&
-            inventory.filesystems.some((row) => row.host === host.host)
-        )
-    )
-        return (
-            <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm text-primary-400">
-                Guest-level metrics are unavailable. Hypervisor metrics remain available
-                under History. Install or restore the guest exporter for filesystem and
-                interface details.
-            </p>
-        );
-    if (section === "filesystems")
-        return (
-            <div className="space-y-3">
-                <p className="text-sm text-primary-400">
-                    Actual filesystem usage. Mounted aliases and ZFS datasets may share
-                    capacity; rows are not summed.
-                </p>
-                <DataTable
-                    label={`${host.name} filesystems`}
-                    compact
-                    rows={inventory.filesystems.filter((row) => row.host === host.host)}
+            {sections.network.visible && (
+                <DetailList
+                    icon={Network}
+                    title="Network interfaces"
+                    anchor={sections.network.value}
+                    rows={networks.filter((row) => virtual || !row.virtual)}
                     getKey={(row) => row.id}
-                    columns={[
-                        {
-                            id: "mount",
-                            sortValue: (row) => row.mount,
-                            label: "Mount",
-                            mobile: "title",
-                            render: (row) => (
-                                <div className="wrap-anywhere">
-                                    {row.mount}
-                                    <p className="mt-1 text-xs text-primary-400">
-                                        {row.device} · {row.type}
-                                    </p>
-                                </div>
-                            ),
-                        },
-                        {
-                            id: "usage",
-                            sortValue: (row) => row.used,
-                            label: "Used / capacity",
-                            render: (row) => (
-                                <ResourceUsage used={row.used} total={row.size} />
-                            ),
-                        },
-                        {
-                            id: "available",
-                            sortValue: (row) => row.available,
-                            label: "Available",
-                            render: (row) => formatMetric(row.available, "bytes"),
-                        },
-                        {
-                            id: "mode",
-                            sortValue: (row) => row.readOnly,
-                            label: "Access",
-                            render: (row) =>
-                                booleanLabel(row.readOnly, "Read only", "Read / write"),
-                        },
+                    empty="No matching interfaces reported."
+                    description="Bridges and their member interfaces can carry the same traffic."
+                    actions={
+                        <Switch
+                            label="Show virtual interfaces"
+                            checked={virtual}
+                            onChange={setVirtual}
+                        />
+                    }
+                    sorts={[
+                        { label: "Interface", value: (row) => row.device },
+                        { label: "Link", value: (row) => row.up },
+                        { label: "Link speed", value: (row) => row.speed },
+                        { label: "Received", value: (row) => row.receive },
+                        { label: "Sent", value: (row) => row.transmit },
+                        { label: "Errors", value: (row) => row.errors },
+                        { label: "Drops", value: (row) => row.drops },
                     ]}
-                />
-            </div>
-        );
-    if (section === "network")
-        return (
-            <div className="space-y-3">
-                <Switch
-                    label="Show virtual interfaces"
-                    checked={virtual}
-                    onChange={setVirtual}
-                />
-                <p className="text-sm text-primary-400">
-                    Traffic is per interface; bridges and their member interfaces can
-                    represent the same packets.
-                </p>
-                <DataTable
-                    label={`${host.name} interfaces`}
-                    compact
-                    rows={inventory.networks.filter(
-                        (row) => row.host === host.host && (virtual || !row.virtual)
+                    render={(row) => (
+                        <DetailEntry
+                            name={row.device}
+                            description={`${booleanLabel(row.up, "Link up", "Link down")} · ${formatMetric(row.speed === null ? null : row.speed * 8, "bits/s")}`}
+                        >
+                            <DetailFacts
+                                items={[
+                                    {
+                                        label: "Received",
+                                        value: formatMetric(row.receive, "bytes/s"),
+                                    },
+                                    {
+                                        label: "Sent",
+                                        value: formatMetric(row.transmit, "bytes/s"),
+                                    },
+                                    {
+                                        label: "Errors / drops per sec",
+                                        value: `${formatMetric(row.errors)} / ${formatMetric(row.drops)}`,
+                                    },
+                                ]}
+                            />
+                        </DetailEntry>
                     )}
-                    getKey={(row) => row.id}
-                    columns={[
-                        {
-                            id: "device",
-                            sortValue: (row) => row.device,
-                            label: "Interface",
-                            mobile: "title",
-                            render: (row) => row.device,
-                        },
-                        {
-                            id: "link",
-                            sortValue: (row) => row.up,
-                            label: "Link",
-                            render: (row) => booleanLabel(row.up, "Up", "Down"),
-                        },
-                        {
-                            id: "speed",
-                            sortValue: (row) => row.speed,
-                            label: "Link speed",
-                            render: (row) =>
-                                formatMetric(
-                                    row.speed === null ? null : row.speed * 8,
-                                    "bits/s"
-                                ),
-                        },
-                        {
-                            id: "receive",
-                            sortValue: (row) => row.receive,
-                            label: "Received",
-                            render: (row) => formatMetric(row.receive, "bytes/s"),
-                        },
-                        {
-                            id: "transmit",
-                            sortValue: (row) => row.transmit,
-                            label: "Sent",
-                            render: (row) => formatMetric(row.transmit, "bytes/s"),
-                        },
-                        {
-                            id: "errors",
-                            sortValue: (row) => row.errors,
-                            label: "Errors / drops per second",
-                            render: (row) =>
-                                `${formatMetric(row.errors)} / ${formatMetric(row.drops)}`,
-                        },
-                    ]}
                 />
-            </div>
-        );
-    return (
-        <div className="space-y-3">
-            <p className="text-sm text-primary-400">
-                Block-device I/O, not free space. Partitions, logical volumes and physical
-                disks can overlap.
-            </p>
-            <DataTable
-                label={`${host.name} disk I/O`}
-                compact
-                rows={inventory.disks.filter((row) => row.host === host.host)}
-                getKey={(row) => row.id}
-                columns={[
-                    {
-                        id: "device",
-                        sortValue: (row) => row.device,
-                        label: "Device",
-                        mobile: "title",
-                        render: (row) => row.device,
-                    },
-                    {
-                        id: "read",
-                        sortValue: (row) => row.read,
-                        label: "Read",
-                        render: (row) => formatMetric(row.read, "bytes/s"),
-                    },
-                    {
-                        id: "write",
-                        sortValue: (row) => row.write,
-                        label: "Written",
-                        render: (row) => formatMetric(row.write, "bytes/s"),
-                    },
-                    {
-                        id: "operations",
-                        sortValue: (row) => row.operations,
-                        label: "IOPS",
-                        render: (row) => formatMetric(row.operations),
-                    },
-                    {
-                        id: "busy",
-                        sortValue: (row) => row.busyPercent,
-                        label: "Busy",
-                        render: (row) => formatMetric(row.busyPercent, "percent"),
-                    },
-                ]}
-            />
-        </div>
+            )}
+            {sections.disks.visible && (
+                <DetailList
+                    icon={HardDrive}
+                    title="Disk I/O"
+                    anchor={sections.disks.value}
+                    rows={disks}
+                    getKey={(row) => row.id}
+                    description="Partitions, logical volumes and physical disks can overlap."
+                    empty="No block devices reported."
+                    sorts={[
+                        { label: "Device", value: (row) => row.device },
+                        { label: "Read", value: (row) => row.read },
+                        { label: "Written", value: (row) => row.write },
+                        { label: "IOPS", value: (row) => row.operations },
+                        { label: "Busy", value: (row) => row.busyPercent },
+                    ]}
+                    render={(row) => (
+                        <DetailEntry
+                            name={row.device}
+                            description={`${formatMetric(row.busyPercent, "percent")} busy`}
+                        >
+                            <DetailFacts
+                                items={[
+                                    {
+                                        label: "Read",
+                                        value: formatMetric(row.read, "bytes/s"),
+                                    },
+                                    {
+                                        label: "Written",
+                                        value: formatMetric(row.write, "bytes/s"),
+                                    },
+                                    {
+                                        label: "IOPS",
+                                        value: formatMetric(row.operations),
+                                    },
+                                ]}
+                            />
+                        </DetailEntry>
+                    )}
+                />
+            )}
+        </>
     );
 }

@@ -2,7 +2,14 @@ import type {
     MiraBrowserAccessSummary,
     miraBrowserHumanCommandSchema,
 } from "@homelab/contracts/miraBrowser";
-import { Badge, Button, ErrorNotice, LoadingState, Modal } from "@homelab/ui";
+import {
+    ActionGroup,
+    Badge,
+    Button,
+    ErrorNotice,
+    LoadingState,
+    Modal,
+} from "@homelab/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Square } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -116,9 +123,15 @@ export function BrowserConsoleDialog({
                             ? "Mira is paused. Return control when you finish."
                             : "Watch Mira’s browser as it works."}
                     </p>
-                    <div className="flex gap-2">
+                    <ActionGroup className="w-full sm:max-w-sm">
                         <Button
-                            variant="secondary"
+                            variant="danger"
+                            busy={stop.isPending}
+                            onClick={() => stop.mutate(access.id)}
+                        >
+                            <Square size={14} aria-hidden="true" /> Stop browser
+                        </Button>
+                        <Button
                             disabled={Boolean(busy)}
                             busy={transfer.isPending}
                             onClick={() =>
@@ -131,14 +144,7 @@ export function BrowserConsoleDialog({
                         >
                             {human ? "Return to Mira" : "Take control"}
                         </Button>
-                        <Button
-                            variant="secondary"
-                            busy={stop.isPending}
-                            onClick={() => stop.mutate(access.id)}
-                        >
-                            <Square size={14} aria-hidden="true" /> Stop browser
-                        </Button>
-                    </div>
+                    </ActionGroup>
                 </div>
                 {query.error && <ErrorNotice error={query.error} />}
                 {(transfer.error || command.error || stop.error) && (

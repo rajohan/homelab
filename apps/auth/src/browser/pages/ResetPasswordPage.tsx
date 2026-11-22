@@ -1,4 +1,4 @@
-import { SuccessNotice } from "@homelab/ui";
+import { ErrorNotice, SuccessNotice } from "@homelab/ui";
 import { PasswordForm } from "@homelab/ui/identity";
 import { useState } from "react";
 
@@ -28,9 +28,13 @@ export function ResetPasswordPage({ client, token }: AuthPageProps) {
                 />
             )}
             {!notice && !token && (
-                <p role="alert">
-                    This reset link is missing its token. Request another email.
-                </p>
+                <ErrorNotice
+                    error={
+                        new Error(
+                            "This reset link is missing its token. Request another email."
+                        )
+                    }
+                />
             )}
         </AuthLayout>
     );

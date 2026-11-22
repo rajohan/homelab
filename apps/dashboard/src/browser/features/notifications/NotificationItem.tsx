@@ -1,20 +1,16 @@
 import type { NotificationRecord } from "@homelab/contracts/notifications";
-import { Badge, buttonStyles, formatDateTime, IconButton } from "@homelab/ui";
+import { Badge, formatDateTime, IconButton } from "@homelab/ui";
+import { Link } from "@tanstack/react-router";
 import { CheckCheck, Mail, Trash2 } from "lucide-react";
+
+import { describeNotification } from "./describeNotification";
+import { notificationTarget } from "./notificationTarget";
 
 const tones = {
     info: "neutral",
     success: "positive",
     warning: "warning",
     error: "danger",
-} as const;
-const destinations = {
-    alerts: "/alerts",
-    jobs: "/jobs",
-    applications: "/applications",
-    infrastructure: "/infrastructure",
-    mira: "/mira",
-    reports: "/reports",
 } as const;
 
 /**
@@ -31,43 +27,53 @@ export function NotificationItem({
     readonly onAction: (id: string, action: "read" | "unread" | "dismiss") => void;
 }) {
     const unread = notification.readAt === null;
+    const target = notificationTarget(notification);
+    const display = describeNotification(notification);
+    const source = notification.source.startsWith("automation:")
+        ? "Automation"
+        : notification.source;
+    const titleClass = unread
+        ? "text-primary-50 font-semibold"
+        : "text-primary-300 font-medium";
     return (
         <article
-            className="rounded-lg border border-primary-700 bg-primary-900 p-3"
             aria-label={notification.title}
+            className="border-t border-primary-700 px-1 py-3"
         >
-            <div className="flex items-start justify-between gap-3">
-                <h3 className="min-w-0 text-sm font-semibold wrap-anywhere">
-                    {notification.title}
-                </h3>
-                <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-                    {unread && <Badge tone="info">Unread</Badge>}
-                    <Badge tone={tones[notification.severity]} className="capitalize">
-                        {notification.severity}
-                    </Badge>
-                </div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-primary-400">
+                <Badge tone={tones[notification.severity]} className="capitalize">
+                    {display.label === "Resolved" ? display.label : notification.severity}
+                </Badge>
+                <span className="sr-only">{notification.severity}</span>
+                {unread && <span className="font-medium text-accent-300">Unread</span>}
+                <time dateTime={notification.createdAt} className="ml-auto tabular-nums">
+                    {formatDateTime(notification.createdAt)}
+                </time>
             </div>
-            <p className="mt-1 text-sm leading-6 wrap-anywhere text-primary-300">
-                {notification.message}
-            </p>
-            <p className="mt-2 text-xs wrap-anywhere text-primary-400">
-                {formatDateTime(notification.createdAt)} ·{" "}
-                {notification.source.startsWith("automation:")
-                    ? "Automation"
-                    : notification.source}
-            </p>
-            <div className="mt-2 flex items-center justify-between gap-2">
-                <div>
-                    {notification.destination && (
-                        <a
-                            href={destinations[notification.destination]}
-                            className={buttonStyles({ variant: "secondary", size: "sm" })}
-                        >
-                            Open {notification.destination}
-                        </a>
-                    )}
+            <div className="mt-1.5 flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                    <h3 className={`text-sm leading-snug wrap-anywhere ${titleClass}`}>
+                        {target ? (
+                            <Link
+                                {...target}
+                                reloadDocument
+                                title={notification.title}
+                                aria-label={`${notification.destination === "alerts" ? "Inspect incident" : "Open " + notification.destination}: ${display.title}`}
+                                className="inline-block rounded py-1 underline-offset-4 hover:text-accent-300 hover:underline focus-visible:outline-2 focus-visible:outline-accent-300"
+                            >
+                                {display.title}
+                            </Link>
+                        ) : (
+                            display.title
+                        )}
+                    </h3>
+                    <p className="text-xs leading-relaxed wrap-anywhere text-primary-300">
+                        {display.detail}
+                        {display.detail && <span aria-hidden="true"> · </span>}
+                        <span className="text-primary-400">{source}</span>
+                    </p>
                 </div>
-                <div className="flex gap-1">
+                <div className="flex shrink-0">
                     <IconButton
                         icon={unread ? CheckCheck : Mail}
                         label={`${unread ? "Mark read" : "Mark unread"}: ${notification.title}`}
@@ -81,7 +87,7 @@ export function NotificationItem({
                         label={`Delete notification: ${notification.title}`}
                         disabled={pending}
                         onClick={() => onAction(notification.id, "dismiss")}
-                        className="text-red-400 hover:text-red-300"
+                        className="text-primary-400 hover:text-red-300"
                     />
                 </div>
             </div>

@@ -52,7 +52,7 @@ export function CodeCheckPicker({
             <div className="space-y-4">
                 {query.isPending && <LoadingState label="Loading checks…" />}
                 {rows.map(({ job, commit }) => (
-                    <Card key={job.id} className="bg-primary-900/40">
+                    <Card key={job.id}>
                         <SectionHeader
                             title={job.content.title}
                             icon={CheckCheck}

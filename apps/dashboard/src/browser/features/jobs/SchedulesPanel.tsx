@@ -1,13 +1,12 @@
 import { describeSchedule, type ScheduleSummary } from "@homelab/contracts/operations";
 import {
     Badge,
-    Card,
     DataTable,
     ErrorNotice,
     formatDateTime,
     LoadingState,
     queryRefresh,
-    SectionHeader,
+    SectionPanel,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarClock } from "lucide-react";
@@ -31,12 +30,11 @@ export function SchedulesPanel() {
     });
     return (
         <>
-            <Card className="space-y-4">
-                <SectionHeader
-                    title="Schedules"
-                    description="Daily, interval or cron schedules follow the system clock. Host timers are managed separately."
-                    icon={CalendarClock}
-                />
+            <SectionPanel
+                title="Schedules"
+                description="Daily, interval or cron schedules follow the system clock. Host timers are managed separately."
+                icon={CalendarClock}
+            >
                 {query.isPending && <LoadingState label="Loading schedules…" />}
                 {query.isError && <ErrorNotice error={query.error} />}
                 {query.data && (
@@ -106,7 +104,7 @@ export function SchedulesPanel() {
                         ]}
                     />
                 )}
-            </Card>
+            </SectionPanel>
             {selected && (
                 <ScheduleHistory
                     schedule={selected}

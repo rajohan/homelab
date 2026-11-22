@@ -1,4 +1,5 @@
-import { PageHeader } from "@homelab/ui";
+import { PageHeader, PageSections } from "@homelab/ui";
+import { ListChecks } from "lucide-react";
 
 import { JobHistory } from "../features/jobs/JobHistory";
 import { SchedulesPanel } from "../features/jobs/SchedulesPanel";
@@ -15,16 +16,27 @@ export function Jobs() {
     return (
         <div className="space-y-4">
             <PageHeader
+                icon={ListChecks}
                 title="Jobs"
                 description="Run background work, manage schedules and inspect outcomes."
             />
-            <WorkerPanel />
-            <JobHistory view="active" title="Queued and running" />
-            <SchedulesPanel />
-            <JobHistory />
-            <MiraRunHistory />
-            <DaytonaJobs />
-            <CodeLibrary />
+            <PageSections
+                deferBelowFold
+                label="Jobs sections"
+                sections={[
+                    { id: "workers", label: "Workers", content: <WorkerPanel /> },
+                    {
+                        id: "queue",
+                        label: "Queue",
+                        content: <JobHistory view="active" title="Queued and running" />,
+                    },
+                    { id: "schedules", label: "Schedules", content: <SchedulesPanel /> },
+                    { id: "history", label: "Job history", content: <JobHistory /> },
+                    { id: "mira-runs", label: "Mira runs", content: <MiraRunHistory /> },
+                    { id: "daytona", label: "Daytona", content: <DaytonaJobs /> },
+                    { id: "code", label: "Code library", content: <CodeLibrary /> },
+                ]}
+            />
         </div>
     );
 }

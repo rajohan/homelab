@@ -70,7 +70,7 @@ export function CodeReview({
             dismissible={!approve.isPending && !cancel.isPending}
         >
             <div className="space-y-4">
-                <Card className="space-y-4 bg-primary-900/40">
+                <Card className="space-y-4">
                     <SectionHeader
                         title={draft.content.title}
                         icon={GitPullRequest}
@@ -89,7 +89,7 @@ export function CodeReview({
                     </p>
                 </Card>
                 {draft.state === "draft" && (
-                    <Card className="space-y-3 bg-primary-900/40">
+                    <Card className="space-y-3">
                         <SectionHeader
                             title="Checked files"
                             icon={CheckCheckIcon}
@@ -119,7 +119,7 @@ export function CodeReview({
                 <ActionGroup>
                     {["draft", "queued"].includes(draft.state) && (
                         <Button
-                            variant="secondary"
+                            variant="danger"
                             busy={cancel.isPending}
                             disabled={approve.isPending}
                             onClick={() =>
@@ -131,6 +131,37 @@ export function CodeReview({
                         >
                             Cancel action
                         </Button>
+                    )}
+                    <a
+                        className={buttonStyles({ variant: "secondary" })}
+                        href={`/api/mira/files/${draft.content.edits.id}`}
+                        download="edits.json"
+                    >
+                        <Download size={16} />
+                        Edit plan
+                    </a>
+                    {["published", "needs_attention"].includes(draft.state) && (
+                        <Button
+                            variant="secondary"
+                            busy={inspect.isPending || draft.inspectionRequested}
+                            onClick={() =>
+                                void inspect.mutateAsync(undefined).catch(() => {})
+                            }
+                        >
+                            <RefreshCw size={16} />
+                            Inspect GitHub
+                        </Button>
+                    )}
+                    {number && (
+                        <a
+                            className={buttonStyles()}
+                            href={`https://github.com/rajohan/homelab/pull/${number}`}
+                            target="_blank"
+                            rel="noreferrer"
+                        >
+                            <ExternalLink size={16} />
+                            Open PR
+                        </a>
                     )}
                     {draft.state === "draft" && (
                         <Button
@@ -152,37 +183,6 @@ export function CodeReview({
                         >
                             <GitPullRequest size={16} aria-hidden="true" />
                             Create pull request
-                        </Button>
-                    )}
-                    <a
-                        className={buttonStyles({ variant: "secondary" })}
-                        href={`/api/mira/files/${draft.content.edits.id}`}
-                        download="edits.json"
-                    >
-                        <Download size={16} />
-                        Edit plan
-                    </a>
-                    {number && (
-                        <a
-                            className={buttonStyles({ variant: "secondary" })}
-                            href={`https://github.com/rajohan/homelab/pull/${number}`}
-                            target="_blank"
-                            rel="noreferrer"
-                        >
-                            <ExternalLink size={16} />
-                            Open PR
-                        </a>
-                    )}
-                    {["published", "needs_attention"].includes(draft.state) && (
-                        <Button
-                            variant="secondary"
-                            busy={inspect.isPending || draft.inspectionRequested}
-                            onClick={() =>
-                                void inspect.mutateAsync(undefined).catch(() => {})
-                            }
-                        >
-                            <RefreshCw size={16} />
-                            Inspect GitHub
                         </Button>
                     )}
                 </ActionGroup>

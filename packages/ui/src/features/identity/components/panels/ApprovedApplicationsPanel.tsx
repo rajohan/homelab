@@ -29,7 +29,7 @@ export function ApprovedApplicationsPanel({ data, onAction, notice }: AccountPan
                     {applications.map((app) => (
                         <li
                             key={app.id}
-                            className="flex items-start justify-between gap-3 rounded-lg border border-primary-700 bg-primary-900/40 p-3"
+                            className="flex items-start justify-between gap-3 rounded-lg border border-primary-700 bg-surface-card p-3"
                         >
                             <div className="min-w-0 flex-1">
                                 <p className="font-medium wrap-anywhere">{app.name}</p>

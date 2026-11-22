@@ -19,7 +19,7 @@ export function AttachmentFileActions({
     const Icon = fileTypeIcons[describeFile(file).kind];
     return (
         <>
-            <ActionGroup>
+            <ActionGroup className="sm:max-w-xs">
                 <Button
                     variant="secondary"
                     aria-label={`Preview ${file.name}`}

@@ -1,15 +1,11 @@
 import { buttonStyles, Card, PageHeader, SectionHeader } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ShieldCheck } from "lucide-react";
+import { LayoutDashboard, ShieldCheck } from "lucide-react";
 
 import { systemStatusQuery } from "../api/client";
-import { AlertsPanel } from "../features/alerts/AlertsPanel";
-import { BackupsPanel } from "../features/backups/BackupsPanel";
 import { ConnectionStatus } from "../features/overview/ConnectionStatus";
-import { InfrastructureHealth } from "../features/overview/InfrastructureHealth";
-import { QueueSummary } from "../features/overview/QueueSummary";
-import { UpdatesPanel } from "../features/updates/UpdatesPanel";
+import { OperationsOverview } from "../features/overview/OperationsOverview";
 
 /**
  * Compose operational domains with independent queries, loading and failure boundaries.
@@ -21,19 +17,23 @@ export function Overview() {
     return (
         <>
             <PageHeader
+                icon={LayoutDashboard}
+                compactActions
                 title="Overview"
-                description="System health, protection and work that needs attention."
+                actions={
+                    status.dataUpdatedAt > 0 && (
+                        <time className="text-sm text-primary-400">
+                            {new Intl.DateTimeFormat("en-GB", {
+                                weekday: "long",
+                                day: "numeric",
+                                month: "long",
+                            }).format(status.dataUpdatedAt)}
+                        </time>
+                    )
+                }
             />
             {operationsAvailable ? (
-                <div className="space-y-5">
-                    <InfrastructureHealth />
-                    <div className="grid items-start gap-5 xl:grid-cols-2">
-                        <AlertsPanel compact />
-                        <BackupsPanel compact />
-                        <UpdatesPanel compact />
-                        <QueueSummary />
-                    </div>
-                </div>
+                <OperationsOverview />
             ) : (
                 <div className="grid gap-5 lg:grid-cols-2">
                     <ConnectionStatus

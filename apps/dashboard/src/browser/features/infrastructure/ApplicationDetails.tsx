@@ -1,69 +1,42 @@
 import type { ApplicationMetric } from "@homelab/contracts/infrastructure";
-import { formatDateTime, formatMetric, Modal } from "@homelab/ui";
 
-import { ApplicationHistory } from "./ApplicationHistory";
-import { MetricStat } from "./MetricStat";
-import { ResourceStatus } from "./ResourceStatus";
+import { applicationDirectory } from "../applications/applicationDirectory";
+import { ApplicationInspector } from "../applications/ApplicationInspector";
+import { useApplicationControl } from "../applications/useApplicationControl";
 
-/**
- * Describe application health, its own usage and the effective memory ceiling.
- * @returns A live detail dialog and scoped, read-only resource history.
+/** Open the same inspector from a host or Overview, including controls for a unique managed match.
+ * @returns Monitoring history and all available container details for the selected service.
  */
 export function ApplicationDetails({
     application,
+    applications,
+    capturedAt,
+    cores,
+    stale = false,
     onClose,
 }: {
     readonly application: ApplicationMetric;
+    readonly applications: readonly ApplicationMetric[];
+    readonly capturedAt: string;
+    readonly cores: number | null;
+    readonly stale?: boolean;
     readonly onClose: () => void;
 }) {
-    const resources = application.resources;
+    const control = useApplicationControl();
+    const entry = applicationDirectory(applications, control.containers).find(
+        (row) => row.metric?.id === application.id
+    );
     return (
-        <Modal
-            title={application.name}
-            titleAccessory={<ResourceStatus state={application.state} />}
-            description={`${application.host} · ${application.project}`}
-            onClose={onClose}
-            size="wide"
-        >
-            <div className="space-y-5">
-                <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    <MetricStat
-                        label="CPU"
-                        value={formatMetric(resources?.cpuPercent ?? null, "percent")}
-                    />
-                    <MetricStat
-                        label="Memory used"
-                        value={formatMetric(resources?.memoryUsed ?? null, "bytes")}
-                    />
-                    <MetricStat
-                        label="Memory capacity"
-                        value={formatMetric(resources?.memoryCapacity ?? null, "bytes")}
-                    />
-                    <MetricStat
-                        label="Processes / threads"
-                        value={formatMetric(resources?.pids ?? null)}
-                    />
-                    <MetricStat
-                        label="Restarts"
-                        value={formatMetric(application.restarts)}
-                    />
-                    <MetricStat
-                        label="Started"
-                        value={
-                            application.startedAt
-                                ? formatDateTime(application.startedAt * 1000)
-                                : "Not reported"
-                        }
-                    />
-                </dl>
-                {!resources && (
-                    <p className="rounded-lg border border-primary-700 bg-primary-950/40 p-3 text-sm text-primary-400">
-                        No current application resource sample. Earlier history remains
-                        available when collected.
-                    </p>
-                )}
-                <ApplicationHistory id={application.id} name={application.name} />
-            </div>
-        </Modal>
+        entry && (
+            <ApplicationInspector
+                entry={entry}
+                capturedAt={capturedAt}
+                cores={cores}
+                stale={stale}
+                available={control.available(application.host)}
+                logsAvailable={control.logsAvailable(application.host)}
+                onClose={onClose}
+            />
+        )
     );
 }

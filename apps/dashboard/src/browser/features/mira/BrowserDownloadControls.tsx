@@ -127,7 +127,7 @@ export function BrowserDownloadControls({
                         return Promise.resolve();
                     }}
                 >
-                    <dl className="space-y-3 rounded-lg border border-primary-700 bg-primary-950/40 p-4 text-sm wrap-anywhere">
+                    <dl className="space-y-3 rounded-lg border border-primary-700 bg-surface-card p-4 text-sm wrap-anywhere">
                         <div>
                             <dt className="text-primary-400">File</dt>
                             <dd>{confirmation.operation.name}</dd>

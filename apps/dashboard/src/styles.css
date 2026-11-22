@@ -1,3 +1,25 @@
 @import "../../../packages/ui/src/styles/index.css";
 @source "./browser";
 @source not "./browser/**/*.test.tsx";
+
+@theme {
+    --spacing-shell-header: 3.5rem;
+    --color-coverage-surface: #11221e;
+    --color-workspace-accent: var(--color-accent-300);
+}
+
+/* Reserve space for both a usable history rail and the active conversation. */
+@custom-variant chat-split {
+    @media (min-height: 28rem) {
+        @container chat-workspace (min-width: 50rem) {
+            @slot;
+        }
+    }
+}
+
+@layer base {
+    ::selection {
+        background: var(--color-accent-200);
+        color: var(--color-primary-950);
+    }
+}

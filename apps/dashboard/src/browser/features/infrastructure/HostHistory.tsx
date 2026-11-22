@@ -4,11 +4,19 @@ import {
     type InfrastructureHost,
     type InfrastructureInventory,
 } from "@homelab/contracts/infrastructure";
-import { ErrorNotice, LoadingState, queryRefresh, Select } from "@homelab/ui";
+import {
+    DetailSection,
+    ErrorNotice,
+    LoadingState,
+    Select,
+    TimeRangeSelect,
+} from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
+import { ChartNoAxesCombined, HardDrive, Network } from "lucide-react";
 import { useState } from "react";
 
-import { api } from "../../api/client";
+import { hostChartReadings } from "./hostChartReadings";
+import { hostHistoryOptions } from "./hostHistoryOptions";
 import { ResourceHistoryCharts } from "./ResourceHistoryCharts";
 
 /**
@@ -18,8 +26,10 @@ import { ResourceHistoryCharts } from "./ResourceHistoryCharts";
 export function HostHistory({
     host,
     inventory,
+    anchor,
 }: {
     readonly host: InfrastructureHost;
+    readonly anchor: string;
     readonly inventory: InfrastructureInventory;
 }) {
     const networks = inventory.networks
@@ -40,60 +50,51 @@ export function HostHistory({
     const disk = disks.some((item) => item.device === diskChoice)
         ? diskChoice
         : (disks[0]?.device ?? null);
-    const query = useQuery({
-        queryKey: [
-            "operations",
-            "infrastructure",
-            "history",
-            host.id,
-            range,
-            network,
-            disk,
-        ],
-        queryFn: ({ signal }) =>
-            api.infrastructure.history.query(
-                { id: host.id, range, network, disk },
-                { signal }
-            ),
-        staleTime: 60_000,
-        ...queryRefresh("history"),
-        retry: false,
-    });
+    const query = useQuery(hostHistoryOptions(host.id, range, network, disk));
     return (
-        <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-3">
-                <Select
-                    label="Time range"
-                    value={range}
-                    onChange={setRange}
-                    options={historyRanges.map((value) => ({
-                        value,
-                        label: `Last ${value}`,
-                    }))}
-                />
-                {networks.length > 0 && (
-                    <Select
-                        label="Network interface"
-                        value={network ?? ""}
-                        onChange={setNetwork}
-                        options={networks.map((row) => ({
-                            value: row.device,
-                            label: `${row.device}${row.virtual ? " (virtual)" : ""}`,
-                        }))}
+        <DetailSection
+            icon={ChartNoAxesCombined}
+            title="Resource history"
+            anchor={anchor}
+            actions={
+                <fieldset
+                    className="flex max-w-full min-w-0 flex-wrap items-center gap-2"
+                    aria-label="History filters"
+                >
+                    <TimeRangeSelect
+                        ranges={historyRanges}
+                        value={range}
+                        onChange={setRange}
                     />
-                )}
-                {disks.length > 0 && (
-                    <Select
-                        label="Block device"
-                        value={disk ?? ""}
-                        onChange={setDisk}
-                        options={disks.map((row) => ({
-                            value: row.device,
-                            label: row.device,
-                        }))}
-                    />
-                )}
-            </div>
+                    {networks.length > 1 && (
+                        <Select
+                            compact
+                            icon={Network}
+                            label="Network interface"
+                            value={network ?? ""}
+                            onChange={setNetwork}
+                            options={networks.map((row) => ({
+                                value: row.device,
+                                label: `${row.device}${row.virtual ? " (virtual)" : ""}`,
+                            }))}
+                        />
+                    )}
+                    {disks.length > 1 && (
+                        <Select
+                            compact
+                            icon={HardDrive}
+                            label="Block device"
+                            value={disk ?? ""}
+                            onChange={setDisk}
+                            options={disks.map((row) => ({
+                                value: row.device,
+                                label: row.device,
+                            }))}
+                        />
+                    )}
+                </fieldset>
+            }
+        >
             {!(host.guestMetricsConfigured ?? host.guestMetricsAvailable) &&
                 networks.length === 0 &&
                 disks.length === 0 && (
@@ -105,14 +106,13 @@ export function HostHistory({
                 )}
             {query.isPending && <LoadingState label="Loading resource history…" />}
             {query.isError && <ErrorNotice error={query.error} />}
-            {query.data && (
-                <ResourceHistoryCharts
-                    name={host.name}
-                    history={query.data}
-                    networkLabel={`Network${network ? ` · ${network}` : ""}`}
-                    diskLabel={`Disk I/O${disk ? ` · ${disk}` : ""}`}
-                />
-            )}
-        </div>
+            <ResourceHistoryCharts
+                readings={hostChartReadings(host)}
+                name={host.name}
+                history={query.data}
+                networkLabel={`Network${network ? ` · ${network}` : ""}`}
+                diskLabel={`Disk I/O${disk ? ` · ${disk}` : ""}`}
+            />
+        </DetailSection>
     );
 }

@@ -78,9 +78,9 @@ export function BrowserLiveView({
         <section aria-label="Live Chromium browser" className="space-y-2">
             <div
                 ref={viewport}
-                className="group/browser grid bg-primary-950 [&:fullscreen]:grid-rows-[minmax(0,1fr)_auto]"
+                className="group/browser grid [&:fullscreen]:grid-rows-[minmax(0,1fr)_auto] [&:fullscreen]:bg-primary-950"
             >
-                <div className="relative col-start-1 row-start-1 overflow-hidden rounded-lg border border-primary-700 bg-primary-950">
+                <div className="relative col-start-1 row-start-1 overflow-hidden rounded-lg border border-primary-700 bg-surface-card">
                     <div
                         ref={container}
                         aria-label="Remote Chromium window"
@@ -88,7 +88,7 @@ export function BrowserLiveView({
                         className="aspect-8/5 min-h-48 w-full group-[:fullscreen]/browser:h-full group-[:fullscreen]/browser:min-h-0 sm:aspect-auto sm:h-[min(68dvh,50rem)] sm:min-h-64"
                     />
                     {state !== "connected" && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-primary-950 p-6 text-center">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-inherit p-6 text-center">
                             <output className="text-sm text-primary-200">
                                 {state === "connecting"
                                     ? "Connecting to Chromium…"
