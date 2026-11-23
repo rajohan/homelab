@@ -111,6 +111,7 @@ async function callController(
  * @param client - Dashboard database.
  * @param targets - Deployment-owned restart recipes.
  * @param connections - Pinned SSH configuration.
+ * @param requireMiraDrain - Whether this deployment expects a Mira executor to acknowledge the restart.
  * @param signal - Worker lifetime.
  * @returns Completion of one coordination step.
  */
@@ -118,6 +119,7 @@ export async function coordinateProxmoxRestart(
     client: SQL,
     targets: readonly MaintenanceTarget[],
     connections: readonly UpdateTarget[],
+    requireMiraDrain: boolean,
     signal: AbortSignal
 ) {
     const [active] = await client<
@@ -168,7 +170,10 @@ export async function coordinateProxmoxRestart(
         const [ready] = await client<{ ready: boolean }[]>`SELECT
             NOT EXISTS(SELECT 1 FROM job_runs WHERE state='running')
             AND NOT EXISTS(SELECT 1 FROM workers WHERE heartbeat_at>clock_timestamp()-interval '30 seconds' AND (deployment_protocol<>1 OR deployment_drained_for IS DISTINCT FROM ${run.id}::uuid))
-            AND EXISTS(SELECT 1 FROM mira_runtime_status WHERE deployment_drained_for=${run.id} AND heartbeat_at>clock_timestamp()-interval '15 seconds')
+            AND (
+                EXISTS(SELECT 1 FROM mira_runtime_status WHERE deployment_drained_for=${run.id} AND heartbeat_at>clock_timestamp()-interval '15 seconds')
+                OR (NOT ${requireMiraDrain}::boolean AND NOT EXISTS(SELECT 1 FROM mira_runtime_status WHERE heartbeat_at>clock_timestamp()-interval '30 seconds'))
+            )
             AND NOT EXISTS(SELECT 1 FROM mira_browser_processes WHERE state<>'removed')
             AND NOT EXISTS(SELECT 1 FROM mira_daytona_jobs WHERE execution_target='main' AND (state='running' OR cleanup='pending')) AS ready`;
         if (!ready?.ready) return;

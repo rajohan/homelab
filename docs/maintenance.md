@@ -59,8 +59,14 @@ detection. Review the worker host, database, hypervisor, SSH/DNS/secret-delivery
 other dependencies before granting this flag. Targets that can stop the observing worker or its database use
 `workerIndependent: false` with an external procedure. A reviewed optional
 `proxmox` connection and VM ID enable independent execution for that guest.
-The queue and Mira drain, then PVE checks the approved guest boot and service
-identity. A transient unit on PVE performs one restart and records a receipt in
+The queue drains before PVE checks the approved guest boot and service identity.
+When a release deployment target declares Mira, the worker also waits for Mira to
+acknowledge this specific restart. Without release targets, the worker requires
+that acknowledgement by default. On a worker-only installation, set
+`HOMELAB_DASHBOARD_MIRA_DEPLOYED=false` in the worker environment to declare Mira
+absent. A live executor still has to acknowledge the restart, and active browser
+or local code jobs must finish in either configuration.
+A transient unit on PVE performs one restart and records a receipt in
 `/var/lib/homelab-dashboard/restarts`. Success requires a changed identity and a
 passing health check. Lost acknowledgements are reconciled from that receipt.
 The hypervisor itself uses its external physical-console procedure.

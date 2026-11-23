@@ -1,4 +1,8 @@
-import type { UpdatePolicy, UpdatePolicyGroupInput } from "@homelab/contracts/updates";
+import {
+    type UpdatePolicy,
+    type UpdatePolicyGroupInput,
+    updatePolicyNeedsChange,
+} from "@homelab/contracts/updates";
 import { ChoiceBar, ConfirmDialog, Switch } from "@homelab/ui";
 import { useState } from "react";
 
@@ -21,7 +25,7 @@ export function PolicyGroupControl({
 }) {
     const [intent, setIntent] = useState<{
         enabled: boolean;
-        mixed: boolean;
+        allowChoice: boolean;
         policies: readonly UpdatePolicy[];
     }>();
     const mutation = useOperation((input: UpdatePolicyGroupInput, signal) =>
@@ -37,7 +41,15 @@ export function PolicyGroupControl({
                 checked={policies.length > 0 && enabledCount === policies.length}
                 indeterminate={mixed}
                 disabled={disabled || mutation.isPending || policies.length === 0}
-                onChange={(enabled) => setIntent({ enabled, mixed, policies })}
+                onChange={(enabled) =>
+                    setIntent({
+                        enabled,
+                        allowChoice:
+                            mixed ||
+                            policies.some((policy) => policy.configurationChanged),
+                        policies,
+                    })
+                }
             />
             {intent && (
                 <ConfirmDialog
@@ -66,7 +78,7 @@ export function PolicyGroupControl({
                         setIntent(undefined);
                     }}
                 >
-                    {intent.mixed && (
+                    {intent.allowChoice && (
                         <ChoiceBar
                             label="Group update policy"
                             value={intent.enabled ? "enable" : "disable"}
@@ -81,7 +93,9 @@ export function PolicyGroupControl({
                     )}
                     <ul className="max-h-52 list-disc space-y-1 overflow-auto pl-5 text-sm text-primary-300">
                         {intent.policies
-                            .filter((policy) => policy.enabled !== intent.enabled)
+                            .filter((policy) =>
+                                updatePolicyNeedsChange(policy, intent.enabled)
+                            )
                             .map((policy) => (
                                 <li key={policy.target}>
                                     {policy.source} · {policy.label}

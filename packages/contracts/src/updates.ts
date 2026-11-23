@@ -183,6 +183,16 @@ export interface UpdatePolicy {
     readonly configurationChanged: boolean;
 }
 
+/**
+ * Decide which targets a confirmed group change will write, including old consent.
+ * @param policy - Effective policy and whether its stored recipe has changed.
+ * @param enabled - Requested state for the current recipe.
+ * @returns Whether the target must be listed for confirmation and saved.
+ */
+export function updatePolicyNeedsChange(policy: UpdatePolicy, enabled: boolean): boolean {
+    return policy.configurationChanged || policy.enabled !== enabled;
+}
+
 function versionParts(value: string | undefined, debian: boolean): number[] | null {
     if (!value) return null;
     const normalized = debian

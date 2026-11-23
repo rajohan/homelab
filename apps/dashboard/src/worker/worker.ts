@@ -52,6 +52,7 @@ export async function main(): Promise<void> {
                                 runtime.client,
                                 configuration.maintenanceTargets ?? [],
                                 configuration.updateTargets ?? [],
+                                configuration.requireMiraDrain,
                                 signal
                             );
                             await coordinateDeployment({

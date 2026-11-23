@@ -1,4 +1,8 @@
-import type { UpdatePolicy, UpdatePolicyGroupInput } from "@homelab/contracts/updates";
+import {
+    type UpdatePolicy,
+    type UpdatePolicyGroupInput,
+    updatePolicyNeedsChange,
+} from "@homelab/contracts/updates";
 import type { SQL, TransactionSQL } from "bun";
 
 import { hostResourceKey } from "../../jobs/resources";
@@ -124,7 +128,9 @@ export async function writeUpdatePolicyGroup(
                 "The update targets or policies changed. Refresh and review them again."
             );
         }
-        const changes = policies.filter((policy) => policy.enabled !== input.enabled);
+        const changes = policies.filter((policy) =>
+            updatePolicyNeedsChange(policy, input.enabled)
+        );
         for (const policy of changes) {
             const target = scope.find((entry) => entry.id === policy.target)!;
             await savePolicy(transaction, target, actor, {
