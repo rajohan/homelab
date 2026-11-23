@@ -80,7 +80,7 @@ export function TaskBoard({
                         <TaskColumn
                             key={status}
                             status={status}
-                            draggedFrom={dragged?.status}
+                            dragged={dragged}
                             arrivedId={
                                 arrival?.status === status ? arrival.id : undefined
                             }

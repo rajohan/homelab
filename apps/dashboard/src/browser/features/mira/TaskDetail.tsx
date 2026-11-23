@@ -176,7 +176,7 @@ export function TaskDetail({
                             ))}
                         </div>
                     )}
-                    <ActionGroup stretch={false}>
+                    <ActionGroup stretch={false} align="start">
                         <Button
                             variant="danger"
                             onClick={() => setDeleting(task.version)}

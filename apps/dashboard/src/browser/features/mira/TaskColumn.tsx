@@ -7,10 +7,10 @@ import {
     InfiniteScrollTrigger,
     LoadingState,
 } from "@homelab/ui";
-import { useRef } from "react";
+import { Fragment, useLayoutEffect, useRef } from "react";
 
 import { TaskCard } from "./TaskCard";
-import { taskStates } from "./taskPresentation";
+import { taskDropIndex, taskStates } from "./taskPresentation";
 import type { useTaskColumn } from "./useTaskColumn";
 
 /**
@@ -19,7 +19,7 @@ import type { useTaskColumn } from "./useTaskColumn";
  */
 export function TaskColumn({
     status,
-    draggedFrom,
+    dragged,
     arrivedId,
     moving,
     query,
@@ -30,7 +30,7 @@ export function TaskColumn({
     readonly disabled: boolean;
     readonly query: ReturnType<typeof useTaskColumn>;
     readonly status: MiraTask["status"];
-    readonly draggedFrom: MiraTask["status"] | undefined;
+    readonly dragged: MiraTask | undefined;
     readonly arrivedId: string | undefined;
     readonly moving: boolean;
     readonly filtered: boolean;
@@ -44,9 +44,49 @@ export function TaskColumn({
     });
     const rows = query.data?.pages.flatMap((page) => page.rows) ?? [];
     const scrollRef = useRef<HTMLDivElement>(null);
+    const markerRef = useRef<HTMLOutputElement>(null);
     const state = taskStates[status];
     const emptyMessage = filtered ? "No matching tasks." : state.empty;
-    const targeted = isDropTarget && draggedFrom !== undefined && draggedFrom !== status;
+    const targeted = isDropTarget && dragged !== undefined && dragged.status !== status;
+    const insertion = targeted ? taskDropIndex(dragged, status, rows) : -1;
+    const beyondPage =
+        targeted && status !== "done" && insertion === rows.length && query.hasNextPage;
+    const position =
+        query.isPending || (query.isError && rows.length === 0) ? -1 : insertion;
+    useLayoutEffect(() => {
+        const scroll = scrollRef.current;
+        const marker = markerRef.current;
+        if (!scroll || !marker) return;
+        const bounds = scroll.getBoundingClientRect();
+        const gap = marker.getBoundingClientRect();
+        if (gap.top < bounds.top + 12) scroll.scrollTop += gap.top - bounds.top - 12;
+        else if (gap.bottom > bounds.bottom - 12)
+            scroll.scrollTop += gap.bottom - bounds.bottom + 12;
+    }, [position]);
+    const marker = position >= 0 && (
+        <output
+            ref={markerRef}
+            className="pointer-events-none relative flex h-2 shrink-0 items-center"
+        >
+            {beyondPage ? (
+                <span className="sr-only">Finding position in {state.title}</span>
+            ) : (
+                <>
+                    <span
+                        aria-hidden="true"
+                        className="size-2 shrink-0 rounded-full bg-accent-300"
+                    />
+                    <span
+                        aria-hidden="true"
+                        className="h-0.5 flex-1 rounded-r-full bg-accent-300"
+                    />
+                    <span className="sr-only">
+                        {state.title}, position {position + 1}
+                    </span>
+                </>
+            )}
+        </output>
+    );
     return (
         <Card
             ref={ref}
@@ -77,20 +117,21 @@ export function TaskColumn({
                 className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto overscroll-y-contain p-2.5"
             >
                 {query.isPending && <LoadingState label="Loading tasks…" />}
-                {rows.map((task) => (
-                    <TaskCard
-                        key={task.id}
-                        task={task}
-                        arrived={task.id === arrivedId}
-                        disabled={disabled}
-                        onSelect={onSelect}
-                    />
+                {rows.map((task, index) => (
+                    <Fragment key={task.id}>
+                        {index === position && marker}
+                        <TaskCard
+                            task={task}
+                            arrived={task.id === arrivedId}
+                            disabled={disabled}
+                            onSelect={onSelect}
+                        />
+                    </Fragment>
                 ))}
-                {!query.isPending && !query.isError && rows.length === 0 && (
-                    <p className="grid min-h-16 flex-1 place-items-center rounded-lg border border-dashed border-primary-700 px-3 py-4 text-center text-sm text-primary-400 group-data-targeted/lane:border-accent-400 group-data-targeted/lane:text-accent-200">
-                        <span className="group-data-targeted/lane:invisible">
-                            {emptyMessage}
-                        </span>
+                {position === rows.length && marker}
+                {!targeted && !query.isPending && !query.isError && rows.length === 0 && (
+                    <p className="grid min-h-16 flex-1 place-items-center rounded-lg border border-dashed border-primary-700 px-3 py-4 text-center text-sm text-primary-400">
+                        {emptyMessage}
                     </p>
                 )}
                 <InfiniteScrollTrigger
