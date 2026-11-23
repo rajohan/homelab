@@ -68,6 +68,7 @@ const storeSchema = v.strictObject({
 export interface OperationsConfiguration {
     readonly miraOpenaiApiKey?: string | undefined;
     readonly deploymentTargets?: readonly ReleaseDeploymentTarget[];
+    readonly requireMiraDrain: boolean;
     readonly miraFilesDirectory?: string | undefined;
     readonly agentMailHook?: AgentMailHookConfiguration | undefined;
     readonly moltbookBinding?: MoltbookBinding | undefined;
@@ -271,11 +272,21 @@ export function parseOperationsConfiguration(
         )
     )
         throw new Error("Every update target requires a configured reporting source");
+    const deploymentTargets = parseReleaseDeploymentTargets(
+        environment.HOMELAB_DASHBOARD_DEPLOYMENT_TARGETS,
+        updateTargets
+    );
+    const miraDeployed = v.parse(
+        v.optional(v.picklist(["true", "false"])),
+        environment.HOMELAB_DASHBOARD_MIRA_DEPLOYED
+    );
     return {
-        deploymentTargets: parseReleaseDeploymentTargets(
-            environment.HOMELAB_DASHBOARD_DEPLOYMENT_TARGETS,
-            updateTargets
-        ),
+        deploymentTargets,
+        requireMiraDrain:
+            deploymentTargets.some((target) => target.mira) ||
+            (miraDeployed === undefined
+                ? deploymentTargets.length === 0
+                : miraDeployed === "true"),
         miraFilesDirectory: environment.HOMELAB_MIRA_FILES_DIR,
         miraOpenaiApiKey: environment.HOMELAB_MIRA_OPENAI_API_KEY || undefined,
         agentMailHook: agentMailHookConfiguration(environment),

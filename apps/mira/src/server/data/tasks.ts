@@ -1,5 +1,7 @@
 import type {
     MiraTask,
+    MiraTaskBoardCursor,
+    miraTaskBoardFilterSchema,
     miraTaskFilterSchema,
     MiraTaskInput,
 } from "@homelab/contracts/mira";
@@ -14,6 +16,26 @@ import {
     requireTask,
 } from "./context";
 
+function taskFields(sql: MiraContext["client"]) {
+    return sql`id, task_number AS number, title, description, status, assignee, priority, labels, auto_start AS "autoStart",
+        due_at::text AS "dueAt", completion_criteria AS "completionCriteria", completed_at::text AS "completedAt",
+        conversation_id AS "conversationId", version, created_at::text AS "createdAt", updated_at::text AS "updatedAt"`;
+}
+
+function matchingTasks(
+    context: MiraContext,
+    input: Omit<v.InferOutput<typeof miraTaskFilterSchema>, "before">
+) {
+    const sql = context.client;
+    const search = /^#\d+$/.test(input.search)
+        ? sql`task_number = ${input.search.slice(1)}::numeric`
+        : sql`strpos(lower(title || ' ' || description || ' ' || labels::text), lower(${input.search})) > 0`;
+    return sql`owner = ${context.owner} AND deleted_at IS NULL AND ${search}
+        AND (NOT ${input.due ?? false} OR (status <> 'done' AND due_at <= now()))
+        AND (${input.status ?? null}::text IS NULL OR status = ${input.status ?? null})
+        AND (${input.assignee ?? null}::text IS NULL OR assignee = ${input.assignee ?? null})`;
+}
+
 /**
  * Read one exact owned task without scanning or depending on board pagination.
  * @param context - Authenticated operator or run-scoped actor.
@@ -22,9 +44,7 @@ import {
  */
 export async function readTask(context: MiraContext, id: string): Promise<MiraTask> {
     const [task] = await context.client<MiraTask[]>`
-        SELECT id, title, description, status, assignee, priority, labels, auto_start AS "autoStart",
-            due_at::text AS "dueAt", completion_criteria AS "completionCriteria",
-            conversation_id AS "conversationId", version, created_at::text AS "createdAt", updated_at::text AS "updatedAt"
+        SELECT ${taskFields(context.client)}
         FROM mira_tasks WHERE id = ${id} AND owner = ${context.owner} AND deleted_at IS NULL`;
     if (!task) throw new MiraFailure("NOT_FOUND", "Task not found.");
     return task;
@@ -41,31 +61,72 @@ export async function listTasks(
     input: v.InferOutput<typeof miraTaskFilterSchema>
 ) {
     const rows = await context.client<MiraTask[]>`
-        SELECT id, title, description, status, assignee, priority, labels, auto_start AS "autoStart",
-            due_at::text AS "dueAt", completion_criteria AS "completionCriteria",
-            conversation_id AS "conversationId", version, created_at::text AS "createdAt", updated_at::text AS "updatedAt"
-        FROM mira_tasks WHERE owner = ${context.owner} AND deleted_at IS NULL
-            AND (NOT ${input.due ?? false} OR (status<>'done' AND due_at<=now()))
+        SELECT ${taskFields(context.client)}
+        FROM mira_tasks WHERE ${matchingTasks(context, input)}
             AND (${input.before ?? null}::uuid IS NULL OR id < ${input.before ?? null}::uuid)
-            AND (${input.status ?? null}::text IS NULL OR status = ${input.status ?? null})
-            AND (${input.assignee ?? null}::text IS NULL OR assignee = ${input.assignee ?? null})
-            AND (strpos(lower(title || ' ' || description || ' ' || labels::text), lower(${input.search})) > 0)
         ORDER BY id DESC LIMIT 30`;
     return { rows, nextCursor: rows.length === 30 ? rows.at(-1)!.id : null };
+}
+
+/**
+ * Page a board column by priority or completion time, including the original sort keys
+ * in its cursor so deleting or moving the boundary card does not invalidate the next page.
+ * @param context - Authenticated operator.
+ * @param input - Column filters and the last card's sort keys or a legacy UUID cursor.
+ * @returns The next bounded page in display order.
+ */
+export async function listBoardTasks(
+    context: MiraContext,
+    input: v.InferOutput<typeof miraTaskBoardFilterSchema>
+) {
+    const { before, ...filters } = input;
+    if (typeof before === "string") return listTasks(context, { ...filters, before });
+    if (!input.status) {
+        if (before)
+            throw new MiraFailure(
+                "BAD_REQUEST",
+                "A board cursor requires a task status."
+            );
+        return listTasks(context, filters);
+    }
+    const sql = context.client;
+    const done = input.status === "done";
+    const rank = done
+        ? sql`0`
+        : sql`array_position(ARRAY['low','normal','high','urgent'], priority) - 1`;
+    const date = done ? sql`completed_at` : sql`created_at`;
+    const rows = await sql<(MiraTask & MiraTaskBoardCursor)[]>`
+        SELECT ${taskFields(sql)}, ${rank} AS rank,
+            to_char(${date} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS at
+        FROM mira_tasks WHERE ${matchingTasks(context, filters)}
+            AND (${before?.id ?? null}::uuid IS NULL OR (${rank}, ${date}, id) <
+                (${before?.rank ?? null}::integer, ${before?.at ?? null}::timestamptz, ${before?.id ?? null}::uuid))
+        ORDER BY rank DESC, ${date} DESC, id DESC LIMIT 31`;
+    const page = rows.slice(0, 30);
+    const last = page.at(-1);
+    return {
+        rows: page.map(({ rank: _rank, at: _at, ...task }) => task),
+        nextCursor:
+            rows.length > page.length && last
+                ? { rank: last.rank, at: last.at, id: last.id }
+                : null,
+    };
 }
 
 /**
  * Create or update a task under optimistic concurrency and an attributed audit.
  * @param context - Authenticated product context.
  * @param input - Validated task fields and optional expected version.
+ * @param creationId - Optional server-derived ID for repeatable dependency preparation.
  * @returns The affected task ID.
  */
 export async function saveTask(
     context: MiraContext,
-    input: MiraTaskInput & { id?: string; version?: number }
+    input: MiraTaskInput & { id?: string; version?: number },
+    creationId?: string
 ) {
     return miraTransaction(context, async (query) => {
-        const id = input.id ?? Bun.randomUUIDv7();
+        const id = input.id ?? creationId ?? Bun.randomUUIDv7();
         // Proposal approval may already hold the conversation row: never wait in the opposite order.
         const [lock] = await query<
             { acquired: boolean }[]
@@ -75,6 +136,17 @@ export async function saveTask(
                 "CONFLICT",
                 "Task admission is busy. Retry after the current task action finishes."
             );
+        if (creationId) {
+            const [existing] = await query<
+                { deleted: boolean }[]
+            >`SELECT deleted_at IS NOT NULL AS deleted FROM mira_tasks WHERE id=${creationId} AND owner=${context.owner}`;
+            if (existing?.deleted)
+                throw new MiraFailure(
+                    "CONFLICT",
+                    "The preparation task for this update was deleted."
+                );
+            if (existing) return { id: creationId };
+        }
         if (input.conversationId) {
             // Serialize linking with chat admission before changing the task or adopting runs.
             const [conversation] = await query<

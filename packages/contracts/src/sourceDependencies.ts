@@ -6,6 +6,65 @@ export const sourceVersionSchema = v.pipe(
     v.string(),
     v.regex(/^\d{1,9}\.\d{1,9}\.\d{1,9}(?:\.\d{1,9})?$/)
 );
+const reviewedUpdateSchema = v.strictObject({
+    dependency: v.pipe(v.string(), v.minLength(1), v.maxLength(128)),
+    pinned: sourceVersionSchema,
+    available: sourceVersionSchema,
+});
+export const prepareSourceUpdatesSchema = v.union([
+    reviewedUpdateSchema,
+    v.strictObject({ all: v.pipe(v.array(reviewedUpdateSchema), v.minLength(1)) }),
+]);
+export type PrepareSourceUpdates = v.InferOutput<typeof prepareSourceUpdatesSchema>;
+export type AvailableSourceUpdate = v.InferOutput<typeof reviewedUpdateSchema> & {
+    name: string;
+};
+
+/** Collect updates confirmed by the upstream checks.
+ * @param items - Dependency observations from the current manifest.
+ * @returns Available updates with their installed and proposed versions.
+ */
+export function availableSourceUpdates(
+    items: readonly {
+        id: string;
+        name: string;
+        status: string;
+        pinned: string;
+        available: string | null;
+    }[]
+): AvailableSourceUpdate[] {
+    return items.flatMap((item) =>
+        item.status === "available" && item.available
+            ? [
+                  {
+                      dependency: item.id,
+                      name: item.name,
+                      pinned: item.pinned,
+                      available: item.available,
+                  },
+              ]
+            : []
+    );
+}
+
+/** Match a reviewed single update or complete batch against the current offered updates.
+ * @param input - Versions displayed at confirmation.
+ * @param available - Fresh updates in the operator's current source inventory.
+ * @returns Server-observed rows, or null if the selection is incomplete or changed.
+ */
+export function matchSourceUpdates(
+    input: PrepareSourceUpdates,
+    available: readonly AvailableSourceUpdate[]
+) {
+    const expected = "all" in input ? input.all : [input];
+    if ("all" in input && expected.length !== available.length) return null;
+    const reviewed = new Map(expected.map((row) => [row.dependency, row]));
+    const matching = available.filter((row) => {
+        const before = reviewed.get(row.dependency);
+        return before?.pinned === row.pinned && before.available === row.available;
+    });
+    return matching.length === expected.length ? matching : null;
+}
 export const sourceUpdateSchema = v.variant("kind", [
     v.object({
         kind: v.literal("github"),

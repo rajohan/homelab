@@ -1,5 +1,7 @@
+import { queryRefresh } from "@homelab/ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
+import { api } from "../../api/client";
 import { incidentOptions } from "../alerts/incidentQueries";
 import { backupInventoryQuery } from "../backups/backupInventoryQuery";
 import { useInfrastructure } from "../infrastructure/useInfrastructure";
@@ -15,6 +17,12 @@ export function useOverviewReadings() {
     const backups = useQuery(backupInventoryQuery);
     const updates = useQuery(updateInventoryQuery);
     const worker = useQuery(workerOverviewQuery);
+    const restarts = useQuery({
+        queryKey: ["operations", "maintenance"],
+        queryFn: ({ signal }) => api.maintenance.plans.query(undefined, { signal }),
+        ...queryRefresh("fast"),
+        retry: false,
+    });
     const page = incidents.data?.pages[0];
     const alerts =
         page?.configured && page.capturedAt && !page.stale && !incidents.isError
@@ -45,7 +53,8 @@ export function useOverviewReadings() {
         incidents.isPending ||
         backups.isPending ||
         updates.isPending ||
-        worker.isPending;
+        worker.isPending ||
+        restarts.isPending;
     const available = reports.reduce((sum, r) => sum + r.available, 0),
         security = reports.reduce((sum, r) => sum + r.security, 0);
     const jobCount = (state: string) =>
@@ -56,6 +65,7 @@ export function useOverviewReadings() {
         backups,
         updates,
         worker,
+        restartPlans: restarts.isError ? undefined : restarts.data,
         page,
         alerts,
         protection,

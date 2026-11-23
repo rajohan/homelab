@@ -5,6 +5,7 @@ import {
     chatgptStatusMessage,
     type MiraChatgptStatus,
 } from "@homelab/contracts/miraChatgpt";
+import { activeMaintenanceWindow } from "@homelab/mira/data/maintenanceWindow";
 import type { SQL } from "bun";
 
 import { runtimeEnvironment } from "../config/environment";
@@ -90,8 +91,7 @@ export async function runMiraExecutor(options: {
     const signal = AbortSignal.any([options.signal, failed.signal]);
     const workerId = crypto.randomUUID();
     const maintenance = new MaintenanceGate();
-    const [pendingDeployment] = await client<{ id: string }[]>`
-        SELECT id FROM release_deployments WHERE finished_at IS NULL LIMIT 1`;
+    const pendingDeployment = await activeMaintenanceWindow(client);
     maintenance.update(pendingDeployment?.id ?? null);
     const reader = options.agentMail ? new AgentMailReader(options.agentMail) : undefined;
     const integrationsCatalog = options.agentMail
@@ -211,8 +211,7 @@ export async function runMiraExecutor(options: {
     const coordinator = async () => {
         while (!signal.aborted) {
             const changed = inspectionChanged.promise;
-            const [deployment] = await client<{ id: string }[]>`
-                SELECT id FROM release_deployments WHERE finished_at IS NULL LIMIT 1`;
+            const deployment = await activeMaintenanceWindow(client);
             maintenance.update(deployment?.id ?? null);
             await reconcileMiraRuns(client);
             let currentMessage = message;

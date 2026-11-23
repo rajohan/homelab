@@ -24,7 +24,7 @@ export function Tasks() {
     const [selected, setSelected] = useState<MiraTask>();
     const [editing, setEditing] = useState(false);
     return (
-        <div className="space-y-4">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
             <PageHeader
                 icon={ListTodo}
                 actions={
@@ -45,7 +45,7 @@ export function Tasks() {
                 search={
                     <SearchInput
                         label="Search tasks"
-                        placeholder="Search tasks and labels…"
+                        placeholder="Search by #number, text or label…"
                         value={search}
                         onChange={setSearch}
                         maxLength={160}

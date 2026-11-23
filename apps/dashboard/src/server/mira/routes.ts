@@ -21,7 +21,7 @@ import {
     miraRunReadSchema,
     miraRunResolveSchema,
     miraStateChangeSchema,
-    miraTaskFilterSchema,
+    miraTaskBoardFilterSchema,
     miraTaskInputSchema,
     miraTaskReviewInputSchema,
     miraTaskRunInputSchema,
@@ -61,6 +61,11 @@ import {
 } from "@homelab/contracts/miraSocial";
 import { miraVoiceNames } from "@homelab/contracts/miraVoice";
 import { idSchema, versionedIdSchema } from "@homelab/contracts/operations";
+import {
+    availableSourceUpdates,
+    matchSourceUpdates,
+    prepareSourceUpdatesSchema,
+} from "@homelab/contracts/sourceDependencies";
 import {
     listMiraActionRequests,
     readMiraActionRequest,
@@ -157,7 +162,7 @@ import { reviewTaskRun } from "@homelab/mira/data/taskRecovery";
 import {
     addTaskProgress,
     deleteTask,
-    listTasks,
+    listBoardTasks,
     readTask,
     saveTask,
     taskProgress,
@@ -177,6 +182,7 @@ import * as v from "valibot";
 
 import { runOperation, trpc } from "../api/trpc";
 import { requireCapability } from "../automation/authentication";
+import { buildDependencySnapshot } from "../integrations/releases/dependencies";
 import { authorizedOperations } from "../operations/authorization";
 import type { OperationsContext } from "../operations/context";
 import { OperationFailure } from "../operations/errors";
@@ -646,6 +652,76 @@ export const miraRouter = trpc.router({
             ),
     }),
     tasks: trpc.router({
+        prepareDependency: trpc.procedure
+            .input(prepareSourceUpdatesSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, async (mira) => {
+                    const { operations, principal } = authorizedOperations(
+                        ctx,
+                        "updates:read"
+                    );
+                    requireCapability(principal, "jobs:run");
+                    const repository = operations.releaseRepository;
+                    const snapshot = await buildDependencySnapshot(mira.client);
+                    const selected = snapshot?.fresh
+                        ? matchSourceUpdates(
+                              input,
+                              availableSourceUpdates(snapshot.value.items)
+                          )
+                        : null;
+                    if (!repository || !selected || selected.length === 0)
+                        throw new OperationFailure(
+                            "CONFLICT",
+                            "The available dependency updates changed. Refresh and review the versions again."
+                        );
+                    const updates = selected.toSorted((a, b) =>
+                        a.dependency.localeCompare(b.dependency)
+                    );
+                    const first = updates[0]!;
+                    const title =
+                        updates.length === 1
+                            ? `Prepare ${first.name} ${first.available} for review`
+                            : `Prepare ${updates.length} source dependency updates for review`;
+                    const changes = updates
+                        .map(
+                            (item) =>
+                                `- ${item.name}: ${item.pinned} to ${item.available}`
+                        )
+                        .join("\n");
+                    const digest = new Bun.CryptoHasher("sha256")
+                        .update(
+                            JSON.stringify([
+                                mira.owner,
+                                repository,
+                                ...updates.flatMap((item) => [
+                                    item.dependency,
+                                    item.pinned,
+                                    item.available,
+                                ]),
+                            ])
+                        )
+                        .digest("hex");
+                    const creationId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-8${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+                    return saveTask(
+                        mira,
+                        {
+                            title,
+                            description: `In an isolated checkout of ${repository}, prepare these source dependency updates together on one review branch:\n${changes}\nVerify each upstream release, follow the repository's pin and integrity workflow, and inspect affected integrations. Wait for operator review before opening a PR, merging, publishing or deploying.`,
+                            completionCriteria:
+                                "Provide the branch, changed pins and verification results for review.",
+                            assignee: "mira",
+                            priority: "normal",
+                            status: "todo",
+                            autoStart: true,
+                            labels: ["dependencies"],
+                            conversationId: null,
+                            dueAt: null,
+                        },
+                        creationId
+                    );
+                })
+            ),
+
         read: trpc.procedure
             .input(record)
             .query(({ ctx, input }) => execute(ctx, (mira) => readTask(mira, input.id))),
@@ -665,8 +741,10 @@ export const miraRouter = trpc.router({
                 execute(ctx, (mira) => runMiraTask(mira, input))
             ),
         list: trpc.procedure
-            .input(miraTaskFilterSchema)
-            .query(({ ctx, input }) => execute(ctx, (mira) => listTasks(mira, input))),
+            .input(miraTaskBoardFilterSchema)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => listBoardTasks(mira, input))
+            ),
         create: trpc.procedure
             .input(miraTaskInputSchema)
             .mutation(({ ctx, input }) => execute(ctx, (mira) => saveTask(mira, input))),

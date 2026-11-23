@@ -1,9 +1,18 @@
 import { useDroppable } from "@dnd-kit/react";
 import type { MiraTask } from "@homelab/contracts/mira";
-import { Badge, InfiniteScrollTrigger, LoadingState, SectionPanel } from "@homelab/ui";
+import {
+    Badge,
+    Card,
+    HeadingLabel,
+    InfiniteScrollTrigger,
+    LoadingState,
+} from "@homelab/ui";
+import { CornerDownLeft } from "lucide-react";
+import { Fragment, useLayoutEffect, useRef } from "react";
 
 import { TaskCard } from "./TaskCard";
-import { taskStates } from "./taskPresentation";
+import { TaskCardContent } from "./TaskCardContent";
+import { taskDropIndex, taskStates } from "./taskPresentation";
 import type { useTaskColumn } from "./useTaskColumn";
 
 /**
@@ -12,6 +21,9 @@ import type { useTaskColumn } from "./useTaskColumn";
  */
 export function TaskColumn({
     status,
+    dragged,
+    arrivedId,
+    moving,
     query,
     filtered,
     onSelect,
@@ -20,6 +32,9 @@ export function TaskColumn({
     readonly disabled: boolean;
     readonly query: ReturnType<typeof useTaskColumn>;
     readonly status: MiraTask["status"];
+    readonly dragged: MiraTask | undefined;
+    readonly arrivedId: string | undefined;
+    readonly moving: boolean;
     readonly filtered: boolean;
     readonly onSelect: (task: MiraTask) => void;
 }) {
@@ -30,36 +45,97 @@ export function TaskColumn({
         disabled,
     });
     const rows = query.data?.pages.flatMap((page) => page.rows) ?? [];
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const markerRef = useRef<HTMLDivElement>(null);
+    const state = taskStates[status];
+    const emptyMessage = filtered ? "No matching tasks." : state.empty;
+    const targeted = isDropTarget && dragged !== undefined && dragged.status !== status;
+    const insertion = targeted ? taskDropIndex(dragged, status, rows) : -1;
+    const beyondPage =
+        targeted && status !== "done" && insertion === rows.length && query.hasNextPage;
+    const position =
+        query.isPending || (query.isError && rows.length === 0) ? -1 : insertion;
+    useLayoutEffect(() => {
+        const scroll = scrollRef.current;
+        const marker = markerRef.current;
+        if (!scroll || !marker) return;
+        const bounds = scroll.getBoundingClientRect();
+        const gap = marker.getBoundingClientRect();
+        if (gap.top < bounds.top + 12) scroll.scrollTop += gap.top - bounds.top - 12;
+        else if (gap.bottom > bounds.bottom - 12)
+            scroll.scrollTop += gap.bottom - bounds.bottom + 12;
+    }, [position]);
+    const marker = position >= 0 && dragged && (
+        <div ref={markerRef} className="pointer-events-none relative shrink-0">
+            {!beyondPage && (
+                <div
+                    aria-hidden="true"
+                    className="relative overflow-hidden rounded-lg border border-dashed border-accent-400/65 bg-accent-500/5"
+                >
+                    <div className="invisible">
+                        <TaskCardContent task={dragged} />
+                    </div>
+                    <span className="absolute inset-0 flex items-center justify-center gap-2 text-sm font-medium text-accent-300">
+                        <CornerDownLeft size={16} />#{dragged.number}
+                    </span>
+                </div>
+            )}
+            <output className="sr-only inset-s-0 top-0">
+                {beyondPage
+                    ? `Finding position in ${state.title}`
+                    : `${state.title}, position ${position + 1}`}
+            </output>
+        </div>
+    );
     return (
-        <SectionPanel
-            title={taskStates[status].title}
-            icon={taskStates[status].icon}
-            badge={
-                <Badge>
-                    {rows.length}
-                    {query.hasNextPage ? "+" : ""}
-                </Badge>
-            }
+        <Card
+            ref={ref}
+            aria-label={state.title}
+            data-targeted={targeted || moving || undefined}
+            aria-busy={moving || undefined}
+            className="group/lane flex min-h-0 min-w-0 flex-col bg-surface-heading p-0 transition-colors duration-150 data-targeted:border-accent-400/60 motion-reduce:transition-none sm:p-0"
         >
+            <header className="flex min-h-12 shrink-0 items-center justify-between gap-2 border-b border-primary-700 px-3 group-data-targeted/lane:border-accent-400/50">
+                <h2 className="min-w-0 text-base leading-snug font-semibold text-primary-50">
+                    <HeadingLabel icon={state.icon} size={16} className={state.iconClass}>
+                        {state.title}
+                    </HeadingLabel>
+                </h2>
+                {moving ? (
+                    <Badge tone="info" className="shrink-0">
+                        Moving…
+                    </Badge>
+                ) : (
+                    <Badge className="shrink-0 tabular-nums">
+                        {rows.length}
+                        {query.hasNextPage ? "+" : ""}
+                    </Badge>
+                )}
+            </header>
             <div
-                ref={ref}
-                className={`min-h-20 flex-1 space-y-2 rounded-lg transition-colors md:max-h-[calc(100dvh-19rem)] md:overflow-y-auto md:overscroll-contain md:pe-3 @min-[34rem]/task-board:min-h-44 @min-[64rem]/task-board:min-h-64 ${isDropTarget ? "bg-accent-900/30 ring-2 ring-accent-400 ring-inset" : ""}`}
+                ref={scrollRef}
+                className="flex max-h-[60dvh] min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5 @min-[55rem]/task-board:max-h-none @min-[55rem]/task-board:flex-1 @min-[55rem]/task-board:overscroll-y-contain"
             >
                 {query.isPending && <LoadingState label="Loading tasks…" />}
-                {rows.map((task) => (
-                    <TaskCard
-                        key={task.id}
-                        task={task}
-                        disabled={disabled}
-                        onSelect={onSelect}
-                    />
+                {rows.map((task, index) => (
+                    <Fragment key={task.id}>
+                        {index === position && marker}
+                        <TaskCard
+                            task={task}
+                            arrived={task.id === arrivedId}
+                            disabled={disabled}
+                            onSelect={onSelect}
+                        />
+                    </Fragment>
                 ))}
-                {!query.isPending && !query.isError && rows.length === 0 && (
-                    <p className="py-2 text-sm text-primary-400">
-                        {filtered ? "No matching tasks." : taskStates[status].empty}
+                {position === rows.length && marker}
+                {!targeted && !query.isPending && !query.isError && rows.length === 0 && (
+                    <p className="grid min-h-16 flex-1 place-items-center rounded-lg border border-dashed border-primary-700 px-3 py-4 text-center text-sm text-primary-400">
+                        {emptyMessage}
                     </p>
                 )}
                 <InfiniteScrollTrigger
+                    rootRef={scrollRef}
                     itemCount={query.data?.pages.length ?? 0}
                     hasMore={query.hasNextPage}
                     loading={query.isFetchingNextPage}
@@ -72,6 +148,6 @@ export function TaskColumn({
                     }
                 />
             </div>
-        </SectionPanel>
+        </Card>
     );
 }
