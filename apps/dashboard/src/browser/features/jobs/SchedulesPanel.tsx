@@ -2,6 +2,7 @@ import { describeSchedule, type ScheduleSummary } from "@homelab/contracts/opera
 import {
     Badge,
     DataTable,
+    EmptyState,
     ErrorNotice,
     formatDateTime,
     LoadingState,
@@ -37,7 +38,14 @@ export function SchedulesPanel() {
             >
                 {query.isPending && <LoadingState label="Loading schedules…" />}
                 {query.isError && <ErrorNotice error={query.error} />}
-                {query.data && (
+                {query.isSuccess && query.data.length === 0 && (
+                    <EmptyState
+                        compact
+                        icon={CalendarClock}
+                        title="No job schedules registered"
+                    />
+                )}
+                {query.data && query.data.length > 0 && (
                     <DataTable
                         label="Job schedules"
                         compact

@@ -83,7 +83,7 @@ export function AutomaticUpdates({
                     label="Automatic update targets"
                     rows={targets}
                     getKey={(policy) => policy.target}
-                    className="max-h-[min(26rem,50dvh)] pe-3"
+                    className="max-h-[min(26rem,50dvh)] scrollbar-gutter-stable pe-3"
                     itemClassName="last-of-type:pb-0"
                     scrollbarGap={false}
                     renderItem={(policy) => (
