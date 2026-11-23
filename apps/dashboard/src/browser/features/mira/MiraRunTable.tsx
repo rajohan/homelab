@@ -107,10 +107,10 @@ export function MiraRunTable({
                         width: "w-56",
                         mobile: "footer-actions",
                         render: (run) => (
-                            <div className="flex flex-wrap justify-end gap-2 @max-[48rem]:grid @max-[48rem]:grid-cols-1">
+                            <div className="flex flex-wrap justify-end gap-2 @max-3xl:grid @max-3xl:grid-cols-1">
                                 <Button
                                     variant="secondary"
-                                    className="@max-[48rem]:w-full"
+                                    className="@max-3xl:w-full"
                                     onClick={() => setSelected(run.id)}
                                 >
                                     Details
@@ -119,7 +119,7 @@ export function MiraRunTable({
                                     <Link
                                         className={buttonStyles({
                                             variant: "secondary",
-                                            className: "@max-[48rem]:w-full",
+                                            className: "@max-3xl:w-full",
                                         })}
                                         to="/mira/$conversationId"
                                         params={{ conversationId: run.conversationId }}
@@ -130,7 +130,7 @@ export function MiraRunTable({
                                 {["queued", "running"].includes(run.state) && (
                                     <Button
                                         variant="secondary"
-                                        className="@max-[48rem]:w-full"
+                                        className="@max-3xl:w-full"
                                         busy={stoppingId === run.id}
                                         disabled={run.cancelRequested}
                                         onClick={() => onStop(run.id)}

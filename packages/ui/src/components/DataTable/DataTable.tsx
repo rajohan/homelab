@@ -107,9 +107,9 @@ export function DataTable<T>({
                     {({ items, totalSize, measureElement }) => (
                         <table
                             aria-label={label}
-                            className="w-full table-fixed border-separate border-spacing-0 text-sm tabular-nums @max-[48rem]:block"
+                            className="w-full table-fixed border-separate border-spacing-0 text-sm tabular-nums @max-3xl:block"
                         >
-                            <thead className="sticky top-0 z-10 bg-surface-heading text-left text-xs text-primary-400 @max-[48rem]:sr-only">
+                            <thead className="sticky top-0 z-10 bg-surface-heading text-left text-xs text-primary-400 @max-3xl:sr-only">
                                 <tr>
                                     {columns.map((column) => (
                                         <th
@@ -151,8 +151,8 @@ export function DataTable<T>({
                                     ))}
                                 </tr>
                             </thead>
-                            <tbody className="@max-[48rem]:block">
-                                <tr aria-hidden="true" className="@max-[48rem]:block">
+                            <tbody className="@max-3xl:block">
+                                <tr aria-hidden="true" className="@max-3xl:block">
                                     <td
                                         colSpan={columns.length}
                                         style={{ height: items[0]?.start ?? 0 }}
@@ -174,7 +174,7 @@ export function DataTable<T>({
                                         />
                                     );
                                 })}
-                                <tr aria-hidden="true" className="@max-[48rem]:block">
+                                <tr aria-hidden="true" className="@max-3xl:block">
                                     <td
                                         colSpan={columns.length}
                                         style={{
