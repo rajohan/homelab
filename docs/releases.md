@@ -67,8 +67,8 @@ to CI. Keep `main` protected with `verify` and the required review policy.
 See [Release Please](https://github.com/googleapis/release-please-action),
 [dependency updates](dependencies.md) and [deployment](release-deployment.md).
 
-Windows package changes also compile the installer on a Windows runner. UI-only
-changes skip that workflow; it runs no acceptance or test suite.
+Every pull request must pass the Windows package build. A Windows runner compiles
+the package and installer without installing or launching them.
 
 ## Publication status
 
