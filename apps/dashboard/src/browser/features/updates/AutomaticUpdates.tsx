@@ -42,29 +42,40 @@ export function AutomaticUpdates({
             {query.isPending && <LoadingState label="Loading update policies…" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {policies.length > 0 && (
-                <div className="divide-y divide-primary-700 rounded-lg border border-primary-700 bg-surface-card px-3">
-                    <PolicyGroupControl
-                        label="All hosts"
-                        host={null}
-                        policies={policies}
-                        disabled={query.isError}
-                    />
-                    {hostIds.map((host) => {
-                        const peers = policies.filter((policy) => policy.host === host);
-                        const label =
-                            hostIds.length === 1
-                                ? source.charAt(0).toUpperCase() + source.slice(1)
-                                : peers.find((policy) => policy.source === source)!.label;
-                        return (
-                            <PolicyGroupControl
-                                key={host}
-                                label={label}
-                                host={host}
-                                policies={peers}
-                                disabled={query.isError}
-                            />
-                        );
-                    })}
+                <div
+                    className={
+                        targets.length > 0
+                            ? "scrollbar-gutter-stable overflow-hidden pe-3"
+                            : undefined
+                    }
+                >
+                    <div className="divide-y divide-primary-700 rounded-lg border border-primary-700 bg-surface-card px-4">
+                        <PolicyGroupControl
+                            label="All hosts"
+                            host={null}
+                            policies={policies}
+                            disabled={query.isError}
+                        />
+                        {hostIds.map((host) => {
+                            const peers = policies.filter(
+                                (policy) => policy.host === host
+                            );
+                            const label =
+                                hostIds.length === 1
+                                    ? source.charAt(0).toUpperCase() + source.slice(1)
+                                    : peers.find((policy) => policy.source === source)!
+                                          .label;
+                            return (
+                                <PolicyGroupControl
+                                    key={host}
+                                    label={label}
+                                    host={host}
+                                    policies={peers}
+                                    disabled={query.isError}
+                                />
+                            );
+                        })}
+                    </div>
                 </div>
             )}
             {targets.length > 0 && (
@@ -72,9 +83,9 @@ export function AutomaticUpdates({
                     label="Automatic update targets"
                     rows={targets}
                     getKey={(policy) => policy.target}
-                    className="max-h-[min(26rem,50dvh)]"
+                    className="max-h-[min(26rem,50dvh)] pe-3"
                     itemClassName="last-of-type:pb-0"
-                    scrollbarGap
+                    scrollbarGap={false}
                     renderItem={(policy) => (
                         <UpdatePolicyControl policy={policy} disabled={query.isError} />
                     )}

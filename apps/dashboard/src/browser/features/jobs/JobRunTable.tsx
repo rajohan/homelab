@@ -1,10 +1,10 @@
 import type { JobSummary } from "@homelab/contracts/operations";
 import type { TableSort } from "@homelab/contracts/tableSort";
 import {
+    Button,
     ConfirmDialog,
     DataTable,
     formatDateTime,
-    IconButton,
     type InfiniteScrollContinuation,
 } from "@homelab/ui";
 import { Square } from "lucide-react";
@@ -98,25 +98,40 @@ export function JobRunTable({
                                   id: "actions",
                                   label: "Stop",
                                   hideLabel: true,
-                                  width: "w-16",
+                                  width: "w-28",
                                   mobile: "actions" as const,
                                   render: (run: JobSummary) =>
                                       (run.state === "queued" ||
                                           run.state === "running") && (
-                                          <IconButton
-                                              icon={Square}
-                                              label={
+                                          <Button
+                                              size="sm"
+                                              variant={
                                                   run.cancelRequested
-                                                      ? "Stopping job"
+                                                      ? "secondary"
+                                                      : "danger"
+                                              }
+                                              aria-label={
+                                                  run.cancelRequested
+                                                      ? `Stopping ${run.label}`
                                                       : `Stop ${run.label}`
                                               }
-                                              variant="ghost"
-                                              className="text-red-300 hover:bg-red-950 hover:text-red-200 pointer-fine:size-8 pointer-fine:min-h-8 [&_svg]:size-3.5"
                                               disabled={
                                                   run.cancelRequested || cancel.isPending
                                               }
                                               onClick={() => setStopping(run)}
-                                          />
+                                          >
+                                              {run.cancelRequested ? (
+                                                  "Stopping…"
+                                              ) : (
+                                                  <>
+                                                      <Square
+                                                          aria-hidden="true"
+                                                          className="size-3 fill-current"
+                                                      />
+                                                      Stop
+                                                  </>
+                                              )}
+                                          </Button>
                                       ),
                               },
                           ]

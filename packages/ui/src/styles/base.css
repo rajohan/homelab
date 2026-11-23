@@ -128,6 +128,10 @@
     }
 }
 
+@utility scrollbar-gutter-stable {
+    scrollbar-gutter: stable;
+}
+
 @utility time-series-chart {
     --chart-surface: theme("colors.primary.900");
     --chart-border: theme("colors.primary.700");
