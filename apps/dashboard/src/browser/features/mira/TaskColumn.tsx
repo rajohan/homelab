@@ -66,27 +66,25 @@ export function TaskColumn({
             scroll.scrollTop += gap.bottom - bounds.bottom + 12;
     }, [position]);
     const marker = position >= 0 && dragged && (
-        <div ref={markerRef} className="pointer-events-none shrink-0">
-            {beyondPage ? (
-                <output className="sr-only">Finding position in {state.title}</output>
-            ) : (
-                <>
-                    <div
-                        aria-hidden="true"
-                        className="relative overflow-hidden rounded-lg border border-dashed border-accent-400/65 bg-accent-500/5"
-                    >
-                        <div className="invisible">
-                            <TaskCardContent task={dragged} />
-                        </div>
-                        <span className="absolute inset-0 flex items-center justify-center gap-2 text-sm font-medium text-accent-300">
-                            <CornerDownLeft size={16} />#{dragged.number}
-                        </span>
+        <div ref={markerRef} className="pointer-events-none relative shrink-0">
+            {!beyondPage && (
+                <div
+                    aria-hidden="true"
+                    className="relative overflow-hidden rounded-lg border border-dashed border-accent-400/65 bg-accent-500/5"
+                >
+                    <div className="invisible">
+                        <TaskCardContent task={dragged} />
                     </div>
-                    <output className="sr-only">
-                        {state.title}, position {position + 1}
-                    </output>
-                </>
+                    <span className="absolute inset-0 flex items-center justify-center gap-2 text-sm font-medium text-accent-300">
+                        <CornerDownLeft size={16} />#{dragged.number}
+                    </span>
+                </div>
             )}
+            <output className="sr-only inset-s-0 top-0">
+                {beyondPage
+                    ? `Finding position in ${state.title}`
+                    : `${state.title}, position ${position + 1}`}
+            </output>
         </div>
     );
     return (
