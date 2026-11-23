@@ -186,7 +186,7 @@ export function TaskDetail({
                             },
                         ]}
                     />
-                    <ActionGroup stretch={false} className="pt-1">
+                    <ActionGroup className="pt-1">
                         <Button
                             variant="danger"
                             onClick={() => setDeleting(task.version)}
