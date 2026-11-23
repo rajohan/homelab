@@ -28,11 +28,11 @@ export function DataTableRow<T>({
             ref={measureElement}
             data-index={index}
             className={cn(
-                "relative isolate @max-[48rem]:border-b @max-[48rem]:border-primary-700",
+                "relative isolate @max-3xl:border-b @max-3xl:border-primary-700",
                 compact ? "align-middle" : "align-top",
                 compact
-                    ? "@max-[48rem]:grid @max-[48rem]:grid-cols-2 @max-[48rem]:gap-3 @max-[48rem]:p-3"
-                    : "@max-[48rem]:block"
+                    ? "@max-3xl:grid @max-3xl:grid-cols-2 @max-3xl:gap-3 @max-3xl:p-3"
+                    : "@max-3xl:block"
             )}
         >
             {columns.map((column, columnIndex) => {
@@ -42,30 +42,28 @@ export function DataTableRow<T>({
                     <td
                         key={column.id}
                         className={cn(
-                            "min-w-0 border-b border-primary-700 p-3 wrap-anywhere @max-[48rem]:border-0",
+                            "min-w-0 border-b border-primary-700 p-3 wrap-anywhere @max-3xl:border-0",
                             isAction && "text-right",
                             compact
-                                ? "py-2 @max-[48rem]:p-0"
-                                : "@max-[48rem]:grid @max-[48rem]:grid-cols-1 @max-[48rem]:gap-1 @max-[48rem]:py-2",
-                            compact &&
-                                column.mobile === "wide" &&
-                                "@max-[48rem]:col-span-2",
+                                ? "py-2 @max-3xl:p-0"
+                                : "@max-3xl:grid @max-3xl:grid-cols-1 @max-3xl:gap-1 @max-3xl:py-2",
+                            compact && column.mobile === "wide" && "@max-3xl:col-span-2",
                             compact &&
                                 column.mobile === "title" &&
                                 cn(
-                                    "@max-[48rem]:row-start-1 @max-[48rem]:self-center @max-[48rem]:font-medium @max-[48rem]:text-primary-50",
-                                    !hasTitleAccessory && "@max-[48rem]:col-span-2"
+                                    "@max-3xl:row-start-1 @max-3xl:self-center @max-3xl:font-medium @max-3xl:text-primary-50",
+                                    !hasTitleAccessory && "@max-3xl:col-span-2"
                                 ),
                             compact &&
                                 column.mobile === "status" &&
-                                "@max-[48rem]:col-start-2 @max-[48rem]:row-start-1 @max-[48rem]:self-center @max-[48rem]:justify-self-end",
+                                "@max-3xl:col-start-2 @max-3xl:row-start-1 @max-3xl:self-center @max-3xl:justify-self-end",
                             compact &&
                                 column.mobile === "actions" &&
-                                "py-1 @max-[48rem]:col-start-2 @max-[48rem]:row-start-1 @max-[48rem]:justify-self-end @max-[48rem]:p-0",
+                                "py-1 @max-3xl:col-start-2 @max-3xl:row-start-1 @max-3xl:justify-self-end @max-3xl:p-0",
                             compact &&
                                 column.mobile === "footer-actions" &&
-                                "@max-[48rem]:order-last @max-[48rem]:col-span-2",
-                            column.mobile === "hidden" && "@max-[48rem]:hidden"
+                                "@max-3xl:order-last @max-3xl:col-span-2",
+                            column.mobile === "hidden" && "@max-3xl:hidden"
                         )}
                     >
                         {columnIndex === 0 && rowAction && (
@@ -91,7 +89,7 @@ export function DataTableRow<T>({
                                                 column.mobile === "status" ||
                                                 isAction))
                                         ? "sr-only"
-                                        : "@max-[48rem]:mb-1 @max-[48rem]:block"
+                                        : "@max-3xl:mb-1 @max-3xl:block"
                                 )}
                                 aria-hidden="true"
                             >
