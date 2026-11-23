@@ -34,6 +34,8 @@ export const taskStates = {
 };
 export const taskDragSchema = v.object({
     ...miraTaskUpdateSchema.entries,
+    number: v.pipe(v.number(), v.integer(), v.minValue(1)),
+    completedAt: v.optional(v.nullable(v.string()), null),
     createdAt: v.string(),
     updatedAt: v.string(),
 });

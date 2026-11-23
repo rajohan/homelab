@@ -10,10 +10,15 @@ import { taskPriorityTone } from "./taskPresentation";
  */
 export function TaskCardContent({ task }: { readonly task: MiraTask }) {
     const AssigneeIcon = task.assignee === "mira" ? Bot : UserRound;
+    const completed = task.status === "done" && task.completedAt;
+    const timestamp = completed || task.updatedAt;
     return (
         <div className="space-y-2.5 p-3">
             <div className="flex items-start justify-between gap-2">
                 <p className="line-clamp-3 min-w-0 text-sm font-semibold wrap-anywhere text-primary-50">
+                    <span className="me-1.5 font-normal text-primary-400 tabular-nums">
+                        #{task.number}
+                    </span>
                     {task.title}
                 </p>
                 <GripVertical
@@ -44,11 +49,14 @@ export function TaskCardContent({ task }: { readonly task: MiraTask }) {
                     <AssigneeIcon size={14} aria-hidden="true" />
                     {task.assignee === "mira" ? "Mira" : "You"}
                 </span>
-                <time dateTime={task.updatedAt} title={formatDateTime(task.updatedAt)}>
+                <time
+                    dateTime={timestamp}
+                    title={`${completed ? "Completed" : "Updated"} ${formatDateTime(timestamp)}`}
+                >
                     {new Intl.DateTimeFormat("en-GB", {
                         day: "numeric",
                         month: "short",
-                    }).format(new Date(task.updatedAt))}
+                    }).format(new Date(timestamp))}
                 </time>
             </div>
             {task.dueAt && (

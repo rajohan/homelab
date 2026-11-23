@@ -136,6 +136,7 @@ export const miraTasks = pgTable(
     {
         id: uuid().primaryKey(),
         owner: text().notNull(),
+        number: integer("task_number").notNull(),
         title: text().notNull(),
         description: text().notNull(),
         status: text().notNull(),
@@ -147,6 +148,7 @@ export const miraTasks = pgTable(
         autoStart: boolean("auto_start").notNull().default(false),
         autoStartRevokedAt: time("auto_start_revoked_at"),
         workStoppedAt: time("work_stopped_at"),
+        completedAt: time("completed_at"),
         conversationId: uuid("conversation_id").references(() => miraConversations.id),
         version: integer().notNull().default(1),
         deletedAt: time("deleted_at"),
@@ -155,6 +157,7 @@ export const miraTasks = pgTable(
     },
     (t) => [
         index("mira_tasks_owner").on(t.owner, t.id),
+        uniqueIndex("mira_tasks_owner_number").on(t.owner, t.number),
         index("mira_tasks_conversation")
             .on(t.owner, t.conversationId, t.id)
             .where(sql`${t.deletedAt} is null`),

@@ -28,7 +28,7 @@ export function TaskCard({
         <button
             ref={ref}
             type="button"
-            aria-label={`Open task: ${task.title}`}
+            aria-label={`Open task #${task.number}: ${task.title}`}
             title="Enter to open. Space and arrow keys to move."
             onClick={(event) => {
                 if (!event.defaultPrevented) onSelect(task);

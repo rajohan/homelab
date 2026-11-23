@@ -240,7 +240,7 @@ export function createMiraTools(
             name: "mira_tasks_list",
             readOnly: true,
             description:
-                "Search the operator's task board; task state is separate from execution status. Use due=true to find due unfinished tasks without paging through newer unrelated work.",
+                "Search the operator's task board. Use search='#99' to resolve an exact task number to its ID. Task state is separate from execution status. Use due=true to find due unfinished tasks.",
             inputSchema: object({
                 search: string,
                 before: uuid,

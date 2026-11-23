@@ -45,7 +45,7 @@ export function Tasks() {
                 search={
                     <SearchInput
                         label="Search tasks"
-                        placeholder="Search tasks and labels…"
+                        placeholder="Search by #number, text or label…"
                         value={search}
                         onChange={setSearch}
                         maxLength={160}

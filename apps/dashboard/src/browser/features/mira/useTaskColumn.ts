@@ -1,4 +1,4 @@
-import type { MiraTask } from "@homelab/contracts/mira";
+import type { MiraTask, MiraTaskBoardCursor } from "@homelab/contracts/mira";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
 import { api } from "../../api/client";
@@ -16,7 +16,7 @@ export function useTaskColumn(
 ) {
     return useInfiniteQuery({
         queryKey: ["operations", "mira", "tasks", status, search, assignee],
-        initialPageParam: undefined as string | undefined,
+        initialPageParam: undefined as MiraTaskBoardCursor | string | undefined,
         queryFn: ({ pageParam, signal }) =>
             api.mira.tasks.list.query(
                 {

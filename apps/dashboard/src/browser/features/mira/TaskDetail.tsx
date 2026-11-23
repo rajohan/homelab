@@ -115,7 +115,7 @@ export function TaskDetail({
         );
     return (
         <Modal
-            title={task.title}
+            title={`#${task.number} ${task.title}`}
             titleAccessory={
                 <>
                     <Badge tone={miraStatusTone(task.status)}>
@@ -179,7 +179,6 @@ export function TaskDetail({
                     <ActionGroup stretch={false}>
                         <Button
                             variant="danger"
-                            className="@min-[20rem]/actions:me-auto"
                             onClick={() => setDeleting(task.version)}
                             disabled={current.isError}
                         >

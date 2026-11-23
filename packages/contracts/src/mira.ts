@@ -88,6 +88,16 @@ export const miraTaskFilterSchema = v.strictObject({
     status: v.optional(v.picklist(miraTaskStates)),
     assignee: v.optional(v.picklist(["mira", "operator"])),
 });
+const miraTaskBoardCursorSchema = v.strictObject({
+    id: idSchema,
+    rank: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(3)),
+    at: v.pipe(v.string(), v.isoTimestamp()),
+});
+export const miraTaskBoardFilterSchema = v.strictObject({
+    ...miraTaskFilterSchema.entries,
+    before: v.optional(v.union([idSchema, miraTaskBoardCursorSchema])),
+});
+export type MiraTaskBoardCursor = v.InferOutput<typeof miraTaskBoardCursorSchema>;
 export const miraConversationInputSchema = v.strictObject({ title });
 export const miraStateChangeSchema = v.strictObject({
     ...versionedIdSchema.entries,
@@ -201,6 +211,8 @@ export const miraEnableSchema = v.pipe(
 );
 export type MiraTaskInput = v.InferOutput<typeof miraTaskInputSchema>;
 export interface MiraTask extends MiraTaskInput {
+    number: number;
+    completedAt: string | null;
     id: string;
     version: number;
     createdAt: string;
