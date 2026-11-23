@@ -1,13 +1,11 @@
 import { useDraggable } from "@dnd-kit/react";
 import type { MiraTask } from "@homelab/contracts/mira";
-import { IconButton } from "@homelab/ui";
-import { GripVertical } from "lucide-react";
 
 import { TaskCardContent } from "./TaskCardContent";
 
 /**
- * Open a task from its card or move it with the dedicated pointer and keyboard handle.
- * @returns An accessible task card whose touch handle does not block column scrolling.
+ * Open a task on click or Enter and move it by dragging or pressing Space.
+ * @returns A full-card drag surface with native button activation.
  */
 export function TaskCard({
     task,
@@ -20,34 +18,26 @@ export function TaskCard({
     readonly disabled: boolean;
     readonly onSelect: (task: MiraTask) => void;
 }) {
-    const { ref, handleRef, isDragging } = useDraggable({
+    const { ref, isDragging } = useDraggable({
         id: `task:${task.id}`,
         type: "task-card",
         data: { task },
         disabled,
     });
     return (
-        <article
+        <button
             ref={ref}
+            type="button"
+            aria-label={`Open task: ${task.title}`}
+            title="Enter to open. Space and arrow keys to move."
+            onClick={(event) => {
+                if (!event.defaultPrevented) onSelect(task);
+            }}
             data-dragging={isDragging || undefined}
             data-arrived={arrived || undefined}
-            className="motion-safe:data-arrived:animate-task-arrive relative shrink-0 rounded-lg border border-primary-700 bg-primary-800 shadow-sm shadow-black/25 transition-colors duration-150 focus-within:border-accent-400 hover:border-primary-500 data-dragging:border-dashed data-dragging:border-primary-500 data-dragging:bg-transparent data-dragging:shadow-none motion-reduce:transition-none data-dragging:[&>button]:opacity-35"
+            className="motion-safe:data-arrived:animate-task-arrive block w-full shrink-0 cursor-grab rounded-lg border border-primary-700 bg-primary-800 text-left shadow-sm shadow-black/25 transition-colors duration-150 select-none hover:border-primary-500 focus-visible:outline-2 focus-visible:outline-accent-400 active:cursor-grabbing data-dragging:border-dashed data-dragging:border-primary-500 data-dragging:bg-transparent data-dragging:shadow-none motion-reduce:transition-none data-dragging:[&>div]:opacity-35"
         >
-            <button
-                type="button"
-                onClick={() => onSelect(task)}
-                className="block w-full cursor-pointer rounded-lg text-left focus-visible:outline-2 focus-visible:outline-accent-400"
-                aria-label={`Open task: ${task.title}`}
-            >
-                <TaskCardContent task={task} />
-            </button>
-            <IconButton
-                ref={handleRef}
-                icon={GripVertical}
-                label={`Move task: ${task.title}`}
-                disabled={disabled}
-                className="absolute top-0.5 right-0.5 cursor-grab touch-none text-primary-400 hover:bg-primary-700 hover:text-primary-100 active:cursor-grabbing"
-            />
-        </article>
+            <TaskCardContent task={task} />
+        </button>
     );
 }

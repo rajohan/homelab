@@ -7,7 +7,7 @@ import {
     InfiniteScrollTrigger,
     LoadingState,
 } from "@homelab/ui";
-import { CornerDownLeft } from "lucide-react";
+import { useRef } from "react";
 
 import { TaskCard } from "./TaskCard";
 import { taskStates } from "./taskPresentation";
@@ -43,6 +43,7 @@ export function TaskColumn({
         disabled,
     });
     const rows = query.data?.pages.flatMap((page) => page.rows) ?? [];
+    const scrollRef = useRef<HTMLDivElement>(null);
     const state = taskStates[status];
     const emptyMessage = filtered ? "No matching tasks." : state.empty;
     const targeted = isDropTarget && draggedFrom !== undefined && draggedFrom !== status;
@@ -52,18 +53,17 @@ export function TaskColumn({
             aria-label={state.title}
             data-targeted={targeted || moving || undefined}
             aria-busy={moving || undefined}
-            className="group/lane flex min-w-0 flex-col bg-surface-heading p-0 transition-colors duration-150 data-targeted:border-accent-400 data-targeted:bg-accent-950 data-targeted:ring-1 data-targeted:ring-accent-400 motion-reduce:transition-none sm:p-0"
+            className="group/lane flex min-h-0 min-w-0 flex-col bg-surface-heading p-0 transition-colors duration-150 data-targeted:border-accent-400 data-targeted:bg-accent-950 data-targeted:ring-1 data-targeted:ring-accent-400 motion-reduce:transition-none sm:p-0"
         >
-            <header className="flex min-h-12 items-center justify-between gap-2 border-b border-primary-700 px-3 group-data-targeted/lane:border-accent-400/50">
+            <header className="flex min-h-12 shrink-0 items-center justify-between gap-2 border-b border-primary-700 px-3 group-data-targeted/lane:border-accent-400/50">
                 <h2 className="min-w-0 text-base leading-snug font-semibold text-primary-50">
                     <HeadingLabel icon={state.icon} size={16} className={state.iconClass}>
                         {state.title}
                     </HeadingLabel>
                 </h2>
-                {moving || (targeted && rows.length > 0) ? (
-                    <Badge tone="info" className="shrink-0 items-center gap-1">
-                        <CornerDownLeft aria-hidden="true" size={12} />{" "}
-                        {moving ? "Moving…" : "Move here"}
+                {moving ? (
+                    <Badge tone="info" className="shrink-0">
+                        Moving…
                     </Badge>
                 ) : (
                     <Badge className="shrink-0 tabular-nums">
@@ -72,7 +72,10 @@ export function TaskColumn({
                     </Badge>
                 )}
             </header>
-            <div className="flex min-h-20 flex-1 flex-col gap-2.5 p-2.5 md:max-h-[max(12rem,calc(100dvh-18rem))] md:overflow-y-auto md:overscroll-contain @min-[34rem]/task-board:min-h-32">
+            <div
+                ref={scrollRef}
+                className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto overscroll-y-contain p-2.5"
+            >
                 {query.isPending && <LoadingState label="Loading tasks…" />}
                 {rows.map((task) => (
                     <TaskCard
@@ -85,10 +88,13 @@ export function TaskColumn({
                 ))}
                 {!query.isPending && !query.isError && rows.length === 0 && (
                     <p className="grid min-h-16 flex-1 place-items-center rounded-lg border border-dashed border-primary-700 px-3 py-4 text-center text-sm text-primary-400 group-data-targeted/lane:border-accent-400 group-data-targeted/lane:text-accent-200">
-                        {targeted ? "Move here" : emptyMessage}
+                        <span className="group-data-targeted/lane:invisible">
+                            {emptyMessage}
+                        </span>
                     </p>
                 )}
                 <InfiniteScrollTrigger
+                    rootRef={scrollRef}
                     itemCount={query.data?.pages.length ?? 0}
                     hasMore={query.hasNextPage}
                     loading={query.isFetchingNextPage}

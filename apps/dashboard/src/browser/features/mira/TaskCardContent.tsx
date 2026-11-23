@@ -8,27 +8,20 @@ import { taskPriorityTone } from "./taskPresentation";
  * Present task metadata consistently in the board and its drag preview.
  * @returns A compact card body with priority, labels, assignment and due date.
  */
-export function TaskCardContent({
-    task,
-    preview = false,
-}: {
-    readonly task: MiraTask;
-    readonly preview?: boolean;
-}) {
+export function TaskCardContent({ task }: { readonly task: MiraTask }) {
     const AssigneeIcon = task.assignee === "mira" ? Bot : UserRound;
     return (
         <div className="space-y-2.5 p-3">
-            {preview && (
-                <span
+            <div className="flex items-start justify-between gap-2">
+                <p className="line-clamp-3 min-w-0 text-sm font-semibold wrap-anywhere text-primary-50">
+                    {task.title}
+                </p>
+                <GripVertical
                     aria-hidden="true"
-                    className="absolute top-0.5 right-0.5 grid size-11 place-items-center text-accent-300"
-                >
-                    <GripVertical size={20} />
-                </span>
-            )}
-            <p className="line-clamp-3 pe-8 text-sm font-semibold wrap-anywhere text-primary-50">
-                {task.title}
-            </p>
+                    size={20}
+                    className="pointer-events-none shrink-0 text-primary-400"
+                />
+            </div>
             {task.description && (
                 <p className="line-clamp-2 text-xs leading-5 wrap-anywhere text-primary-400">
                     {task.description}

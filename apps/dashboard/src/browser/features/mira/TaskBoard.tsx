@@ -16,7 +16,14 @@ import { TaskColumn } from "./TaskColumn";
 import { taskDragSchema, taskMoveForDrop } from "./taskPresentation";
 import type { useTaskColumn } from "./useTaskColumn";
 
-const sensors = [PointerSensor, KeyboardSensor.configure({ offset: 40 })];
+const sensors = [
+    PointerSensor,
+    KeyboardSensor.configure({
+        offset: 40,
+        preventActivation: (event, source) =>
+            event.key === "Enter" || event.target !== source.element,
+    }),
+];
 
 /**
  * Move tasks across independently paginated columns with conflict-safe server updates.
@@ -39,7 +46,7 @@ export function TaskBoard({
         api.mira.tasks.update.mutate(input)
     );
     return (
-        <div className="@container/task-board space-y-4">
+        <div className="@container/task-board flex min-h-40 min-w-0 flex-1 flex-col gap-3">
             {move.error && <ErrorNotice error={move.error} />}
             <DragDropProvider
                 sensors={sensors}
@@ -64,7 +71,7 @@ export function TaskBoard({
                 }}
             >
                 <div
-                    className="grid min-w-0 gap-3 @min-[34rem]/task-board:grid-cols-2 @min-[55rem]/task-board:grid-cols-4"
+                    className="grid min-h-0 min-w-0 flex-1 auto-cols-[86%] grid-flow-col grid-rows-[minmax(0,1fr)] gap-3 overflow-x-auto overscroll-x-contain p-px @min-[34rem]/task-board:auto-cols-[46%] @min-[55rem]/task-board:grid-cols-4"
                     onAnimationEnd={(event) => {
                         if (event.animationName === "task-arrive") setArrival(undefined);
                     }}
@@ -91,7 +98,7 @@ export function TaskBoard({
                             aria-hidden="true"
                             className="relative w-full cursor-grabbing rounded-lg border border-accent-400 bg-primary-800 shadow-xl shadow-black/45 motion-safe:rotate-1"
                         >
-                            <TaskCardContent task={dragged} preview />
+                            <TaskCardContent task={dragged} />
                         </div>
                     )}
                 </DragOverlay>

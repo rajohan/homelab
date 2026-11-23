@@ -42,7 +42,7 @@ export function DataTableRow<T>({
                     <td
                         key={column.id}
                         className={cn(
-                            "min-w-0 border-b border-primary-700/60 p-3 wrap-anywhere @max-[48rem]:border-0",
+                            "min-w-0 border-b border-primary-700 p-3 wrap-anywhere @max-[48rem]:border-0",
                             isAction && "text-right",
                             compact
                                 ? "py-2 @max-[48rem]:p-0"

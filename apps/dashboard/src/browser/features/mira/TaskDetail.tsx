@@ -19,12 +19,16 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
     Activity,
+    Bot,
+    CalendarDays,
     FileText,
+    Flag,
     ListChecks,
     ListTodo,
     MessageSquare,
     Pencil,
     Trash2,
+    UserRound,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -126,24 +130,42 @@ export function TaskDetail({
             <div className="space-y-4">
                 <DetailSection icon={ListTodo} title="Task details">
                     <DetailFacts
+                        layout="properties"
                         items={[
                             {
                                 label: "Assigned to",
+                                icon: task.assignee === "mira" ? Bot : UserRound,
                                 value: task.assignee === "mira" ? "Mira" : "You",
                             },
                             {
                                 label: "Priority",
-                                value: (
-                                    <Badge tone={taskPriorityTone(task.priority)}>
-                                        {task.priority}
-                                    </Badge>
-                                ),
+                                icon: Flag,
+                                value:
+                                    taskPriorityTone(task.priority) === "neutral" ? (
+                                        <span className="capitalize">
+                                            {task.priority}
+                                        </span>
+                                    ) : (
+                                        <Badge
+                                            tone={taskPriorityTone(task.priority)}
+                                            className="capitalize"
+                                        >
+                                            {task.priority}
+                                        </Badge>
+                                    ),
                             },
                             {
                                 label: "Due date",
-                                value: task.dueAt
-                                    ? formatDateTime(task.dueAt)
-                                    : "No due date",
+                                icon: CalendarDays,
+                                value: task.dueAt ? (
+                                    <time dateTime={task.dueAt}>
+                                        {formatDateTime(task.dueAt)}
+                                    </time>
+                                ) : (
+                                    <span className="font-normal text-primary-400">
+                                        No due date
+                                    </span>
+                                ),
                             },
                         ]}
                     />
@@ -154,9 +176,10 @@ export function TaskDetail({
                             ))}
                         </div>
                     )}
-                    <ActionGroup>
+                    <ActionGroup stretch={false}>
                         <Button
                             variant="danger"
+                            className="@min-[20rem]/actions:me-auto"
                             onClick={() => setDeleting(task.version)}
                             disabled={current.isError}
                         >
