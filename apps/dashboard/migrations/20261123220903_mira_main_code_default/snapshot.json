@@ -1,0 +1,65 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "90188fdd-54ea-4f1d-b35f-22612155fb6c",
+    "prevIds": ["d12b3716-9d64-4284-905d-aee8526bd378"],
+    "footprints": [
+        {
+            "statementType": "alter_column",
+            "statementTarget": ["column", "public", "mira_conversations", "settings"],
+            "writes": ["s|colprop|public.mira_conversations.settings.default"],
+            "reads": [
+                "n|tbl|public.mira_conversations",
+                "n|sch|public",
+                "n|col|public.mira_conversations.settings"
+            ],
+            "sqlHash": "a1e70f81b2d6e922"
+        },
+        {
+            "statementType": "alter_column",
+            "statementTarget": ["column", "public", "mira_runs", "settings"],
+            "writes": ["s|colprop|public.mira_runs.settings.default"],
+            "reads": [
+                "n|tbl|public.mira_runs",
+                "n|sch|public",
+                "n|col|public.mira_runs.settings"
+            ],
+            "sqlHash": "1270d53c2dd1aa1c"
+        },
+        {
+            "statementType": "alter_column",
+            "statementTarget": ["column", "public", "mira_automations", "settings"],
+            "writes": ["s|colprop|public.mira_automations.settings.default"],
+            "reads": [
+                "n|tbl|public.mira_automations",
+                "n|sch|public",
+                "n|col|public.mira_automations.settings"
+            ],
+            "sqlHash": "c5a6e4248e9b40b4"
+        }
+    ],
+    "deltas": [
+        {
+            "op": "alter",
+            "key": "columns\u0000[\"public\",\"mira_conversations\",\"settings\"]",
+            "set": {
+                "default": "'{\"model\":null,\"effort\":null,\"serviceTier\":null,\"executionTarget\":\"main\"}'"
+            }
+        },
+        {
+            "op": "alter",
+            "key": "columns\u0000[\"public\",\"mira_runs\",\"settings\"]",
+            "set": {
+                "default": "'{\"model\":null,\"effort\":null,\"serviceTier\":null,\"executionTarget\":\"main\"}'"
+            }
+        },
+        {
+            "op": "alter",
+            "key": "columns\u0000[\"public\",\"mira_automations\",\"settings\"]",
+            "set": {
+                "default": "'{\"model\":null,\"effort\":null,\"serviceTier\":null,\"executionTarget\":\"main\"}'"
+            }
+        }
+    ]
+}

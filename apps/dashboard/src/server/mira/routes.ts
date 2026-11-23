@@ -706,9 +706,9 @@ export const miraRouter = trpc.router({
                         mira,
                         {
                             title,
-                            description: `In an isolated checkout of ${repository}, prepare these source dependency updates together on one review branch:\n${changes}\nVerify each upstream release, follow the repository's pin and integrity workflow, and inspect affected integrations. Wait for operator review before opening a PR, merging, publishing or deploying.`,
+                            description: `In an isolated checkout of ${repository}, prepare these source dependency updates together:\n${changes}\nVerify each upstream release and update its pins. For NuGet packages, use mira_dependency_package to read the official artifact SHA-256. Run the structured edits through mira_code_edit on the selected target. After successful checks and cleanup, use mira_github_create_pr to open one pull request for the operator. Record its URL on the task. Leave merge, release and deployment to the operator.`,
                             completionCriteria:
-                                "Provide the branch, changed pins and verification results for review.",
+                                "Record the open pull request URL, changed pins and verification results.",
                             assignee: "mira",
                             priority: "normal",
                             status: "todo",

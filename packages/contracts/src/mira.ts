@@ -8,6 +8,7 @@ const text = (maximum: number) => v.pipe(v.string(), v.trim(), v.maxLength(maxim
 const title = v.pipe(text(160), v.minLength(1));
 const body = text(32_000);
 export const miraCodeTargetSchema = v.picklist(["main", "daytona"]);
+export const miraDefaultCodeTarget = "main" as const;
 export const miraPageSchema = v.strictObject({
     before: v.optional(idSchema),
     search: v.optional(text(160), ""),
@@ -177,7 +178,12 @@ export const miraChatSettingsSchema = v.strictObject({
     useHistory: v.optional(v.boolean()),
     executionTarget: v.optional(miraCodeTargetSchema),
 });
-export const miraDefaultChatSettings = { model: null, effort: null, serviceTier: null };
+export const miraDefaultChatSettings = {
+    model: null,
+    effort: null,
+    serviceTier: null,
+    executionTarget: miraDefaultCodeTarget,
+};
 export type MiraChatSettings = v.InferOutput<typeof miraChatSettingsSchema>;
 
 export const miraAutomationInputSchema = v.strictObject({

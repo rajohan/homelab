@@ -1,10 +1,11 @@
-import type {
-    MiraChatSettings,
-    MiraConversation,
-    miraConversationPageSchema,
-    MiraMessage,
-    miraMessageInputSchema,
-    MiraRun,
+import {
+    type MiraChatSettings,
+    type MiraConversation,
+    type miraConversationPageSchema,
+    miraDefaultCodeTarget,
+    type MiraMessage,
+    type miraMessageInputSchema,
+    type MiraRun,
 } from "@homelab/contracts/mira";
 import type * as v from "valibot";
 
@@ -272,6 +273,10 @@ export async function enqueueTurn(
         await query`UPDATE mira_conversations SET settings=${JSON.stringify(conversation.settings)}::text::jsonb WHERE id=${input.conversationId}`;
     }
     const manual = source.manual ?? !source.automationId;
+    const settings = {
+        ...conversation.settings,
+        executionTarget: conversation.settings.executionTarget ?? miraDefaultCodeTarget,
+    };
     const defaultBudget = manual && !taskId && !source.automationId ? 0 : 300;
     const budgetSeconds = source.budgetSeconds ?? defaultBudget;
     if (!(await miraQueueAvailable(query, context.owner, manual)))
@@ -291,7 +296,7 @@ export async function enqueueTurn(
     } else
         await query`INSERT INTO mira_messages (id,conversation_id,role,content,state,attachment_ids) VALUES (${userMessage},${input.conversationId},'user',${input.text},'completed',${JSON.stringify(input.attachmentIds)}::text::jsonb)`;
     await query`INSERT INTO mira_messages (id,conversation_id,role,content,state,attachment_ids) VALUES (${assistantMessage},${input.conversationId},'assistant','','queued','[]'::jsonb)`;
-    await query`INSERT INTO mira_runs (id, owner, request_key, request_hash, conversation_id, user_message_id, assistant_message_id, automation_id, automation_kind, task_id, state, priority, budget_seconds, manual, settings) VALUES (${id}, ${context.owner}, ${requestKey}, ${hash}, ${input.conversationId}, ${userMessage}, ${assistantMessage}, ${source.automationId ?? null}, (SELECT kind FROM mira_automations WHERE id=${source.automationId ?? null} AND owner=${context.owner}), ${taskId ?? null}, 'queued', ${manual ? 100 : 0}, ${budgetSeconds}, ${manual}, ${JSON.stringify(conversation.settings)}::text::jsonb)`;
+    await query`INSERT INTO mira_runs (id, owner, request_key, request_hash, conversation_id, user_message_id, assistant_message_id, automation_id, automation_kind, task_id, state, priority, budget_seconds, manual, settings) VALUES (${id}, ${context.owner}, ${requestKey}, ${hash}, ${input.conversationId}, ${userMessage}, ${assistantMessage}, ${source.automationId ?? null}, (SELECT kind FROM mira_automations WHERE id=${source.automationId ?? null} AND owner=${context.owner}), ${taskId ?? null}, 'queued', ${manual ? 100 : 0}, ${budgetSeconds}, ${manual}, ${JSON.stringify(settings)}::text::jsonb)`;
     await query`UPDATE mira_conversations SET version = version + 1, updated_at = now() WHERE id = ${input.conversationId}`;
     await auditMira(query, context, "run.queued", id);
     return { id };

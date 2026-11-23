@@ -6,6 +6,8 @@ import { LayoutDashboard, ShieldCheck } from "lucide-react";
 import { systemStatusQuery } from "../api/client";
 import { ConnectionStatus } from "../features/overview/ConnectionStatus";
 import { OperationsOverview } from "../features/overview/OperationsOverview";
+import { OverviewClock } from "../features/overview/OverviewClock";
+import { OverviewWeather } from "../features/overview/OverviewWeather";
 
 /**
  * Compose operational domains with independent queries, loading and failure boundaries.
@@ -21,15 +23,10 @@ export function Overview() {
                 compactActions
                 title="Overview"
                 actions={
-                    status.dataUpdatedAt > 0 && (
-                        <time className="text-sm text-primary-400">
-                            {new Intl.DateTimeFormat("en-GB", {
-                                weekday: "long",
-                                day: "numeric",
-                                month: "long",
-                            }).format(status.dataUpdatedAt)}
-                        </time>
-                    )
+                    <>
+                        <OverviewClock />
+                        <OverviewWeather />
+                    </>
                 }
             />
             {operationsAvailable ? (

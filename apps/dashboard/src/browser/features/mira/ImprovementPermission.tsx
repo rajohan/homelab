@@ -1,4 +1,4 @@
-import type { MiraAutomation } from "@homelab/contracts/mira";
+import { type MiraAutomation, miraDefaultCodeTarget } from "@homelab/contracts/mira";
 import { miraImprovementPolicy } from "@homelab/contracts/miraImprovement";
 import {
     ActionGroup,
@@ -28,7 +28,8 @@ export function ImprovementPermission({
     readonly automation: MiraAutomation;
     readonly onClose: () => void;
 }) {
-    const main = automation.settings?.executionTarget === "main";
+    const main =
+        (automation.settings?.executionTarget ?? miraDefaultCodeTarget) === "main";
     const target = main ? "Main" : "Daytona";
     const [reason, setReason] = useState("");
     const query = useQuery({

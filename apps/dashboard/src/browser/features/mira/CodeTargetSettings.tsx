@@ -1,3 +1,4 @@
+import { miraDefaultCodeTarget } from "@homelab/contracts/mira";
 import { FormField, Select } from "@homelab/ui";
 
 /**
@@ -22,7 +23,7 @@ export function CodeTargetSettings({
         >
             <Select
                 label="Code execution"
-                value={value ?? (inherit ? "" : "daytona")}
+                value={value ?? (inherit ? "" : miraDefaultCodeTarget)}
                 disabled={disabled}
                 options={[
                     ...(inherit

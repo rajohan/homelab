@@ -46,6 +46,7 @@ import type { AgentMailReadConfiguration } from "../integrations/agentmail/confi
 import { createAgentMailTools } from "../integrations/agentmail/tools";
 import type { DaytonaBinding } from "../integrations/daytona/configuration";
 import { createDaytonaTools } from "../integrations/daytona/tools";
+import { readDependencyPackage } from "../integrations/dependencyPackage";
 import type {
     GitHubBinding,
     GitHubConfiguration,
@@ -160,6 +161,22 @@ export function createMiraTools(
         ...createMiraRecallTools(client, run),
         ...createMiraComputerTools(),
         ...createMiraBrowserTools(),
+        ...(run.taskId && !run.automationId
+            ? [
+                  {
+                      name: "mira_dependency_package",
+                      description:
+                          "Read the official NuGet archive SHA-256 for a registered Homelab dependency, for example windows:webview2. Use the selected numeric version from the saved task. This only hashes the downloaded bytes.",
+                      inputSchema: object(
+                          { dependency: { type: "string" }, version: { type: "string" } },
+                          ["dependency", "version"]
+                      ),
+                      readOnly: true,
+                      automatic: false,
+                      action: readDependencyPackage,
+                  },
+              ]
+            : []),
         {
             name: "mira_file_create",
             description:

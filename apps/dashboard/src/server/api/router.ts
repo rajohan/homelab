@@ -9,13 +9,14 @@ import { maintenanceRouter } from "../integrations/maintenance/routes";
 import { infrastructureRouter } from "../integrations/metrics/routes";
 import { releasesRouter } from "../integrations/releases/routes";
 import { updatesRouter } from "../integrations/updates/routes";
+import { readOverviewWeather } from "../integrations/weather";
 import { jobsRouter } from "../jobs/routes";
 import { schedulesRouter } from "../jobs/scheduleRoutes";
 import { workerRouter } from "../jobs/workerRoutes";
 import { miraRouter } from "../mira/routes";
 import { notificationsRouter } from "../notifications/routes";
 import { createSystemStatusLayer, readSystemStatus } from "./system";
-import { trpc } from "./trpc";
+import { runOperation, trpc } from "./trpc";
 
 export const appRouter = trpc.router({
     mira: miraRouter,
@@ -32,6 +33,7 @@ export const appRouter = trpc.router({
     notifications: notificationsRouter,
     applications: applicationsRouter,
     system: trpc.router({
+        weather: trpc.procedure.query(() => runOperation(readOverviewWeather)),
         status: trpc.procedure
             .output(systemStatusSchema)
             .query(({ ctx }) =>
