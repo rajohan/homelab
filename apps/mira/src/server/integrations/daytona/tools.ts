@@ -333,7 +333,9 @@ export function createDaytonaTools(
             );
         },
     });
-    return tools.map((tool) => ({
+    const supported =
+        target === "main" ? tools.filter((tool) => tool.name !== "mira_code_run") : tools;
+    return supported.map((tool) => ({
         ...tool,
         description: `This run's code execution target is ${target === "main" ? "Main (local isolated container)" : "Daytona (cloud sandbox)"}. It cannot be changed by a tool or fall back to another target. ${target === "main" ? "Only the fixed Homelab source/check/edit profile is supported; no arbitrary commands. " : ""}${tool.description}`,
     }));

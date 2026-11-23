@@ -8,13 +8,15 @@ using System.Windows.Forms;
 // keyboard system commands, taskbar behavior and Snap layouts.
 internal class MiraWindow : Form
 {
-    internal static readonly Color Canvas = Color.FromArgb(11, 11, 12);
-    internal static readonly Color Surface = Color.FromArgb(18, 19, 22);
-    internal static readonly Color Raised = Color.FromArgb(26, 28, 32);
-    internal static readonly Color Border = Color.FromArgb(42, 45, 51);
-    internal static readonly Color TextColor = Color.FromArgb(239, 241, 245);
-    internal static readonly Color Muted = Color.FromArgb(160, 166, 179);
-    internal static readonly Color Accent = Color.FromArgb(91, 140, 255);
+    // Native equivalents of the shared dashboard surface, text and link colors.
+    internal static readonly Color Canvas = Color.FromArgb(11, 14, 19);
+    internal static readonly Color Surface = Color.FromArgb(20, 25, 33);
+    internal static readonly Color Heading = Color.FromArgb(16, 20, 26);
+    internal static readonly Color Raised = Color.FromArgb(32, 39, 49);
+    internal static readonly Color Border = Color.FromArgb(49, 58, 70);
+    internal static readonly Color TextColor = Color.FromArgb(231, 233, 238);
+    internal static readonly Color Muted = Color.FromArgb(162, 173, 189);
+    internal static readonly Color Accent = Color.FromArgb(162, 200, 255);
     protected readonly Panel Content = new Panel();
     private readonly CaptionPanel caption;
     private readonly CaptionButton minimize;
@@ -48,7 +50,7 @@ internal class MiraWindow : Form
         Font = new Font("Segoe UI", 10);
         BackColor = Canvas; ForeColor = TextColor;
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        caption = new CaptionPanel(this) { Dock = DockStyle.Top, Height = 34, BackColor = Canvas };
+        caption = new CaptionPanel(this) { Dock = DockStyle.Top, Height = 34, BackColor = Heading };
         minimize = new CaptionButton(this, 8, "Minimize");
         maximize = new CaptionButton(this, 9, "Maximize");
         close = new CaptionButton(this, 20, "Close");
@@ -242,7 +244,7 @@ internal class MiraWindow : Form
         internal CaptionButton(MiraWindow owner, int code, string name)
         {
             window = owner; hit = code; AccessibleName = name; TabStop = false;
-            FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0; BackColor = Canvas;
+            FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0; BackColor = Heading;
             Click += delegate { window.CaptionAction(hit); };
         }
         internal bool Hovered { set { if (hovered != value) { hovered = value; Invalidate(); } } }
@@ -256,7 +258,7 @@ internal class MiraWindow : Form
         protected override void OnPaint(PaintEventArgs args)
         {
             bool keyboardFocus = Focused && ShowFocusCues;
-            args.Graphics.Clear(hovered || keyboardFocus ? (hit == 20 ? Color.FromArgb(185, 40, 53) : Raised) : Canvas);
+            args.Graphics.Clear(hovered || keyboardFocus ? (hit == 20 ? Color.FromArgb(185, 40, 53) : Raised) : Heading);
             int size = window.ScalePixels(10), x = (Width - size) / 2, y = (Height - size) / 2;
             using (var pen = new Pen(TextColor, Math.Max(1, window.ScalePixels(1)))) {
                 if (hit == 8) args.Graphics.DrawLine(pen, x, y + size / 2, x + size, y + size / 2);
@@ -264,11 +266,11 @@ internal class MiraWindow : Form
                 else if (window.WindowState == FormWindowState.Maximized) {
                     int offset = window.ScalePixels(3);
                     args.Graphics.DrawRectangle(pen, x + offset, y, size - offset, size - offset);
-                    using (var fill = new SolidBrush(hovered || keyboardFocus ? Raised : Canvas)) args.Graphics.FillRectangle(fill, x, y + offset, size - offset, size - offset);
+                    using (var fill = new SolidBrush(hovered || keyboardFocus ? Raised : Heading)) args.Graphics.FillRectangle(fill, x, y + offset, size - offset, size - offset);
                     args.Graphics.DrawRectangle(pen, x, y + offset, size - offset, size - offset);
                 } else args.Graphics.DrawRectangle(pen, x, y, size, size);
             }
-            if (keyboardFocus) ControlPaint.DrawFocusRectangle(args.Graphics, new Rectangle(4, 4, Width - 8, Height - 8), TextColor, Canvas);
+            if (keyboardFocus) ControlPaint.DrawFocusRectangle(args.Graphics, new Rectangle(4, 4, Width - 8, Height - 8), Accent, Heading);
             using (var border = new Pen(Border)) args.Graphics.DrawLine(border, 0, Height - 1, Width, Height - 1);
         }
     }

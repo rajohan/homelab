@@ -16,7 +16,8 @@ import {
     queryRefresh,
     SectionHeader,
 } from "@homelab/ui";
-import { useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { PackageSearch } from "lucide-react";
 import { useState } from "react";
 
@@ -53,6 +54,20 @@ export function BuildDependencies() {
     const prepare = useOperation((input: PrepareSourceUpdates, signal) =>
         api.mira.tasks.prepareDependency.mutate(input, { signal })
     );
+    const taskId = prepare.data?.id;
+    const preparedTask = useQuery({
+        queryKey: ["operations", "mira", "task", taskId, "detail"],
+        queryFn: taskId
+            ? ({ signal }) => api.mira.tasks.read.query({ id: taskId }, { signal })
+            : skipToken,
+        // The scheduler links the chat after the preparation request has returned.
+        refetchInterval: ({ state }) =>
+            taskId &&
+            !state.data?.conversationId &&
+            Date.now() - prepare.submittedAt < 60_000
+                ? 5000
+                : false,
+    });
     const snapshot = query.data?.snapshot;
     const fresh = Boolean(snapshot?.fresh && !query.isError);
     const available =
@@ -71,7 +86,7 @@ export function BuildDependencies() {
         <Card className="space-y-4">
             <SectionHeader
                 title="Homelab source dependencies"
-                description="Checked hourly. Mira prepares updates on a branch for your review."
+                description="Checked hourly. Mira opens a pull request with the verified updates."
                 icon={PackageSearch}
                 badge={
                     snapshot && !fresh && <Badge tone="warning">Status outdated</Badge>
@@ -197,12 +212,24 @@ export function BuildDependencies() {
                     </p>
                 )
             )}
-            {prepare.isSuccess && (
+            {taskId && (
                 <output className="text-sm text-primary-300">
-                    Preparation task ready.{" "}
-                    <a className="text-accent-300 underline" href="/tasks">
-                        View Mira tasks
-                    </a>
+                    {preparedTask.data
+                        ? `Task #${preparedTask.data.number} is ready. `
+                        : "Preparation task ready. "}
+                    {preparedTask.data?.conversationId ? (
+                        <Link
+                            className="text-accent-300 underline"
+                            to="/mira/$conversationId"
+                            params={{ conversationId: preparedTask.data.conversationId }}
+                        >
+                            Open task chat
+                        </Link>
+                    ) : (
+                        <Link className="text-accent-300 underline" to="/tasks">
+                            View tasks
+                        </Link>
+                    )}
                 </output>
             )}
             {selection && (
@@ -212,7 +239,7 @@ export function BuildDependencies() {
                             ? `Prepare ${selection.items[0]!.name}?`
                             : `Prepare all ${selection.items.length} updates?`
                     }
-                    description="Mira will prepare the listed versions in one task and leave the branch ready for review."
+                    description="Mira will verify the listed versions and open one pull request for you to review."
                     confirmLabel="Start Mira task"
                     variant="primary"
                     confirmDisabled={Boolean(selectionChanged)}

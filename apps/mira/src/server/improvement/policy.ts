@@ -1,3 +1,4 @@
+import { miraDefaultCodeTarget } from "@homelab/contracts/mira";
 import {
     type MiraImprovementGrant,
     type miraImprovementGrantSchema,
@@ -37,7 +38,7 @@ export interface ImprovementBindings {
 /**
  * Resolve the captured execution target without provider fallback.
  * @param bindings - Qualified service mappings.
- * @param target - Frozen run or current automation setting; legacy settings use Daytona.
+ * @param target - Frozen run or current automation setting; new runs inherit the chat default.
  * @returns The selected mapping, or undefined when it has not been provisioned.
  */
 export function improvementTarget(bindings: ImprovementBindings, target: string) {
@@ -49,13 +50,13 @@ export function improvementTarget(bindings: ImprovementBindings, target: string)
  * Bind automatic code authority to one operator, fixed policy and qualified provider mappings.
  * @param owner - Verified operator.
  * @param bindings - Service-owned nonsecret account/snapshot mappings.
- * @param target - Exact reviewed execution target, defaulting to legacy Daytona.
+ * @param target - Exact reviewed execution target, selected for the automation.
  * @returns Stable binding fingerprint; missing or different owners cannot authorize work.
  */
 export function improvementBinding(
     owner: string,
     bindings: ImprovementBindings,
-    target = "daytona"
+    target: string = miraDefaultCodeTarget
 ): string | null {
     const execution = improvementTarget(bindings, target);
     if (execution?.owner !== owner || bindings.github?.owner !== owner) return null;
@@ -93,7 +94,7 @@ export async function readImprovementGrant(
             automationVersion: number;
             executionTarget: string;
         }[]
-    >`SELECT coalesce(g.version,0) AS version,coalesce(g.enabled,false) AS enabled,g.binding_hash AS bound,g.automation_version AS definition,a.version AS "automationVersion",coalesce(a.settings->>'executionTarget','daytona') AS "executionTarget" FROM mira_automations a LEFT JOIN mira_improvement_grants g ON g.automation_id=a.id AND g.owner=a.owner WHERE a.id=${automationId} AND a.owner=${context.owner} AND a.kind='improvement' AND a.deleted_at IS NULL`;
+    >`SELECT coalesce(g.version,0) AS version,coalesce(g.enabled,false) AS enabled,g.binding_hash AS bound,g.automation_version AS definition,a.version AS "automationVersion",coalesce(a.settings->>'executionTarget',${miraDefaultCodeTarget}::text) AS "executionTarget" FROM mira_automations a LEFT JOIN mira_improvement_grants g ON g.automation_id=a.id AND g.owner=a.owner WHERE a.id=${automationId} AND a.owner=${context.owner} AND a.kind='improvement' AND a.deleted_at IS NULL`;
     if (!row) throw new MiraFailure("NOT_FOUND", "Improvement automation not found.");
     const execution = improvementTarget(bindings, row.executionTarget);
     const binding = improvementBinding(context.owner, bindings, row.executionTarget);
@@ -135,7 +136,7 @@ export async function saveImprovementGrant(
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         const [automation] = await query<
             { id: string; executionTarget: string }[]
-        >`SELECT id,coalesce(settings->>'executionTarget','daytona') AS "executionTarget" FROM mira_automations WHERE id=${input.automationId} AND owner=${context.owner} AND version=${input.automationVersion} AND kind='improvement' AND deleted_at IS NULL FOR UPDATE`;
+        >`SELECT id,coalesce(settings->>'executionTarget',${miraDefaultCodeTarget}::text) AS "executionTarget" FROM mira_automations WHERE id=${input.automationId} AND owner=${context.owner} AND version=${input.automationVersion} AND kind='improvement' AND deleted_at IS NULL FOR UPDATE`;
         if (!automation)
             throw new MiraFailure(
                 "CONFLICT",
@@ -184,7 +185,7 @@ export async function improvementJobAllowed(
 ): Promise<boolean> {
     const [row] = await query<
         { allowed: boolean }[]
-    >`SELECT (i.state IN ('queued','checking','publishing') AND i.policy_version=${miraImprovementPolicy.version} AND i.created_at>clock_timestamp()-interval '1 hour' AND g.enabled AND g.version=i.grant_version AND g.binding_hash=i.binding_hash AND a.kind='improvement' AND coalesce(a.settings->>'executionTarget','daytona')=coalesce(r.settings->>'executionTarget','daytona') AND a.version=g.automation_version AND a.deleted_at IS NULL AND s.enabled AND s.version=i.automation_control AND coalesce(u.enabled,true) AND coalesce(u.version,1)=i.autonomy_control AND NOT r.cancel_requested AND r.state IN ('running','completed','failed','interrupted','needs_attention') AND c.deleted_at IS NULL AND EXISTS(SELECT 1 FROM mira_switches d WHERE d.owner=i.owner AND d.key=CASE WHEN r.settings->>'executionTarget'='main' THEN 'code:main' ELSE 'integration:daytona' END AND d.enabled AND d.version=i.daytona_control) AND EXISTS(SELECT 1 FROM mira_switches h WHERE h.owner=i.owner AND h.key='integration:github' AND h.enabled AND h.version=i.github_control) AND (${kind ?? null}::text IS NULL OR (${kind ?? null}='cloud' AND EXISTS(SELECT 1 FROM mira_daytona_jobs j WHERE j.id=i.id AND j.owner=i.owner AND j.content_hash=i.cloud_hash AND j.execution_target=coalesce(r.settings->>'executionTarget','daytona'))) OR (${kind ?? null}='publication' AND EXISTS(SELECT 1 FROM mira_code_publications p WHERE p.id=i.id AND p.owner=i.owner AND p.content_hash=i.publication_hash)))) AS allowed FROM mira_improvements i JOIN mira_improvement_grants g ON g.automation_id=i.automation_id AND g.owner=i.owner JOIN mira_automations a ON a.id=i.automation_id AND a.owner=i.owner JOIN mira_switches s ON s.owner=i.owner AND s.key='automation:'||i.automation_id::text LEFT JOIN mira_switches u ON u.owner=i.owner AND u.key='autonomy' JOIN mira_runs r ON r.id=i.run_id AND r.owner=i.owner JOIN mira_conversations c ON c.id=i.conversation_id AND c.owner=i.owner WHERE i.id=${id}`;
+    >`SELECT (i.state IN ('queued','checking','publishing') AND i.policy_version=${miraImprovementPolicy.version} AND i.created_at>clock_timestamp()-interval '1 hour' AND g.enabled AND g.version=i.grant_version AND g.binding_hash=i.binding_hash AND a.kind='improvement' AND coalesce(a.settings->>'executionTarget',${miraDefaultCodeTarget}::text)=coalesce(r.settings->>'executionTarget','daytona') AND a.version=g.automation_version AND a.deleted_at IS NULL AND s.enabled AND s.version=i.automation_control AND coalesce(u.enabled,true) AND coalesce(u.version,1)=i.autonomy_control AND NOT r.cancel_requested AND r.state IN ('running','completed','failed','interrupted','needs_attention') AND c.deleted_at IS NULL AND EXISTS(SELECT 1 FROM mira_switches d WHERE d.owner=i.owner AND d.key=CASE WHEN r.settings->>'executionTarget'='main' THEN 'code:main' ELSE 'integration:daytona' END AND d.enabled AND d.version=i.daytona_control) AND EXISTS(SELECT 1 FROM mira_switches h WHERE h.owner=i.owner AND h.key='integration:github' AND h.enabled AND h.version=i.github_control) AND (${kind ?? null}::text IS NULL OR (${kind ?? null}='cloud' AND EXISTS(SELECT 1 FROM mira_daytona_jobs j WHERE j.id=i.id AND j.owner=i.owner AND j.content_hash=i.cloud_hash AND j.execution_target=coalesce(r.settings->>'executionTarget','daytona'))) OR (${kind ?? null}='publication' AND EXISTS(SELECT 1 FROM mira_code_publications p WHERE p.id=i.id AND p.owner=i.owner AND p.content_hash=i.publication_hash)))) AS allowed FROM mira_improvements i JOIN mira_improvement_grants g ON g.automation_id=i.automation_id AND g.owner=i.owner JOIN mira_automations a ON a.id=i.automation_id AND a.owner=i.owner JOIN mira_switches s ON s.owner=i.owner AND s.key='automation:'||i.automation_id::text LEFT JOIN mira_switches u ON u.owner=i.owner AND u.key='autonomy' JOIN mira_runs r ON r.id=i.run_id AND r.owner=i.owner JOIN mira_conversations c ON c.id=i.conversation_id AND c.owner=i.owner WHERE i.id=${id}`;
     if (row) {
         if (!row.allowed) return false;
         if (kind === "publication") {

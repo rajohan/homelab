@@ -42,7 +42,7 @@ export function JobActivityItem({
         ? { icon: CircleAlert, color: "text-amber-400" }
         : presentation[run.state];
     return (
-        <div className="relative flex items-center gap-1 border-t border-primary-700 transition-colors hover:bg-primary-800">
+        <div className="relative flex items-center gap-1 rounded-md border-t border-primary-700 pe-2 transition-colors hover:bg-primary-800">
             <button
                 type="button"
                 aria-label={`View ${run.label}`}

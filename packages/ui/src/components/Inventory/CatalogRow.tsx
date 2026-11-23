@@ -50,7 +50,7 @@ export function CatalogRow({
                     </div>
                 )}
                 {children && (
-                    <div className="col-start-2 min-w-0 space-y-1 text-sm text-primary-300 empty:hidden @min-[36rem]/catalog-row:col-span-2">
+                    <div className="col-start-2 col-end-[-1] min-w-0 space-y-1 text-sm text-primary-300 empty:hidden">
                         {children}
                     </div>
                 )}
