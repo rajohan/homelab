@@ -116,7 +116,7 @@ export function TaskColumn({
             </header>
             <div
                 ref={scrollRef}
-                className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto overscroll-y-contain p-2.5"
+                className="flex max-h-[60dvh] min-h-0 flex-col gap-2.5 overflow-y-auto p-2.5 @min-[55rem]/task-board:max-h-none @min-[55rem]/task-board:flex-1 @min-[55rem]/task-board:overscroll-y-contain"
             >
                 {query.isPending && <LoadingState label="Loading tasks…" />}
                 {rows.map((task, index) => (

@@ -71,7 +71,7 @@ export function TaskBoard({
                 }}
             >
                 <div
-                    className="grid min-h-0 min-w-0 flex-1 auto-cols-[86%] grid-flow-col grid-rows-[minmax(0,1fr)] gap-3 overflow-x-auto overscroll-x-contain p-px @min-[34rem]/task-board:auto-cols-[46%] @min-[55rem]/task-board:grid-cols-4"
+                    className="grid min-w-0 flex-none grid-cols-1 gap-3 p-px @min-[55rem]/task-board:min-h-0 @min-[55rem]/task-board:flex-1 @min-[55rem]/task-board:grid-cols-4 @min-[55rem]/task-board:grid-rows-[minmax(0,1fr)]"
                     onAnimationEnd={(event) => {
                         if (event.animationName === "task-arrive") setArrival(undefined);
                     }}
