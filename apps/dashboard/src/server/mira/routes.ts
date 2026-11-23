@@ -177,6 +177,7 @@ import * as v from "valibot";
 
 import { runOperation, trpc } from "../api/trpc";
 import { requireCapability } from "../automation/authentication";
+import { buildDependencySnapshot } from "../integrations/releases/dependencies";
 import { authorizedOperations } from "../operations/authorization";
 import type { OperationsContext } from "../operations/context";
 import { OperationFailure } from "../operations/errors";
@@ -646,6 +647,70 @@ export const miraRouter = trpc.router({
             ),
     }),
     tasks: trpc.router({
+        prepareDependency: trpc.procedure
+            .input(
+                v.strictObject({
+                    dependency: v.pipe(v.string(), v.maxLength(128)),
+                    pinned: v.pipe(v.string(), v.maxLength(100)),
+                    available: v.pipe(v.string(), v.maxLength(100)),
+                })
+            )
+            .mutation(({ ctx, input }) =>
+                execute(ctx, async (mira) => {
+                    const { operations, principal } = authorizedOperations(
+                        ctx,
+                        "updates:read"
+                    );
+                    requireCapability(principal, "jobs:run");
+                    const repository = operations.releaseRepository;
+                    const snapshot = await buildDependencySnapshot(mira.client);
+                    const item = snapshot?.value.items.find(
+                        (row) => row.id === input.dependency
+                    );
+                    if (
+                        !repository ||
+                        !snapshot?.fresh ||
+                        !item ||
+                        item.status !== "available" ||
+                        item.available !== input.available ||
+                        item.pinned !== input.pinned
+                    )
+                        throw new OperationFailure(
+                            "CONFLICT",
+                            "The available dependency update changed. Refresh and review its current version."
+                        );
+                    const digest = new Bun.CryptoHasher("sha256")
+                        .update(
+                            JSON.stringify([
+                                mira.owner,
+                                repository,
+                                item.id,
+                                item.pinned,
+                                item.available,
+                            ])
+                        )
+                        .digest("hex");
+                    const creationId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-8${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+                    return saveTask(
+                        mira,
+                        {
+                            title: `Prepare ${item.name} ${item.available} for review`,
+                            description: `In an isolated checkout of ${repository}, prepare the ${item.name} source dependency update from ${item.pinned} to ${item.available}. Verify the upstream release, follow the repository's pin and integrity workflow, and inspect affected integrations. Keep the changes in a reviewable branch and wait for operator review before opening a PR, merging, publishing or deploying.`,
+                            completionCriteria:
+                                "Provide the branch, changed pins and verification results for review.",
+                            assignee: "mira",
+                            priority: "normal",
+                            status: "todo",
+                            autoStart: true,
+                            labels: ["dependencies"],
+                            conversationId: null,
+                            dueAt: null,
+                        },
+                        creationId
+                    );
+                })
+            ),
+
         read: trpc.procedure
             .input(record)
             .query(({ ctx, input }) => execute(ctx, (mira) => readTask(mira, input.id))),

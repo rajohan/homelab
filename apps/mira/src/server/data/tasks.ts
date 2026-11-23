@@ -58,14 +58,16 @@ export async function listTasks(
  * Create or update a task under optimistic concurrency and an attributed audit.
  * @param context - Authenticated product context.
  * @param input - Validated task fields and optional expected version.
+ * @param creationId - Optional server-derived ID for repeatable dependency preparation.
  * @returns The affected task ID.
  */
 export async function saveTask(
     context: MiraContext,
-    input: MiraTaskInput & { id?: string; version?: number }
+    input: MiraTaskInput & { id?: string; version?: number },
+    creationId?: string
 ) {
     return miraTransaction(context, async (query) => {
-        const id = input.id ?? Bun.randomUUIDv7();
+        const id = input.id ?? creationId ?? Bun.randomUUIDv7();
         // Proposal approval may already hold the conversation row: never wait in the opposite order.
         const [lock] = await query<
             { acquired: boolean }[]
@@ -75,6 +77,17 @@ export async function saveTask(
                 "CONFLICT",
                 "Task admission is busy. Retry after the current task action finishes."
             );
+        if (creationId) {
+            const [existing] = await query<
+                { deleted: boolean }[]
+            >`SELECT deleted_at IS NOT NULL AS deleted FROM mira_tasks WHERE id=${creationId} AND owner=${context.owner}`;
+            if (existing?.deleted)
+                throw new MiraFailure(
+                    "CONFLICT",
+                    "The preparation task for this update was deleted."
+                );
+            if (existing) return { id: creationId };
+        }
         if (input.conversationId) {
             // Serialize linking with chat admission before changing the task or adopting runs.
             const [conversation] = await query<

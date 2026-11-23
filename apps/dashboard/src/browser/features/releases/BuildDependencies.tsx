@@ -2,6 +2,7 @@ import {
     Badge,
     Button,
     Card,
+    ConfirmDialog,
     DataTable,
     ErrorNotice,
     LoadingState,
@@ -10,9 +11,11 @@ import {
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { PackageSearch } from "lucide-react";
+import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useJobOperation } from "../jobs/useJobOperation";
+import { useOperation } from "../operations/useOperation";
 
 const statusLabels = {
     available: "Update available",
@@ -35,6 +38,16 @@ export function BuildDependencies() {
     const refresh = useJobOperation(
         (input: { action: string; requestId: string }, signal) =>
             api.jobs.run.mutate(input, { signal })
+    );
+    const [selection, setSelection] = useState<{
+        dependency: string;
+        name: string;
+        pinned: string;
+        available: string;
+    }>();
+    const prepare = useOperation(
+        (input: { dependency: string; pinned: string; available: string }, signal) =>
+            api.mira.tasks.prepareDependency.mutate(input, { signal })
     );
     const snapshot = query.data?.snapshot;
     const fresh = Boolean(snapshot?.fresh && !query.isError);
@@ -120,6 +133,35 @@ export function BuildDependencies() {
                                 </Badge>
                             ),
                         },
+                        ...(fresh &&
+                        snapshot.value.items.some((row) => row.status === "available")
+                            ? [
+                                  {
+                                      id: "review",
+                                      label: "Review",
+                                      render: (
+                                          item: (typeof snapshot.value.items)[number]
+                                      ) =>
+                                          item.status === "available" &&
+                                          item.available && (
+                                              <Button
+                                                  size="sm"
+                                                  variant="secondary"
+                                                  onClick={() =>
+                                                      setSelection({
+                                                          dependency: item.id,
+                                                          name: item.name,
+                                                          pinned: item.pinned,
+                                                          available: item.available,
+                                                      })
+                                                  }
+                                              >
+                                                  Prepare with Mira
+                                              </Button>
+                                          ),
+                                  },
+                              ]
+                            : []),
                     ]}
                 />
             ) : (
@@ -131,6 +173,27 @@ export function BuildDependencies() {
                             : "Release checks are not configured."}
                     </p>
                 )
+            )}
+            {prepare.isSuccess && (
+                <output className="text-sm text-primary-300">
+                    Preparation task created.{" "}
+                    <a className="text-accent-300 underline" href="/tasks">
+                        View Mira tasks
+                    </a>
+                </output>
+            )}
+            {selection && (
+                <ConfirmDialog
+                    title={`Prepare ${selection.name} ${selection.available}?`}
+                    description={`Mira will prepare the update from ${selection.pinned} to ${selection.available} in a branch for your review.`}
+                    confirmLabel="Start Mira task"
+                    onClose={() => setSelection(undefined)}
+                    onConfirm={async () => {
+                        const { dependency, pinned, available } = selection;
+                        await prepare.mutateAsync({ dependency, pinned, available });
+                        setSelection(undefined);
+                    }}
+                />
             )}
         </Card>
     );

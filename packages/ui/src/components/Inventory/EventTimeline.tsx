@@ -69,7 +69,7 @@ export function EventTimeline({
                 <div
                     className={
                         feed
-                            ? "relative ml-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 border-l border-primary-700 py-1 pl-5"
+                            ? "relative ml-2 grid min-w-0 grid-cols-[minmax(0,1fr)] items-start border-l border-primary-700 py-1 pl-5"
                             : "relative ml-1 grid min-w-0 grid-cols-[3.8rem_minmax(0,1fr)] gap-2 border-l border-primary-700 py-2 pl-4"
                     }
                 >
@@ -89,31 +89,36 @@ export function EventTimeline({
                             />
                         )}
                     </span>
-                    <time
-                        dateTime={event.time}
-                        className={`text-xs leading-5 text-primary-400 tabular-nums ${feed ? "col-start-2 row-start-2 @min-[24rem]/events:row-start-1" : ""}`}
-                    >
-                        {time}
-                    </time>
-                    <div className={feed ? "contents" : "min-w-0 text-sm"}>
-                        <div
-                            className={`min-w-0 text-sm font-medium wrap-anywhere text-primary-50 ${feed ? "col-span-2 row-start-1 @min-[24rem]/events:col-span-1" : ""}`}
+                    {!feed && (
+                        <time
+                            dateTime={event.time}
+                            className="text-xs leading-5 text-primary-400 tabular-nums"
                         >
+                            {time}
+                        </time>
+                    )}
+                    <div className="min-w-0 text-sm">
+                        <div className="font-medium wrap-anywhere text-primary-50">
                             <BreakableName>{event.title}</BreakableName>
                         </div>
-                        {(event.label || event.detail) && (
-                            <div
-                                className={`text-xs leading-relaxed wrap-anywhere text-primary-400 ${feed ? "col-start-1 row-start-2 min-w-0 pb-1 @min-[24rem]/events:col-span-2" : "mt-0.5"}`}
-                            >
-                                {event.label && (
-                                    <span className={marker.color}>{event.label}</span>
-                                )}
-                                {event.label && event.detail && (
-                                    <span aria-hidden="true"> · </span>
-                                )}
-                                {event.detail}
-                            </div>
-                        )}
+                        <div
+                            className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs leading-relaxed wrap-anywhere text-primary-400 ${feed ? "pb-1" : "mt-0.5 empty:hidden"}`}
+                        >
+                            {feed && (
+                                <time
+                                    dateTime={event.time}
+                                    className="shrink-0 tabular-nums"
+                                >
+                                    {time}
+                                </time>
+                            )}
+                            {event.label && (
+                                <span className={marker.color}>{event.label}</span>
+                            )}
+                            {event.detail && (
+                                <div className="min-w-0">{event.detail}</div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </>

@@ -110,7 +110,8 @@ export function JobRunTable({
                                                       ? "Stopping job"
                                                       : `Stop ${run.label}`
                                               }
-                                              variant="danger"
+                                              variant="ghost"
+                                              className="text-red-300 hover:bg-red-950 hover:text-red-200 pointer-fine:size-8 pointer-fine:min-h-8 [&_svg]:size-3.5"
                                               disabled={
                                                   run.cancelRequested || cancel.isPending
                                               }

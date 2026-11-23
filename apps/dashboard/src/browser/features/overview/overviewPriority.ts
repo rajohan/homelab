@@ -3,7 +3,7 @@ import { formatDateTime } from "@homelab/ui";
 import type { OverviewReadings } from "./useOverviewReadings";
 
 type Priority = {
-    tone: "warning" | "clear" | "unknown";
+    tone: "danger" | "warning" | "clear" | "unknown";
     title: string;
     detail: string;
     to:
@@ -30,7 +30,7 @@ export function overviewPriorities(r: OverviewReadings): Priority[] {
     const incident = urgent ?? activeRows[0];
     if (r.active > 0)
         problems.push({
-            tone: "warning",
+            tone: urgent ? "danger" : "warning",
             title: incident?.name ?? `${r.active} active incidents`,
             detail: incident
                 ? [
@@ -47,7 +47,7 @@ export function overviewPriorities(r: OverviewReadings): Priority[] {
         });
     if (backup)
         problems.push({
-            tone: "warning",
+            tone: backup.state === "failed" ? "danger" : "warning",
             title: `${backup.host} backup ${backup.state}`,
             detail: [
                 backup.task,
@@ -64,7 +64,7 @@ export function overviewPriorities(r: OverviewReadings): Priority[] {
     const failedApp = r.apps.find((app) => app.state === "unhealthy");
     if (failedHost)
         problems.push({
-            tone: "warning",
+            tone: "danger",
             title: `${failedHost.name} needs attention`,
             detail: "Host monitoring reported an unhealthy state.",
             to: "/infrastructure",
@@ -73,7 +73,7 @@ export function overviewPriorities(r: OverviewReadings): Priority[] {
         });
     if (failedProbe)
         problems.push({
-            tone: "warning",
+            tone: "danger",
             title: `${failedProbe.name} check failed`,
             detail: failedProbe.host,
             to: "/infrastructure",
@@ -82,7 +82,7 @@ export function overviewPriorities(r: OverviewReadings): Priority[] {
         });
     if (failedApp)
         problems.push({
-            tone: "warning",
+            tone: "danger",
             title: `${failedApp.name} needs attention`,
             detail: failedApp.host,
             to: "/infrastructure",
@@ -107,7 +107,49 @@ export function overviewPriorities(r: OverviewReadings): Priority[] {
             to: "/updates",
             action: "Inspect updates",
         });
-    if (problems.length > 0) return problems;
+    const hostNames = new Map<string, string>();
+    for (const source of r.sources ?? []) {
+        if (source.restart?.required && !source.restart.stale)
+            hostNames.set(source.id.toLowerCase(), source.label);
+    }
+    const services = [];
+    for (const plan of r.restartPlans ?? []) {
+        if (plan.required !== true) continue;
+        if (plan.kind === "host")
+            hostNames.set(plan.host.label.toLowerCase(), plan.host.label);
+        else services.push(plan);
+    }
+    if (hostNames.size > 0 || services.length > 0) {
+        const affectedHosts = [
+            ...new Set([
+                ...hostNames.values(),
+                ...services.map((plan) => plan.host.label),
+            ]),
+        ].toSorted();
+        const counts = [];
+        if (hostNames.size > 0)
+            counts.push(`${hostNames.size} ${hostNames.size === 1 ? "host" : "hosts"}`);
+        if (services.length > 0)
+            counts.push(
+                `${services.length} ${services.length === 1 ? "service" : "services"}`
+            );
+        const names = new Intl.ListFormat("en", {
+            style: "long",
+            type: "conjunction",
+        }).format(affectedHosts);
+        problems.push({
+            tone: "warning",
+            title: `${counts.join(" and ")} ${hostNames.size + services.length === 1 ? "needs" : "need"} a restart`,
+            detail: `Affected ${affectedHosts.length === 1 ? "host" : "hosts"}: ${names}.`,
+            to: "/updates",
+            hash: "maintenance",
+            action: "Review restarts",
+        });
+    }
+    if (problems.length > 0)
+        return problems.toSorted(
+            (a, b) => Number(b.tone === "danger") - Number(a.tone === "danger")
+        );
     if (r.pending)
         return [
             {
@@ -160,6 +202,27 @@ export function overviewPriorities(r: OverviewReadings): Priority[] {
                 detail: "One or more software sources have no current report.",
                 to: "/updates",
                 action: "Inspect updates",
+            },
+        ];
+    if (
+        !r.restartPlans ||
+        r.restartPlans.some(
+            (plan) => plan.active !== "inactive" && plan.required === null
+        ) ||
+        r.sources?.some(
+            (source) =>
+                source.restart &&
+                (source.restart.stale || source.restart.required === null)
+        )
+    )
+        return [
+            {
+                tone: "unknown",
+                title: "Restart status is incomplete",
+                detail: "Some hosts or services have no current restart observation.",
+                to: "/updates",
+                hash: "maintenance",
+                action: "Review restarts",
             },
         ];
     if (!r.queue)

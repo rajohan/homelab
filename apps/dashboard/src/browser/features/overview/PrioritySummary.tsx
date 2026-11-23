@@ -13,15 +13,32 @@ export function PrioritySummary({ readings }: { readonly readings: OverviewReadi
     const [priority, ...others] = overviewPriorities(readings);
     if (!priority) return null;
     const appearance = {
-        clear: { icon: CircleCheck, color: "text-emerald-300" },
-        warning: { icon: TriangleAlert, color: "text-amber-300" },
-        unknown: { icon: CircleHelp, color: "text-primary-300" },
+        clear: {
+            icon: CircleCheck,
+            color: "text-emerald-300",
+            surface: "bg-coverage-surface border-emerald-300/20",
+        },
+        danger: {
+            icon: TriangleAlert,
+            color: "text-red-300",
+            surface: "bg-red-950/50 border-red-400/35",
+        },
+        warning: {
+            icon: TriangleAlert,
+            color: "text-amber-300",
+            surface: "bg-amber-950/45 border-amber-400/35",
+        },
+        unknown: {
+            icon: CircleHelp,
+            color: "text-primary-300",
+            surface: "bg-surface-card border-primary-700",
+        },
     }[priority.tone];
     const Icon = appearance.icon;
     return (
         <Card
             aria-label="Operational priority"
-            className={`grid min-w-0 items-center gap-x-8 gap-y-4 p-4 sm:p-5 @min-[47rem]/overview:grid-cols-[minmax(0,1.5fr)_minmax(15rem,1fr)] ${priority.tone === "clear" ? "bg-coverage-surface border-emerald-300/20" : "border-primary-700 bg-surface-card"}`}
+            className={`grid min-w-0 items-center gap-x-8 gap-y-4 p-4 sm:p-5 @min-[47rem]/overview:grid-cols-[minmax(0,1.5fr)_minmax(15rem,1fr)] ${appearance.surface}`}
         >
             <div className="min-w-0">
                 <div className="flex items-start gap-3">
@@ -64,7 +81,7 @@ export function PrioritySummary({ readings }: { readonly readings: OverviewReadi
                     className="flex flex-wrap gap-x-5 border-t border-primary-700 @min-[47rem]/overview:col-span-2"
                 >
                     {others.map((item) => (
-                        <li key={item.action}>
+                        <li key={item.title}>
                             <OverviewLink
                                 to={item.to}
                                 hash={item.hash}

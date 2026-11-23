@@ -101,6 +101,22 @@
         background: theme("colors.primary.400");
     }
 
+    :where(
+            button,
+            a[href],
+            summary,
+            [role="button"],
+            [role="option"],
+            [role="menuitem"],
+            [role="switch"]
+        ):not(:disabled):not([aria-disabled="true"]):not([data-disabled]) {
+        cursor: pointer;
+    }
+
+    :where(button:disabled, [aria-disabled="true"], [data-disabled]) {
+        cursor: not-allowed;
+    }
+
     button,
     a {
         -webkit-tap-highlight-color: transparent;

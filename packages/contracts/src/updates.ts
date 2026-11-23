@@ -147,6 +147,22 @@ export const updatePolicySchema = v.strictObject({
     version: v.pipe(v.number(), v.integer(), v.minValue(0)),
     enabled: v.boolean(),
 });
+export const updatePolicyGroupSchema = v.strictObject({
+    host: v.nullable(v.pipe(v.string(), v.regex(/^host:[a-f0-9]{64}$/))),
+    enabled: v.boolean(),
+    expected: v.pipe(
+        v.array(
+            v.strictObject({
+                target: updatePolicySchema.entries.target,
+                version: updatePolicySchema.entries.version,
+                revision: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
+            })
+        ),
+        v.minLength(1),
+        v.maxLength(100)
+    ),
+});
+export type UpdatePolicyGroupInput = v.InferOutput<typeof updatePolicyGroupSchema>;
 export type UpdateChange = "patch" | "minor" | "major" | "unknown";
 export interface UpdateControl {
     readonly target: string;
@@ -156,6 +172,8 @@ export interface UpdateControl {
     readonly reason: string | null;
 }
 export interface UpdatePolicy {
+    readonly host: string;
+    readonly revision: string;
     readonly category?: "software" | "toolchains";
     readonly target: string;
     readonly label: string;

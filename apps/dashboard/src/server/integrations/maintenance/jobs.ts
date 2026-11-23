@@ -23,25 +23,32 @@ const payloadSchema = v.strictObject({
     expected: observationSchema,
 });
 
+export interface MaintenanceReading {
+    value: { configuration: string; observation: MaintenanceObservation | null };
+    capturedAt: string;
+    fresh: boolean;
+}
+
 /**
  * Read one recent successful observation, bound to the current restart authority.
  * @param client - Dashboard database or queue-admission transaction.
  * @param target - Reviewed restart target.
  * @param connections - All scoped update connections needed by the recipe and its peer locks.
+ * @param reading - Optional observation from the fleet read, including an explicit missing result.
  * @returns A safe confirmation plan and private execution evidence, or an unavailable plan.
  */
 export async function maintenancePlan(
     client: SQL | TransactionSQL,
     target: MaintenanceTarget,
-    connections: readonly UpdateTarget[]
+    connections: readonly UpdateTarget[],
+    reading?: MaintenanceReading | null
 ) {
-    const [row] = await client<
-        {
-            value: { configuration: string; observation: MaintenanceObservation | null };
-            capturedAt: string;
-            fresh: boolean;
-        }[]
-    >`SELECT value, captured_at::text AS "capturedAt", captured_at > now() - interval '2 minutes' AS fresh FROM operation_snapshots WHERE key = ${`maintenance:${target.id}`}`;
+    const [row] =
+        reading === undefined
+            ? await client<
+                  MaintenanceReading[]
+              >`SELECT value, captured_at::text AS "capturedAt", captured_at > now() - interval '2 minutes' AS fresh FROM operation_snapshots WHERE key = ${`maintenance:${target.id}`}`
+            : [reading];
     const configuration = maintenanceRevision(target, connections);
     const parsed = v.safeParse(observationSchema, row?.value.observation);
     const observation =
@@ -54,7 +61,7 @@ export async function maintenancePlan(
         )
         .digest("hex");
     const allowed = Boolean(
-        target.workerIndependent &&
+        (target.workerIndependent || target.proxmox) &&
         row?.fresh &&
         observation &&
         (target.kind === "host" ||
@@ -73,8 +80,12 @@ export async function maintenancePlan(
         observation,
         capturedAt: row?.capturedAt ?? null,
         allowed,
-        external: !target.workerIndependent,
-        reason: target.workerIndependent ? unavailableReason : target.externalReason!,
+        proxmox: Boolean(target.proxmox),
+        external: !target.workerIndependent && !target.proxmox,
+        reason:
+            target.workerIndependent || target.proxmox
+                ? unavailableReason
+                : target.externalReason!,
     };
 }
 

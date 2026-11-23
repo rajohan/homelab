@@ -6,6 +6,9 @@ import type { MaintenanceTarget } from "./configuration";
 import program from "./remote.py" with { type: "text" };
 
 export const observationSchema = v.strictObject({
+    serviceEvidence: v.optional(
+        v.nullable(v.picklist(["stopped", "not-installed", "check-failed", "measured"]))
+    ),
     bootId: v.pipe(v.string(), v.uuid()),
     active: v.nullable(v.picklist(["active", "inactive"])),
     invocationId: v.nullable(v.pipe(v.string(), v.regex(/^[a-f0-9]{32}$/))),
