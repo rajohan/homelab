@@ -128,7 +128,24 @@ export function TaskDetail({
             size="wide"
         >
             <div className="space-y-4">
-                <DetailSection icon={ListTodo} title="Task details">
+                <DetailSection
+                    icon={ListTodo}
+                    title="Task details"
+                    actions={
+                        task.labels.length > 0 && (
+                            <ul
+                                aria-label="Task labels"
+                                className="flex max-w-full min-w-0 flex-wrap items-center gap-1.5"
+                            >
+                                {task.labels.map((label) => (
+                                    <li key={label} className="max-w-full min-w-0">
+                                        <Badge>{label}</Badge>
+                                    </li>
+                                ))}
+                            </ul>
+                        )
+                    }
+                >
                     <DetailFacts
                         layout="properties"
                         items={[
@@ -169,14 +186,7 @@ export function TaskDetail({
                             },
                         ]}
                     />
-                    {task.labels.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                            {task.labels.map((label) => (
-                                <Badge key={label}>{label}</Badge>
-                            ))}
-                        </div>
-                    )}
-                    <ActionGroup stretch={false} align="start">
+                    <ActionGroup stretch={false} align="start" className="pt-1">
                         <Button
                             variant="danger"
                             onClick={() => setDeleting(task.version)}

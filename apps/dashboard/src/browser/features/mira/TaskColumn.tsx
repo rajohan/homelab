@@ -7,9 +7,11 @@ import {
     InfiniteScrollTrigger,
     LoadingState,
 } from "@homelab/ui";
+import { CornerDownLeft } from "lucide-react";
 import { Fragment, useLayoutEffect, useRef } from "react";
 
 import { TaskCard } from "./TaskCard";
+import { TaskCardContent } from "./TaskCardContent";
 import { taskDropIndex, taskStates } from "./taskPresentation";
 import type { useTaskColumn } from "./useTaskColumn";
 
@@ -44,7 +46,7 @@ export function TaskColumn({
     });
     const rows = query.data?.pages.flatMap((page) => page.rows) ?? [];
     const scrollRef = useRef<HTMLDivElement>(null);
-    const markerRef = useRef<HTMLOutputElement>(null);
+    const markerRef = useRef<HTMLDivElement>(null);
     const state = taskStates[status];
     const emptyMessage = filtered ? "No matching tasks." : state.empty;
     const targeted = isDropTarget && dragged !== undefined && dragged.status !== status;
@@ -63,29 +65,29 @@ export function TaskColumn({
         else if (gap.bottom > bounds.bottom - 12)
             scroll.scrollTop += gap.bottom - bounds.bottom + 12;
     }, [position]);
-    const marker = position >= 0 && (
-        <output
-            ref={markerRef}
-            className="pointer-events-none relative flex h-2 shrink-0 items-center"
-        >
+    const marker = position >= 0 && dragged && (
+        <div ref={markerRef} className="pointer-events-none shrink-0">
             {beyondPage ? (
-                <span className="sr-only">Finding position in {state.title}</span>
+                <output className="sr-only">Finding position in {state.title}</output>
             ) : (
                 <>
-                    <span
+                    <div
                         aria-hidden="true"
-                        className="size-2 shrink-0 rounded-full bg-accent-300"
-                    />
-                    <span
-                        aria-hidden="true"
-                        className="h-0.5 flex-1 rounded-r-full bg-accent-300"
-                    />
-                    <span className="sr-only">
+                        className="relative overflow-hidden rounded-lg border border-dashed border-accent-400/65 bg-accent-500/5"
+                    >
+                        <div className="invisible">
+                            <TaskCardContent task={dragged} />
+                        </div>
+                        <span className="absolute inset-0 flex items-center justify-center gap-2 text-sm font-medium text-accent-300">
+                            <CornerDownLeft size={16} />#{dragged.number}
+                        </span>
+                    </div>
+                    <output className="sr-only">
                         {state.title}, position {position + 1}
-                    </span>
+                    </output>
                 </>
             )}
-        </output>
+        </div>
     );
     return (
         <Card
@@ -93,7 +95,7 @@ export function TaskColumn({
             aria-label={state.title}
             data-targeted={targeted || moving || undefined}
             aria-busy={moving || undefined}
-            className="group/lane flex min-h-0 min-w-0 flex-col bg-surface-heading p-0 transition-colors duration-150 data-targeted:border-accent-400 data-targeted:bg-accent-950 data-targeted:ring-1 data-targeted:ring-accent-400 motion-reduce:transition-none sm:p-0"
+            className="group/lane flex min-h-0 min-w-0 flex-col bg-surface-heading p-0 transition-colors duration-150 data-targeted:border-accent-400/60 motion-reduce:transition-none sm:p-0"
         >
             <header className="flex min-h-12 shrink-0 items-center justify-between gap-2 border-b border-primary-700 px-3 group-data-targeted/lane:border-accent-400/50">
                 <h2 className="min-w-0 text-base leading-snug font-semibold text-primary-50">

@@ -13,8 +13,8 @@ const layouts = {
         field: "flex min-w-0 flex-wrap items-baseline gap-x-1.5",
     },
     properties: {
-        list: "grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-x-4 gap-y-3 @min-[36rem]/properties:flex @min-[36rem]/properties:flex-wrap @min-[36rem]/properties:gap-x-7",
-        field: "col-span-full grid min-w-0 grid-cols-subgrid items-center @min-[36rem]/properties:flex @min-[36rem]/properties:gap-2",
+        list: "grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-x-4 gap-y-3 @min-[34rem]/properties:grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] @min-[34rem]/properties:items-stretch",
+        field: "col-span-full grid min-w-0 grid-cols-subgrid items-center @min-[34rem]/properties:col-span-1 @min-[34rem]/properties:flex @min-[34rem]/properties:flex-col @min-[34rem]/properties:items-start @min-[34rem]/properties:gap-1.5 @min-[34rem]/properties:not-first:border-s @min-[34rem]/properties:not-first:border-primary-700 @min-[34rem]/properties:not-first:ps-4",
     },
 };
 
@@ -54,7 +54,9 @@ export function DetailFacts({
                     <dd
                         className={cn(
                             "text-sm font-medium wrap-anywhere text-primary-100 tabular-nums",
-                            properties ? "min-w-0" : "mt-0.5"
+                            properties
+                                ? "min-w-0 @min-[34rem]/properties:text-base @min-[34rem]/properties:font-semibold"
+                                : "mt-0.5"
                         )}
                     >
                         {value}
