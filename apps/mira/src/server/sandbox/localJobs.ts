@@ -1,4 +1,5 @@
 import type { MiraDaytonaContent } from "@homelab/contracts/miraDaytona";
+import { activeMaintenanceWindow } from "@homelab/mira/data/maintenanceWindow";
 import type { SQL, TransactionSQL } from "bun";
 import * as v from "valibot";
 
@@ -103,9 +104,7 @@ async function claim(
                 { locked: boolean }[]
             >`SELECT pg_try_advisory_xact_lock(1869440354, 1) AS locked`;
             if (!admission?.locked) return null;
-            const [deployment] = await query<
-                { id: string }[]
-            >`SELECT id FROM release_deployments WHERE finished_at IS NULL LIMIT 1`;
+            const deployment = await activeMaintenanceWindow(query);
             if (deployment) return null;
             try {
                 const [fresh] = await query<

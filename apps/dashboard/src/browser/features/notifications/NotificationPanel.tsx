@@ -6,12 +6,12 @@ import type {
 import {
     ActivityPanel,
     Button,
+    ChoiceBar,
     ConfirmDialog,
     EmptyState,
     ErrorNotice,
     LoadingState,
     Select,
-    SummaryStrip,
     VirtualList,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
@@ -57,36 +57,29 @@ export function NotificationPanel({ onClose }: { readonly onClose: () => void })
         >
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-[min(100%,13rem)] flex-1">
-                    <SummaryStrip
+                    <ChoiceBar
                         label="Notification read state"
-                        items={(
-                            [
-                                {
-                                    state: "all",
-                                    label: "All",
-                                    count:
-                                        latest && latest.unreadCount + latest.readCount,
-                                },
-                                {
-                                    state: "unread",
-                                    label: "Unread",
-                                    count: latest?.unreadCount,
-                                },
-                                {
-                                    state: "read",
-                                    label: "Read",
-                                    count: latest?.readCount,
-                                },
-                            ] as const
-                        ).map((item) => ({
-                            label: item.label,
-                            value: item.count ?? "—",
-                            toggle: {
-                                label: `Show ${item.state} notifications`,
-                                pressed: state === item.state,
-                                onClick: () => setState(item.state),
+                        value={state}
+                        onChange={setState}
+                        options={[
+                            {
+                                value: "all",
+                                label: "All",
+                                count: latest
+                                    ? latest.unreadCount + latest.readCount
+                                    : "—",
                             },
-                        }))}
+                            {
+                                value: "unread",
+                                label: "Unread",
+                                count: latest?.unreadCount ?? "—",
+                            },
+                            {
+                                value: "read",
+                                label: "Read",
+                                count: latest?.readCount ?? "—",
+                            },
+                        ]}
                     />
                 </div>
                 <div className="flex min-w-0 items-center gap-2">

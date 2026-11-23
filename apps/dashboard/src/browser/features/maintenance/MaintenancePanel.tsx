@@ -33,6 +33,20 @@ export function MaintenancePanel() {
         ...queryRefresh("fast"),
         retry: false,
     });
+    const controller = useQuery({
+        queryKey: ["operations", "proxmox-restart"],
+        queryFn: ({ signal }) =>
+            api.maintenance.controllerStatus.query(undefined, { signal }),
+        ...queryRefresh("fast"),
+        retry: false,
+    });
+    const controllerLabels = {
+        waiting: "Waiting for active work to finish",
+        submitted: "Proxmox is verifying the restart",
+        verified: "Recovery verified by Proxmox",
+        refused: "Restart was not started",
+        unverified: "Recovery could not be verified. Inspect the guest before retrying.",
+    };
     const [selected, setSelected] = useState<RestartPlan>();
     const [search, setSearch] = useState("");
     const [requirement, setRequirement] = useState<RequirementFilter>("all");
@@ -66,7 +80,7 @@ export function MaintenancePanel() {
                     options={[
                         { value: "all", label: "All statuses" },
                         { value: "required", label: "Restart required" },
-                        { value: "unknown", label: "Requirement unknown" },
+                        { value: "unknown", label: "No current reading" },
                         { value: "not-required", label: "No restart required" },
                     ]}
                 />
@@ -81,6 +95,13 @@ export function MaintenancePanel() {
                     ]}
                 />
             </div>
+            {controller.data && (
+                <output className="rounded-lg border border-primary-700 bg-surface-card p-3 text-sm">
+                    <strong>{controller.data.label}</strong> ·{" "}
+                    {controllerLabels[controller.data.phase]}
+                </output>
+            )}
+            {controller.isError && <ErrorNotice error={controller.error} />}
             {query.isPending && <LoadingState label="Loading restart status…" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {refresh.isError && <ErrorNotice error={refresh.error} />}

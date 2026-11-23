@@ -19,12 +19,16 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
     Activity,
+    Bot,
+    CalendarDays,
     FileText,
+    Flag,
     ListChecks,
     ListTodo,
     MessageSquare,
     Pencil,
     Trash2,
+    UserRound,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -111,7 +115,7 @@ export function TaskDetail({
         );
     return (
         <Modal
-            title={task.title}
+            title={`#${task.number} ${task.title}`}
             titleAccessory={
                 <>
                     <Badge tone={miraStatusTone(task.status)}>
@@ -124,37 +128,65 @@ export function TaskDetail({
             size="wide"
         >
             <div className="space-y-4">
-                <DetailSection icon={ListTodo} title="Task details">
+                <DetailSection
+                    icon={ListTodo}
+                    title="Task details"
+                    actions={
+                        task.labels.length > 0 && (
+                            <ul
+                                aria-label="Task labels"
+                                className="flex max-w-full min-w-0 flex-wrap items-center gap-1.5"
+                            >
+                                {task.labels.map((label) => (
+                                    <li key={label} className="max-w-full min-w-0">
+                                        <Badge>{label}</Badge>
+                                    </li>
+                                ))}
+                            </ul>
+                        )
+                    }
+                >
                     <DetailFacts
+                        layout="properties"
                         items={[
                             {
                                 label: "Assigned to",
+                                icon: task.assignee === "mira" ? Bot : UserRound,
                                 value: task.assignee === "mira" ? "Mira" : "You",
                             },
                             {
                                 label: "Priority",
-                                value: (
-                                    <Badge tone={taskPriorityTone(task.priority)}>
-                                        {task.priority}
-                                    </Badge>
-                                ),
+                                icon: Flag,
+                                value:
+                                    taskPriorityTone(task.priority) === "neutral" ? (
+                                        <span className="capitalize">
+                                            {task.priority}
+                                        </span>
+                                    ) : (
+                                        <Badge
+                                            tone={taskPriorityTone(task.priority)}
+                                            className="capitalize"
+                                        >
+                                            {task.priority}
+                                        </Badge>
+                                    ),
                             },
                             {
                                 label: "Due date",
-                                value: task.dueAt
-                                    ? formatDateTime(task.dueAt)
-                                    : "No due date",
+                                icon: CalendarDays,
+                                value: task.dueAt ? (
+                                    <time dateTime={task.dueAt}>
+                                        {formatDateTime(task.dueAt)}
+                                    </time>
+                                ) : (
+                                    <span className="font-normal text-primary-400">
+                                        No due date
+                                    </span>
+                                ),
                             },
                         ]}
                     />
-                    {task.labels.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                            {task.labels.map((label) => (
-                                <Badge key={label}>{label}</Badge>
-                            ))}
-                        </div>
-                    )}
-                    <ActionGroup>
+                    <ActionGroup className="pt-1">
                         <Button
                             variant="danger"
                             onClick={() => setDeleting(task.version)}

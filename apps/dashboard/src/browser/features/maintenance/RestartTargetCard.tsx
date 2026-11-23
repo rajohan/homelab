@@ -20,26 +20,40 @@ export function RestartTargetCard({
     readonly onRestart: (plan: RestartPlan) => void;
 }) {
     const required = restartRequirement(plan);
-    let requirement = "Requirement unknown";
+    const evidence = plan.serviceEvidence;
+    let requirement = "Not reported";
+    if (!plan.observed) requirement = "Awaiting fresh status";
+    if (evidence === "check-failed") requirement = "Check failed";
+    if (plan.active === "inactive") requirement = "Service stopped";
     if (required !== null)
         requirement = required ? "Restart required" : "No restart required";
+    const hints = {
+        "not-installed": "This host needs the needrestart package to check services.",
+        "check-failed": "The host could not complete its service restart check.",
+        stopped: undefined,
+        measured: undefined,
+    };
+    const hint = evidence ? hints[evidence] : undefined;
     return (
         <div className="@container/restart rounded-lg border border-primary-700 bg-surface-card p-4">
             <div className="grid gap-3 @min-[40rem]/restart:grid-cols-[minmax(0,1fr)_auto]">
                 <div className="flex flex-wrap items-center gap-2">
                     <h4 className="font-medium">{plan.label}</h4>
                     <Badge
+                        title={hint}
                         className="self-center"
                         tone={required ? "warning" : "neutral"}
                     >
                         {requirement}
                     </Badge>
+                    {plan.proxmox && <Badge tone="info">Via Proxmox</Badge>}
                     {plan.external && (
                         <Badge className="self-center">External restart</Badge>
                     )}
                 </div>
                 <div className="col-span-full space-y-3">
                     <p className="text-sm text-primary-300">{plan.impact}</p>
+                    {hint && <p className="text-xs text-primary-400">{hint}</p>}
                     {plan.reason && plan.reason !== plan.impact && (
                         <p className="text-sm text-primary-400">{plan.reason}</p>
                     )}

@@ -88,7 +88,8 @@ export async function buildWindowsCapture(directory: string): Promise<string> {
     execFileSync(
         path.join(system, "System32/cmd.exe"),
         ["/d", "/c", "capture-build.cmd"],
-        { cwd: directory, windowsHide: true, timeout: 120_000, maxBuffer: 128 * 1024 }
+        // CodeQL traces the Windows SDK headers during this compilation on hosted runners.
+        { cwd: directory, windowsHide: true, timeout: 5 * 60_000, maxBuffer: 128 * 1024 }
     );
     return executable;
 }

@@ -59,13 +59,21 @@ def observe(target):
         raise RuntimeError("Service is not in a stable state")
     required = Path("/var/run/reboot-required").exists()
     service_required = None
-    if target["kind"] == "service" and Path("/usr/sbin/needrestart").is_file():
+    evidence = None
+    if target["kind"] == "service" and active == "inactive":
+        evidence = "stopped"
+    elif target["kind"] == "service" and Path("/usr/sbin/needrestart").is_file():
         try:
             output = run(["/usr/sbin/needrestart", "-b", "-r", "l"])
+            if not re.search(r"(?m)^NEEDRESTART-VER:", output):
+                raise RuntimeError("Service restart report is unavailable")
+            evidence = "measured"
             service_required = target["service"] in re.findall(r"(?m)^NEEDRESTART-SVC:\s*(\S+)\s*$", output)
         except RuntimeError:
-            pass
-    return {"bootId": boot, "active": active, "invocationId": invocation, "rebootRequired": required, "serviceRestartRequired": service_required, "health": False}
+            evidence = "check-failed"
+    elif target["kind"] == "service":
+        evidence = "not-installed"
+    return {"serviceEvidence": evidence, "bootId": boot, "active": active, "invocationId": invocation, "rebootRequired": required, "serviceRestartRequired": service_required, "health": False}
 
 
 def main():

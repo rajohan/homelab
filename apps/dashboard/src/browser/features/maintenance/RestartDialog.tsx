@@ -1,8 +1,9 @@
 import { ConfirmDialog } from "@homelab/ui";
-import { useState } from "react";
+import { useContext, useState } from "react";
 
 import { api } from "../../api/client";
-import { useJobOperation } from "../jobs/useJobOperation";
+import { JobActivityContext } from "../jobs/JobActivityContext";
+import { useOperation } from "../operations/useOperation";
 
 /**
  * Confirm a specific observed restart with shared security verification and job activity.
@@ -19,13 +20,16 @@ export function RestartDialog({
         impact: string;
         kind: "host" | "service";
         revision: string;
+        proxmox?: boolean;
     };
     readonly onClose: () => void;
 }) {
     const [requestId] = useState(() => crypto.randomUUID());
-    const operation = useJobOperation(
+    const reveal = useContext(JobActivityContext);
+    const operation = useOperation(
         (input: { target: string; revision: string; requestId: string }, signal) =>
-            api.maintenance.request.mutate(input, { signal })
+            api.maintenance.request.mutate(input, { signal }),
+        plan.proxmox ? undefined : reveal
     );
     return (
         <ConfirmDialog
@@ -47,7 +51,9 @@ export function RestartDialog({
                 {plan.kind === "host"
                     ? "The entire host will be unavailable until it boots again. Once the restart request is accepted, cancelling the job cannot undo it."
                     : "The selected service will be unavailable briefly. A stopped service will not be started by this action."}{" "}
-                The job verifies recovery before reporting success.
+                {plan.proxmox
+                    ? "Active work drains first. Proxmox checks the guest identity and verifies recovery independently."
+                    : "The job verifies recovery before reporting success."}
             </p>
         </ConfirmDialog>
     );

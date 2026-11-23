@@ -5,21 +5,28 @@ import { cn } from "../../lib/classNames";
 
 /**
  * Explain an empty result or workspace with an optional recovery action.
+ * @param props - A standalone message or a titled state with supporting content.
  * @returns A readable inline message with a decorative icon and labelled content.
  */
-export function EmptyState({
-    icon: Icon,
-    title,
-    description,
-    action,
-    compact = false,
-}: {
-    readonly icon: LucideIcon;
-    readonly title: string;
-    readonly description?: string;
-    readonly action?: ReactNode;
-    readonly compact?: boolean;
-}) {
+export function EmptyState(
+    props:
+        | { readonly message: string }
+        | {
+              readonly icon: LucideIcon;
+              readonly title: string;
+              readonly description?: string;
+              readonly action?: ReactNode;
+              readonly compact?: boolean;
+          }
+) {
+    if ("message" in props) {
+        return (
+            <p className="rounded-lg border border-primary-700 bg-surface-empty p-4 text-sm text-primary-400">
+                {props.message}
+            </p>
+        );
+    }
+    const { icon: Icon, title, description, action, compact = false } = props;
     return (
         <div
             className={cn(

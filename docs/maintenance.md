@@ -56,10 +56,20 @@ A host restart uses `"kind": "host"` and omits `service`; its health command run
 after reconnection. It must explicitly describe all affected services in `impact`.
 `workerIndependent: true` is a deployment attestation, not automatic dependency
 detection. Review the worker host, database, hypervisor, SSH/DNS/secret-delivery and
-other dependencies before granting this flag. Targets that can stop the observing worker or its database must use
-`workerIndependent: false` and a nonempty `externalReason`. They retain read-only
-status in the panel, but register no restart job and cannot accept restart requests. Those require the existing external operator
-procedure; this release does not add self-deployment or a second control plane.
+other dependencies before granting this flag. Targets that can stop the observing worker or its database use
+`workerIndependent: false` with an external procedure. A reviewed optional
+`proxmox` connection and VM ID enable independent execution for that guest.
+The queue drains before PVE checks the approved guest boot and service identity.
+When a release deployment target declares Mira, the worker also waits for Mira to
+acknowledge this specific restart. Without release targets, the worker requires
+that acknowledgement by default. On a worker-only installation, set
+`HOMELAB_DASHBOARD_MIRA_DEPLOYED=false` in the worker environment to declare Mira
+absent. A live executor still has to acknowledge the restart, and active browser
+or local code jobs must finish in either configuration.
+A transient unit on PVE performs one restart and records a receipt in
+`/var/lib/homelab-dashboard/restarts`. Success requires a changed identity and a
+passing health check. Lost acknowledgements are reconciled from that receipt.
+The hypervisor itself uses its external physical-console procedure.
 
 `lockConnections` optionally names additional existing update connections. A restart
 holds their source and host leases along with its own, so maintenance of redundant
@@ -199,3 +209,9 @@ workspace, detach code-server's `40-openclaw-view.conf` and ownership-view mount
 retain its ordinary workspace, settings and independent GitHub credentials.
 Stop and disable the OpenClaw gateway, listener and secret-delivery services only
 after the new Mira runtime and provider connections are qualified.
+
+For measured service restart requirements, install the Debian or Ubuntu
+`needrestart` package on each monitored systemd host. The dashboard invokes
+`needrestart -b -r l` in list-only mode. Set `$nrconf{restart} = 'l';` in a local
+needrestart configuration drop-in when package installations should only report
+affected services. A missing or failed probe has a distinct status.
