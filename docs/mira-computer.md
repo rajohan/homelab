@@ -494,7 +494,7 @@ and extracts it in portable mode into a new caller-owned directory. Compiler
 updates require a reviewed pin change and Windows package build; Inno is
 a build dependency, not an installed Mira runtime dependency.
 
-CI compiles the Windows package and installer for changes to their inputs. The
+CI compiles the Windows package and installer on every pull request. The
 release workflow builds and publishes them without running installation, desktop
 input or acceptance tests. Check affected Windows behavior manually with the
 operator's local consent. The setup asset is unsigned; a manifest hash verifies
