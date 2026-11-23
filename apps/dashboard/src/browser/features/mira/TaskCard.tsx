@@ -11,10 +11,12 @@ import { TaskCardContent } from "./TaskCardContent";
  */
 export function TaskCard({
     task,
+    arrived,
     disabled,
     onSelect,
 }: {
     readonly task: MiraTask;
+    readonly arrived: boolean;
     readonly disabled: boolean;
     readonly onSelect: (task: MiraTask) => void;
 }) {
@@ -27,12 +29,14 @@ export function TaskCard({
     return (
         <article
             ref={ref}
-            className={`relative rounded-xl border border-primary-700 bg-surface-card shadow-sm transition-colors hover:border-primary-500 ${isDragging ? "opacity-35" : "focus-within:border-accent-400"}`}
+            data-dragging={isDragging || undefined}
+            data-arrived={arrived || undefined}
+            className="motion-safe:data-arrived:animate-task-arrive relative shrink-0 rounded-lg border border-primary-700 bg-primary-800 shadow-sm shadow-black/25 transition-colors duration-150 focus-within:border-accent-400 hover:border-primary-500 data-dragging:border-dashed data-dragging:border-primary-500 data-dragging:bg-transparent data-dragging:shadow-none motion-reduce:transition-none data-dragging:[&>button]:opacity-35"
         >
             <button
                 type="button"
                 onClick={() => onSelect(task)}
-                className="block w-full rounded-xl p-4 text-left focus-visible:outline-2 focus-visible:outline-accent-400"
+                className="block w-full cursor-pointer rounded-lg text-left focus-visible:outline-2 focus-visible:outline-accent-400"
                 aria-label={`Open task: ${task.title}`}
             >
                 <TaskCardContent task={task} />
@@ -42,7 +46,7 @@ export function TaskCard({
                 icon={GripVertical}
                 label={`Move task: ${task.title}`}
                 disabled={disabled}
-                className={`absolute top-1 right-1 cursor-grab touch-none hover:bg-transparent active:cursor-grabbing active:bg-transparent ${isDragging ? "focus-visible:ring-0 focus-visible:ring-offset-0" : ""}`}
+                className="absolute top-0.5 right-0.5 cursor-grab touch-none text-primary-400 hover:bg-primary-700 hover:text-primary-100 active:cursor-grabbing"
             />
         </article>
     );

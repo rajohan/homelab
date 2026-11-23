@@ -7,14 +7,30 @@ import { Circle, CircleAlert, CircleCheck, CircleDot } from "lucide-react";
 import * as v from "valibot";
 
 export const taskStates = {
-    todo: { title: "To do", empty: "Nothing queued.", icon: Circle },
+    todo: {
+        title: "To do",
+        empty: "Nothing queued.",
+        icon: Circle,
+        iconClass: "[&>svg]:text-primary-400",
+    },
     in_progress: {
         title: "In progress",
         empty: "No tasks in progress.",
         icon: CircleDot,
+        iconClass: "[&>svg]:text-accent-300",
     },
-    blocked: { title: "Blocked", empty: "No blocked tasks.", icon: CircleAlert },
-    done: { title: "Done", empty: "No completed tasks.", icon: CircleCheck },
+    blocked: {
+        title: "Blocked",
+        empty: "No blocked tasks.",
+        icon: CircleAlert,
+        iconClass: "[&>svg]:text-amber-300",
+    },
+    done: {
+        title: "Done",
+        empty: "No completed tasks.",
+        icon: CircleCheck,
+        iconClass: "[&>svg]:text-emerald-300",
+    },
 };
 export const taskDragSchema = v.object({
     ...miraTaskUpdateSchema.entries,

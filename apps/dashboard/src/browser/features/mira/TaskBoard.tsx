@@ -34,6 +34,7 @@ export function TaskBoard({
     readonly onSelect: (task: MiraTask) => void;
 }) {
     const [dragged, setDragged] = useState<MiraTask>();
+    const [arrival, setArrival] = useState<Pick<MiraTask, "id" | "status">>();
     const move = useOperation((input: NonNullable<ReturnType<typeof taskMoveForDrop>>) =>
         api.mira.tasks.update.mutate(input)
     );
@@ -43,6 +44,7 @@ export function TaskBoard({
             <DragDropProvider
                 sensors={sensors}
                 onDragStart={({ operation }) => {
+                    setArrival(undefined);
                     const parsed = v.safeParse(
                         taskDragSchema,
                         operation.source?.data.task
@@ -52,16 +54,30 @@ export function TaskBoard({
                 onDragEnd={({ canceled, operation }) => {
                     if (!canceled && !move.isPending) {
                         const input = taskMoveForDrop(dragged, operation.target?.id);
-                        if (input) move.mutate(input);
+                        if (input)
+                            move.mutate(input, {
+                                onSuccess: () =>
+                                    setArrival({ id: input.id, status: input.status }),
+                            });
                     }
                     setDragged(undefined);
                 }}
             >
-                <div className="grid min-w-0 gap-4 @min-[34rem]/task-board:grid-cols-2 @min-[60rem]/task-board:grid-cols-4">
+                <div
+                    className="grid min-w-0 gap-3 @min-[34rem]/task-board:grid-cols-2 @min-[55rem]/task-board:grid-cols-4"
+                    onAnimationEnd={(event) => {
+                        if (event.animationName === "task-arrive") setArrival(undefined);
+                    }}
+                >
                     {miraTaskStates.map((status) => (
                         <TaskColumn
                             key={status}
                             status={status}
+                            draggedFrom={dragged?.status}
+                            arrivedId={
+                                arrival?.status === status ? arrival.id : undefined
+                            }
+                            moving={move.isPending && move.variables?.status === status}
                             query={columns[status]}
                             filtered={Boolean(search) || assignee !== "all"}
                             onSelect={onSelect}
@@ -69,10 +85,13 @@ export function TaskBoard({
                         />
                     ))}
                 </div>
-                <DragOverlay>
+                <DragOverlay dropAnimation={null}>
                     {dragged && (
-                        <div className="w-72 rounded-xl border border-accent-400 bg-primary-800 p-4 shadow-xl shadow-black/40">
-                            <TaskCardContent task={dragged} />
+                        <div
+                            aria-hidden="true"
+                            className="relative w-full cursor-grabbing rounded-lg border border-accent-400 bg-primary-800 shadow-xl shadow-black/45 motion-safe:rotate-1"
+                        >
+                            <TaskCardContent task={dragged} preview />
                         </div>
                     )}
                 </DragOverlay>

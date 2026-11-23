@@ -1,6 +1,13 @@
 import { useDroppable } from "@dnd-kit/react";
 import type { MiraTask } from "@homelab/contracts/mira";
-import { Badge, InfiniteScrollTrigger, LoadingState, SectionPanel } from "@homelab/ui";
+import {
+    Badge,
+    Card,
+    HeadingLabel,
+    InfiniteScrollTrigger,
+    LoadingState,
+} from "@homelab/ui";
+import { CornerDownLeft } from "lucide-react";
 
 import { TaskCard } from "./TaskCard";
 import { taskStates } from "./taskPresentation";
@@ -12,6 +19,9 @@ import type { useTaskColumn } from "./useTaskColumn";
  */
 export function TaskColumn({
     status,
+    draggedFrom,
+    arrivedId,
+    moving,
     query,
     filtered,
     onSelect,
@@ -20,6 +30,9 @@ export function TaskColumn({
     readonly disabled: boolean;
     readonly query: ReturnType<typeof useTaskColumn>;
     readonly status: MiraTask["status"];
+    readonly draggedFrom: MiraTask["status"] | undefined;
+    readonly arrivedId: string | undefined;
+    readonly moving: boolean;
     readonly filtered: boolean;
     readonly onSelect: (task: MiraTask) => void;
 }) {
@@ -30,33 +43,49 @@ export function TaskColumn({
         disabled,
     });
     const rows = query.data?.pages.flatMap((page) => page.rows) ?? [];
+    const state = taskStates[status];
+    const emptyMessage = filtered ? "No matching tasks." : state.empty;
+    const targeted = isDropTarget && draggedFrom !== undefined && draggedFrom !== status;
     return (
-        <SectionPanel
-            title={taskStates[status].title}
-            icon={taskStates[status].icon}
-            badge={
-                <Badge>
-                    {rows.length}
-                    {query.hasNextPage ? "+" : ""}
-                </Badge>
-            }
+        <Card
+            ref={ref}
+            aria-label={state.title}
+            data-targeted={targeted || moving || undefined}
+            aria-busy={moving || undefined}
+            className="group/lane flex min-w-0 flex-col bg-surface-heading p-0 transition-colors duration-150 data-targeted:border-accent-400 data-targeted:bg-accent-950 data-targeted:ring-1 data-targeted:ring-accent-400 motion-reduce:transition-none sm:p-0"
         >
-            <div
-                ref={ref}
-                className={`min-h-20 flex-1 space-y-2 rounded-lg transition-colors md:max-h-[calc(100dvh-19rem)] md:overflow-y-auto md:overscroll-contain md:pe-3 @min-[34rem]/task-board:min-h-44 @min-[64rem]/task-board:min-h-64 ${isDropTarget ? "bg-accent-900/30 ring-2 ring-accent-400 ring-inset" : ""}`}
-            >
+            <header className="flex min-h-12 items-center justify-between gap-2 border-b border-primary-700 px-3 group-data-targeted/lane:border-accent-400/50">
+                <h2 className="min-w-0 text-base leading-snug font-semibold text-primary-50">
+                    <HeadingLabel icon={state.icon} size={16} className={state.iconClass}>
+                        {state.title}
+                    </HeadingLabel>
+                </h2>
+                {moving || (targeted && rows.length > 0) ? (
+                    <Badge tone="info" className="shrink-0 items-center gap-1">
+                        <CornerDownLeft aria-hidden="true" size={12} />{" "}
+                        {moving ? "Moving…" : "Move here"}
+                    </Badge>
+                ) : (
+                    <Badge className="shrink-0 tabular-nums">
+                        {rows.length}
+                        {query.hasNextPage ? "+" : ""}
+                    </Badge>
+                )}
+            </header>
+            <div className="flex min-h-20 flex-1 flex-col gap-2.5 p-2.5 md:max-h-[max(12rem,calc(100dvh-18rem))] md:overflow-y-auto md:overscroll-contain @min-[34rem]/task-board:min-h-32">
                 {query.isPending && <LoadingState label="Loading tasks…" />}
                 {rows.map((task) => (
                     <TaskCard
                         key={task.id}
                         task={task}
+                        arrived={task.id === arrivedId}
                         disabled={disabled}
                         onSelect={onSelect}
                     />
                 ))}
                 {!query.isPending && !query.isError && rows.length === 0 && (
-                    <p className="py-2 text-sm text-primary-400">
-                        {filtered ? "No matching tasks." : taskStates[status].empty}
+                    <p className="grid min-h-16 flex-1 place-items-center rounded-lg border border-dashed border-primary-700 px-3 py-4 text-center text-sm text-primary-400 group-data-targeted/lane:border-accent-400 group-data-targeted/lane:text-accent-200">
+                        {targeted ? "Move here" : emptyMessage}
                     </p>
                 )}
                 <InfiniteScrollTrigger
@@ -72,6 +101,6 @@ export function TaskColumn({
                     }
                 />
             </div>
-        </SectionPanel>
+        </Card>
     );
 }
