@@ -44,6 +44,15 @@ export function TaskCardContent({ task }: { readonly task: MiraTask }) {
                     </span>
                 )}
             </div>
+            {task.dueAt && (
+                <time
+                    dateTime={task.dueAt}
+                    className="flex items-center gap-1.5 text-xs text-primary-300"
+                >
+                    <CalendarDays size={14} aria-hidden="true" className="shrink-0" />
+                    Due {formatDateTime(task.dueAt)}
+                </time>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-primary-700/60 pt-3 text-xs text-primary-400">
                 <span className="inline-flex items-center gap-1.5">
                     <AssigneeIcon size={14} aria-hidden="true" />
@@ -59,12 +68,6 @@ export function TaskCardContent({ task }: { readonly task: MiraTask }) {
                     }).format(new Date(timestamp))}
                 </time>
             </div>
-            {task.dueAt && (
-                <span className="flex items-center gap-1.5 text-xs text-primary-300">
-                    <CalendarDays size={14} aria-hidden="true" />
-                    Due {formatDateTime(task.dueAt)}
-                </span>
-            )}
         </div>
     );
 }
