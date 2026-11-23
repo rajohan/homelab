@@ -136,6 +136,7 @@ export const miraTasks = pgTable(
     {
         id: uuid().primaryKey(),
         owner: text().notNull(),
+        preparationKey: uuid("preparation_key"),
         number: integer("task_number").notNull(),
         title: text().notNull(),
         description: text().notNull(),
@@ -158,6 +159,9 @@ export const miraTasks = pgTable(
     (t) => [
         index("mira_tasks_owner").on(t.owner, t.id),
         uniqueIndex("mira_tasks_owner_number").on(t.owner, t.number),
+        uniqueIndex("mira_tasks_active_preparation")
+            .on(t.owner, t.preparationKey)
+            .where(sql`${t.preparationKey} is not null and ${t.deletedAt} is null`),
         index("mira_tasks_conversation")
             .on(t.owner, t.conversationId, t.id)
             .where(sql`${t.deletedAt} is null`),

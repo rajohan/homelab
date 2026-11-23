@@ -105,12 +105,14 @@ export function EventTimeline({
                             className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs leading-relaxed wrap-anywhere text-primary-400 ${feed ? "pb-1" : "mt-0.5 empty:hidden"}`}
                         >
                             {feed && (
-                                <time
-                                    dateTime={event.time}
-                                    className="shrink-0 tabular-nums"
-                                >
-                                    {time}
-                                </time>
+                                <span className="inline-flex shrink-0 items-baseline gap-2">
+                                    <time dateTime={event.time} className="tabular-nums">
+                                        {time}
+                                    </time>
+                                    {(event.label || event.detail) && (
+                                        <span aria-hidden="true">·</span>
+                                    )}
+                                </span>
                             )}
                             {event.label && (
                                 <span className={marker.color}>{event.label}</span>

@@ -42,13 +42,15 @@ internal class MiraWindow : Form
     private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("dwmapi.dll")]
     private static extern int DwmExtendFrameIntoClientArea(IntPtr window, ref Margins margins);
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
 
     internal MiraWindow()
     {
         AutoScaleMode = AutoScaleMode.Dpi;
         FormBorderStyle = FormBorderStyle.None;
         Font = new Font("Segoe UI", 10);
-        BackColor = Canvas; ForeColor = TextColor;
+        BackColor = Heading; ForeColor = TextColor;
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         caption = new CaptionPanel(this) { Dock = DockStyle.Top, Height = 34, BackColor = Heading };
         minimize = new CaptionButton(this, 8, "Minimize");
@@ -56,6 +58,7 @@ internal class MiraWindow : Form
         close = new CaptionButton(this, 20, "Close");
         caption.Controls.Add(minimize); caption.Controls.Add(maximize); caption.Controls.Add(close);
         Content.Dock = DockStyle.Fill;
+        Content.BackColor = Canvas;
         Controls.Add(Content); Controls.Add(caption);
         TextChanged += delegate { caption.Invalidate(); };
         caption.SizeChanged += delegate { LayoutCaption(); };
@@ -81,7 +84,7 @@ internal class MiraWindow : Form
     {
         if (caption == null) return;
         int edge = WindowState == FormWindowState.Maximized ? 0 : ScalePixels(6);
-        Padding = new Padding(edge, 0, edge, edge);
+        Padding = new Padding(edge, edge == 0 ? 0 : 1, edge, edge);
         caption.Height = ScalePixels(34);
         int width = ScalePixels(44), right = caption.ClientSize.Width;
         close.SetBounds(right - width, 0, width, caption.Height);
@@ -102,7 +105,32 @@ internal class MiraWindow : Form
         SetWindowPos(Handle, IntPtr.Zero, 0, 0, 0, 0, 0x37);
         var margins = new Margins { Left = 1, Right = 1, Top = 1, Bottom = 1 };
         DwmExtendFrameIntoClientArea(Handle, ref margins);
+        ApplyFrameColor();
         LayoutCaption();
+    }
+
+    private void ApplyFrameColor()
+    {
+        // DWMWA_BORDER_COLOR colors the OS-owned outermost pixel on Windows 11.
+        // Older compositors still get the client-painted outline and resize gutter.
+        const int DwmBorderColor = 34;
+        int color = SystemInformation.HighContrast ? -1 : ColorTranslator.ToWin32(Border);
+        DwmSetWindowAttribute(Handle, DwmBorderColor, ref color, sizeof(int));
+    }
+
+    protected override void OnSystemColorsChanged(EventArgs args)
+    {
+        base.OnSystemColorsChanged(args);
+        if (IsHandleCreated) ApplyFrameColor();
+        Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs args)
+    {
+        base.OnPaint(args);
+        if (WindowState != FormWindowState.Normal || ClientSize.Width < 2 || ClientSize.Height < 2) return;
+        using (var pen = new Pen(SystemInformation.HighContrast ? SystemColors.WindowFrame : Border))
+            args.Graphics.DrawRectangle(pen, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
     }
 
     protected override void OnDpiChanged(DpiChangedEventArgs args)

@@ -701,7 +701,7 @@ export const miraRouter = trpc.router({
                             ])
                         )
                         .digest("hex");
-                    const creationId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-8${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+                    const preparationKey = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-8${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
                     return saveTask(
                         mira,
                         {
@@ -717,7 +717,7 @@ export const miraRouter = trpc.router({
                             conversationId: null,
                             dueAt: null,
                         },
-                        creationId
+                        preparationKey
                     );
                 })
             ),

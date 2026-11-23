@@ -117,35 +117,38 @@ export async function listBoardTasks(
  * Create or update a task under optimistic concurrency and an attributed audit.
  * @param context - Authenticated product context.
  * @param input - Validated task fields and optional expected version.
- * @param creationId - Optional server-derived ID for repeatable dependency preparation.
+ * @param preparationKey - Stable key for the selected repository and dependency versions.
  * @returns The affected task ID.
  */
 export async function saveTask(
     context: MiraContext,
     input: MiraTaskInput & { id?: string; version?: number },
-    creationId?: string
+    preparationKey?: string
 ) {
     return miraTransaction(context, async (query) => {
-        const id = input.id ?? creationId ?? Bun.randomUUIDv7();
-        // Proposal approval may already hold the conversation row: never wait in the opposite order.
-        const [lock] = await query<
-            { acquired: boolean }[]
-        >`SELECT pg_try_advisory_xact_lock(hashtextextended(${`mira:task:${context.owner}:${id}`},0)) AS acquired`;
-        if (!lock?.acquired)
-            throw new MiraFailure(
-                "CONFLICT",
-                "Task admission is busy. Retry after the current task action finishes."
-            );
-        if (creationId) {
+        let id = input.id ?? preparationKey ?? Bun.randomUUIDv7();
+        const lockKey = `mira:task:${context.owner}:${id}`;
+        if (preparationKey) {
+            // Prepare is an operator entry point. Serialize repeated clicks on the selection.
+            await query`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey},0))`;
             const [existing] = await query<
-                { deleted: boolean }[]
-            >`SELECT deleted_at IS NOT NULL AS deleted FROM mira_tasks WHERE id=${creationId} AND owner=${context.owner}`;
-            if (existing?.deleted)
+                { id: string; deleted: boolean }[]
+            >`SELECT id, deleted_at IS NOT NULL AS deleted FROM mira_tasks
+              WHERE owner=${context.owner} AND (id=${preparationKey} OR (preparation_key=${preparationKey} AND deleted_at IS NULL))
+              ORDER BY deleted_at NULLS FIRST LIMIT 1`;
+            if (existing && !existing.deleted) return { id: existing.id };
+            // Original tasks used the selection key as their ID. Keep that tombstone and its run history.
+            if (existing) id = Bun.randomUUIDv7();
+        } else {
+            // Proposal approval may already hold the conversation row: never wait in the opposite order.
+            const [lock] = await query<
+                { acquired: boolean }[]
+            >`SELECT pg_try_advisory_xact_lock(hashtextextended(${lockKey},0)) AS acquired`;
+            if (!lock?.acquired)
                 throw new MiraFailure(
                     "CONFLICT",
-                    "The preparation task for this update was deleted."
+                    "Task admission is busy. Retry after the current task action finishes."
                 );
-            if (existing) return { id: creationId };
         }
         if (input.conversationId) {
             // Serialize linking with chat admission before changing the task or adopting runs.
@@ -243,7 +246,7 @@ export async function saveTask(
                     "The task changed. Refresh before saving."
                 );
         } else {
-            await query`INSERT INTO mira_tasks (id, owner, title, description, status, assignee, priority, labels, due_at, completion_criteria, conversation_id, auto_start) VALUES (${id}, ${context.owner}, ${input.title}, ${input.description}, ${input.status}, ${input.assignee}, ${input.priority}, ${JSON.stringify(input.labels)}::text::jsonb, ${due}, ${input.completionCriteria}, ${input.conversationId}, ${autoStart})`;
+            await query`INSERT INTO mira_tasks (id, owner, preparation_key, title, description, status, assignee, priority, labels, due_at, completion_criteria, conversation_id, auto_start) VALUES (${id}, ${context.owner}, ${preparationKey ?? null}, ${input.title}, ${input.description}, ${input.status}, ${input.assignee}, ${input.priority}, ${JSON.stringify(input.labels)}::text::jsonb, ${due}, ${input.completionCriteria}, ${input.conversationId}, ${autoStart})`;
         }
         if (input.conversationId)
             await query`UPDATE mira_runs SET task_id=${id} WHERE owner=${context.owner} AND conversation_id=${input.conversationId} AND task_id IS NULL`;

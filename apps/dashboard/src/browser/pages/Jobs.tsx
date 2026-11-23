@@ -33,8 +33,8 @@ export function Jobs() {
                     { id: "schedules", label: "Schedules", content: <SchedulesPanel /> },
                     { id: "history", label: "Job history", content: <JobHistory /> },
                     { id: "mira-runs", label: "Mira runs", content: <MiraRunHistory /> },
-                    { id: "daytona", label: "Daytona", content: <DaytonaJobs /> },
-                    { id: "code", label: "Code library", content: <CodeLibrary /> },
+                    { id: "daytona", label: "Code jobs", content: <DaytonaJobs /> },
+                    { id: "code", label: "Code changes", content: <CodeLibrary /> },
                 ]}
             />
         </div>

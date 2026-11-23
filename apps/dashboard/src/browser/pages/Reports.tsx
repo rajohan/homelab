@@ -8,6 +8,7 @@ import {
     FilterBar,
     InfiniteScrollTrigger,
     LoadingState,
+    MarkdownText,
     PageHeader,
     SearchInput,
     SectionPanel,
@@ -197,10 +198,9 @@ export function Reports() {
                             ),
                             detail: (
                                 <>
-                                    {" "}
-                                    <p className="mt-1 line-clamp-3 max-w-prose text-sm leading-6 wrap-anywhere text-primary-300">
-                                        {report.markdown.slice(0, 360)}
-                                    </p>
+                                    <div className="mt-1 line-clamp-3 max-w-prose text-sm leading-6 wrap-anywhere text-primary-300">
+                                        <MarkdownText>{report.markdown}</MarkdownText>
+                                    </div>
                                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-primary-400">
                                         <span className="capitalize">{report.kind}</span>
                                         <span aria-hidden="true">·</span>

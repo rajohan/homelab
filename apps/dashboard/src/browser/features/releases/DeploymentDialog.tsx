@@ -113,7 +113,11 @@ export function DeploymentDialog({
             )}
             {publication?.buildUrl && (
                 <a
-                    className={buttonStyles({ variant: "secondary", size: "sm" })}
+                    className={buttonStyles({
+                        variant: "secondary",
+                        size: "sm",
+                        fullWidth: true,
+                    })}
                     href={publication.buildUrl}
                     target="_blank"
                     rel="noreferrer"
