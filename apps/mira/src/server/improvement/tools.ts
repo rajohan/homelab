@@ -1,3 +1,4 @@
+import { miraDefaultCodeTarget } from "@homelab/contracts/mira";
 import { miraImprovementPolicy } from "@homelab/contracts/miraImprovement";
 import type { SQL } from "bun";
 import * as v from "valibot";
@@ -146,7 +147,10 @@ export function createImprovementTools(
                         daytona: number;
                         github: number;
                     }[]
-                >`SELECT s.version AS automation,coalesce(u.version,1) AS autonomy,d.version AS daytona,g.version AS github FROM mira_switches s JOIN mira_switches d ON d.owner=s.owner AND d.key=${controlKey} AND d.enabled JOIN mira_switches g ON g.owner=s.owner AND g.key='integration:github' AND g.enabled LEFT JOIN mira_switches u ON u.owner=s.owner AND u.key='autonomy' WHERE s.owner=${run.owner} AND s.key='automation:'||${run.automationId}::text AND s.enabled AND coalesce(u.enabled,true) AND EXISTS(SELECT 1 FROM mira_runs r JOIN mira_improvement_grants p ON p.automation_id=r.automation_id AND p.owner=r.owner WHERE r.id=${run.id} AND r.owner=${run.owner} AND r.automation_id=${run.automationId} AND r.automation_kind='improvement' AND r.created_at>=p.updated_at AND coalesce(r.settings->>'executionTarget','daytona')=${target} AND EXISTS(SELECT 1 FROM mira_automations a WHERE a.id=r.automation_id AND a.owner=r.owner AND coalesce(a.settings->>'executionTarget','daytona')=${target}))`;
+                >`SELECT s.version AS automation,coalesce(u.version,1) AS autonomy,d.version AS daytona,g.version AS github FROM mira_switches s JOIN mira_switches d ON d.owner=s.owner AND d.key=${controlKey} AND d.enabled JOIN mira_switches g ON g.owner=s.owner AND g.key='integration:github' AND g.enabled LEFT JOIN mira_switches u ON u.owner=s.owner AND u.key='autonomy' WHERE s.owner=${run.owner} AND s.key='automation:'||${run.automationId}::text AND s.enabled AND coalesce(u.enabled,true) AND EXISTS(SELECT 1 FROM mira_runs r JOIN mira_improvement_grants p ON p.automation_id=r.automation_id AND p.owner=r.owner WHERE r.id=${run.id} AND r.owner=${run.owner} AND r.automation_id=${run.automationId} AND r.automation_kind='improvement' AND r.created_at>=p.updated_at
+                      AND coalesce(r.settings->>'executionTarget','daytona')=${target}
+                      AND EXISTS(SELECT 1 FROM mira_automations a WHERE a.id=r.automation_id AND a.owner=r.owner
+                          AND coalesce(a.settings->>'executionTarget',${miraDefaultCodeTarget}::text)=${target}))`;
                 if (!grant.enabled || !grant.current || !grant.available || !controls)
                     throw new MiraFailure(
                         "FORBIDDEN",
