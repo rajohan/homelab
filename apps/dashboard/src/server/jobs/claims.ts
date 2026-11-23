@@ -1,3 +1,4 @@
+import { activeMaintenanceWindow } from "@homelab/mira/data/maintenanceWindow";
 import type { SQL } from "bun";
 
 import type { Transaction } from "../database/connection";
@@ -80,8 +81,7 @@ export async function claimJob(
             { paused: boolean }[]
         >`SELECT paused FROM worker_control WHERE id = 1`;
         if (control?.paused) return;
-        const [deployment] = await transaction<{ id: string }[]>`
-            SELECT id FROM release_deployments WHERE finished_at IS NULL LIMIT 1`;
+        const deployment = await activeMaintenanceWindow(transaction);
         if (deployment) return;
         const candidates = await transaction<
             ClaimedJob[]

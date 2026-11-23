@@ -1,3 +1,4 @@
+import { activeMaintenanceWindow } from "@homelab/mira/data/maintenanceWindow";
 import type { TransactionSQL } from "bun";
 
 import { auditOperation } from "../../operations/audit";
@@ -21,9 +22,7 @@ export async function admitDeployment(
         automatic?: { version: number; windowEndsAt: number };
     }
 ): Promise<{ id: string }> {
-    const [active] = await query<
-        { id: string }[]
-    >`SELECT id FROM release_deployments WHERE finished_at IS NULL`;
+    const active = await activeMaintenanceWindow(query);
     if (active)
         throw new OperationFailure(
             "CONFLICT",

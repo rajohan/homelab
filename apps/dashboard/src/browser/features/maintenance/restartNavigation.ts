@@ -15,7 +15,7 @@ export interface RestartGroup {
  * @returns Known restart need, or null when this plan cannot establish it.
  */
 export function restartRequirement(plan: RestartPlan): boolean | null {
-    return plan.allowed || plan.external ? plan.required : null;
+    return plan.required;
 }
 
 /**

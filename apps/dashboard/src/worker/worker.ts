@@ -6,6 +6,7 @@ import {
     workerHealthBinding,
 } from "../server/config/environment";
 import { assertDashboardSchema } from "../server/database/migrations";
+import { coordinateProxmoxRestart } from "../server/integrations/maintenance/proxmox";
 import { coordinateDeployment } from "../server/integrations/releases/deploymentCoordinator";
 import { createOperationsRuntime } from "../server/operations/runtime";
 import { createWorkerState, startWorkerHealth } from "./health";
@@ -46,8 +47,15 @@ export async function main(): Promise<void> {
                         signal: controller.signal,
                         version: information.version,
                         state,
-                        deployment: (id, signal) =>
-                            coordinateDeployment({
+                        deployment: async (id, signal) => {
+                            await coordinateProxmoxRestart(
+                                runtime.client,
+                                configuration.maintenanceTargets ?? [],
+                                configuration.updateTargets ?? [],
+                                configuration.requireMiraDrain,
+                                signal
+                            );
+                            await coordinateDeployment({
                                 client: runtime.client,
                                 controller: id,
                                 signal,
@@ -55,7 +63,8 @@ export async function main(): Promise<void> {
                                 connections: configuration.updateTargets ?? [],
                                 repository: configuration.releaseRepository,
                                 token: configuration.githubToken,
-                            }),
+                            });
+                        },
                     }),
                 catch: () => new Error("Dashboard worker stopped unexpectedly"),
             })

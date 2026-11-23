@@ -16,6 +16,7 @@
             "/dev/null",
             "http://10.77.20.2:3110/health/ready"
         ],
+        "proxmox": { "connection": "pve-apt", "vmid": 101 },
         "workerIndependent": false,
         "externalReason": "Restart from Proxmox or an independent SSH session after draining the worker. This host runs the dashboard and its worker."
     },
@@ -36,6 +37,7 @@
         "impact": "PostgreSQL, connection pooling and pgAdmin will be unavailable. Applications using the database, including Auth and dashboard jobs, will be interrupted.",
         "kind": "host",
         "health": ["/usr/bin/pg_isready", "-h", "127.0.0.1", "-p", "5432"],
+        "proxmox": { "connection": "pve-apt", "vmid": 106 },
         "workerIndependent": false,
         "externalReason": "Pause dashboard jobs and restart from an independent SSH session. The worker cannot retain job ownership while its database is offline."
     },
@@ -1100,7 +1102,7 @@
         "id": "main-worker",
         "connection": "main-apt",
         "label": "Dashboard worker",
-        "impact": "Pause and drain jobs, then restart through an independent SSH session. The worker cannot verify its own restart.",
+        "impact": "The dashboard worker will be unavailable until its health check passes.",
         "kind": "service",
         "health": [
             "/usr/bin/curl",
@@ -1113,6 +1115,7 @@
             "/dev/null",
             "http://10.77.20.2:3112/health/ready"
         ],
+        "proxmox": { "connection": "pve-apt", "vmid": 101 },
         "workerIndependent": false,
         "service": "homelab-dashboard-worker.service",
         "externalReason": "Pause and drain jobs, then restart through an independent SSH session. The worker cannot verify its own restart."
@@ -1121,7 +1124,7 @@
         "id": "main-docker",
         "connection": "main-apt",
         "label": "Main Docker engine",
-        "impact": "Use independent host maintenance after draining jobs. Restarting Docker can stop the dashboard and worker.",
+        "impact": "Applications using Docker on Main may briefly lose their runtime.",
         "kind": "service",
         "health": [
             "/usr/bin/curl",
@@ -1134,6 +1137,7 @@
             "/dev/null",
             "http://10.77.20.2:3110/health/ready"
         ],
+        "proxmox": { "connection": "pve-apt", "vmid": 101 },
         "workerIndependent": false,
         "service": "docker.service",
         "externalReason": "Use independent host maintenance after draining jobs. Restarting Docker can stop the dashboard and worker."
@@ -1142,7 +1146,7 @@
         "id": "main-containerd",
         "connection": "main-apt",
         "label": "Main container runtime",
-        "impact": "Use independent host maintenance after draining jobs. The worker depends on this container runtime.",
+        "impact": "Containers on Main may briefly lose their runtime.",
         "kind": "service",
         "health": [
             "/usr/bin/curl",
@@ -1155,6 +1159,7 @@
             "/dev/null",
             "http://10.77.20.2:3110/health/ready"
         ],
+        "proxmox": { "connection": "pve-apt", "vmid": 101 },
         "workerIndependent": false,
         "service": "containerd.service",
         "externalReason": "Use independent host maintenance after draining jobs. The worker depends on this container runtime."
@@ -1163,9 +1168,10 @@
         "id": "db-postgresql",
         "connection": "db-apt",
         "label": "PostgreSQL",
-        "impact": "Pause jobs and restart from an independent session. Dashboard and Auth depend on this database.",
+        "impact": "Database connections for the dashboard, Auth and other applications will be interrupted.",
         "kind": "service",
         "health": ["/usr/bin/pg_isready", "-h", "127.0.0.1", "-p", "5432"],
+        "proxmox": { "connection": "pve-apt", "vmid": 106 },
         "workerIndependent": false,
         "service": "postgresql@18-main.service",
         "externalReason": "Pause jobs and restart from an independent session. Dashboard and Auth depend on this database."
@@ -1174,9 +1180,10 @@
         "id": "db-pgbouncer",
         "connection": "db-apt",
         "label": "Database connection pool",
-        "impact": "Pause jobs and restart from an independent session. Losing this connection pool prevents reliable job verification.",
+        "impact": "Clients using the database connection pool will briefly disconnect.",
         "kind": "service",
         "health": ["/usr/bin/pg_isready", "-h", "127.0.0.1", "-p", "5432"],
+        "proxmox": { "connection": "pve-apt", "vmid": 106 },
         "workerIndependent": false,
         "service": "homelab-pgbouncer.service",
         "externalReason": "Pause jobs and restart from an independent session. Losing this connection pool prevents reliable job verification."

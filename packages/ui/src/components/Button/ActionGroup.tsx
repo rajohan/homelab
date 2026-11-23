@@ -11,18 +11,23 @@ import { actionGroupContainer, actionGroupStyles } from "./actionGroupStyles";
 export function ActionGroup({
     children,
     className,
+    align = "end",
     stretch = true,
     stacked = false,
 }: {
     readonly children: ReactNode;
     readonly className?: string;
+    readonly align?: "start" | "end";
     readonly stretch?: boolean;
     readonly stacked?: boolean;
 }) {
     if (Children.toArray(children).length === 0) return null;
     return (
         <div className={cn(actionGroupContainer, className)}>
-            <div data-ui="action-group" className={actionGroupStyles(stretch, stacked)}>
+            <div
+                data-ui="action-group"
+                className={actionGroupStyles(stretch, stacked, align)}
+            >
                 {children}
             </div>
         </div>

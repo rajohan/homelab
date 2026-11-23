@@ -1,0 +1,115 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "d12b3716-9d64-4284-905d-aee8526bd378",
+    "prevIds": ["7615e5e3-c6ed-4355-a62b-0647886100fb"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_tasks", "task_number"],
+            "writes": [
+                "s|col|public.mira_tasks.task_number",
+                "n|col|public.mira_tasks.task_number",
+                "e|col|public.mira_tasks.task_number"
+            ],
+            "reads": ["n|tbl|public.mira_tasks", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_tasks", "completed_at"],
+            "writes": [
+                "s|col|public.mira_tasks.completed_at",
+                "n|col|public.mira_tasks.completed_at",
+                "e|col|public.mira_tasks.completed_at"
+            ],
+            "reads": ["n|tbl|public.mira_tasks", "n|sch|public"]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_tasks",
+                "mira_tasks_owner_number"
+            ],
+            "writes": [
+                "s|idx|public.mira_tasks_owner_number",
+                "n|idx|public.mira_tasks_owner_number",
+                "e|idx|public.mira_tasks_owner_number",
+                "n|rel|public.mira_tasks_owner_number"
+            ],
+            "reads": [
+                "n|tbl|public.mira_tasks",
+                "n|sch|public",
+                "n|col|public.mira_tasks.owner",
+                "n|col|public.mira_tasks.task_number"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_tasks",
+                "name": "task_number",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_tasks",
+                "name": "completed_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_tasks",
+                "name": "mira_tasks_owner_number",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "owner",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "task_number",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": true,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        }
+    ]
+}

@@ -17,6 +17,17 @@ const targetSchema = v.strictObject({
         v.maxLength(30)
     ),
     workerIndependent: v.boolean(),
+    proxmox: v.optional(
+        v.strictObject({
+            connection: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
+            vmid: v.pipe(
+                v.number(),
+                v.integer(),
+                v.minValue(100),
+                v.maxValue(999_999_999)
+            ),
+        })
+    ),
     externalReason: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(500))),
     lockConnections: v.optional(v.pipe(v.array(v.string()), v.maxLength(10))),
     preflight: v.optional(
@@ -51,6 +62,12 @@ export function parseMaintenanceTargets(
             (target.kind === "service") !== Boolean(target.service) ||
             !target.health[0]?.startsWith("/") ||
             target.health.some((argument) => argument.includes("\0")) ||
+            (target.proxmox &&
+                (target.workerIndependent ||
+                    target.proxmox.connection === target.connection ||
+                    !connections.some(
+                        (entry) => entry.id === target.proxmox!.connection
+                    ))) ||
             (!target.workerIndependent && !target.externalReason) ||
             (target.workerIndependent && Boolean(target.externalReason)) ||
             (target.lockConnections ?? []).some(
@@ -78,7 +95,11 @@ export function maintenanceRevision(
     connections: readonly UpdateTarget[]
 ): string {
     const authorities = [
-        ...new Set([target.connection, ...(target.lockConnections ?? [])]),
+        ...new Set([
+            target.connection,
+            ...(target.proxmox ? [target.proxmox.connection] : []),
+            ...(target.lockConnections ?? []),
+        ]),
     ]
         .toSorted()
         .map((id) => {

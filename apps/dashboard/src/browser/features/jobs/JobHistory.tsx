@@ -1,6 +1,7 @@
 import type { TableSort } from "@homelab/contracts/tableSort";
 import {
     Card,
+    EmptyState,
     ErrorNotice,
     LoadingState,
     queryRefresh,
@@ -95,11 +96,13 @@ export function JobHistory({
                 />
             )}
             {!query.isPending && !query.isError && rows.length === 0 && (
-                <p className="rounded-lg border border-primary-700 bg-surface-empty p-4 text-sm text-primary-400">
-                    {view === "active"
-                        ? "No queued or running jobs."
-                        : "No completed runs yet."}
-                </p>
+                <EmptyState
+                    message={
+                        view === "active"
+                            ? "No queued or running jobs."
+                            : "No completed runs yet."
+                    }
+                />
             )}
             {selected && (
                 <RunDetailDialog id={selected} onClose={() => setSelected(undefined)} />

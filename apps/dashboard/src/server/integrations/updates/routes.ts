@@ -3,6 +3,7 @@ import {
     updateBatchRequestSchema,
     updateBatchScopeSchema,
     updateListSchema,
+    updatePolicyGroupSchema,
     updatePolicySchema,
     updateReportSchema,
     updateRequestSchema,
@@ -20,7 +21,11 @@ import { requestUpdate } from "./actions";
 import { readUpdateBatchPlan, requestUpdateBatch } from "./batch";
 import { readUpdateReport, readUpdateSources, staleUpdateReport } from "./inventory";
 import { queueUpdateCheck } from "./job";
-import { readUpdatePolicies, writeUpdatePolicy } from "./policies";
+import {
+    readUpdatePolicies,
+    writeUpdatePolicy,
+    writeUpdatePolicyGroup,
+} from "./policies";
 import { recordRestartObservation } from "./restartObservation";
 import { matchesUpdateTarget, updateControl } from "./selection";
 
@@ -155,6 +160,23 @@ export const updatesRouter = trpc.router({
             return readUpdatePolicies(operations.client, operations.updateTargets ?? []);
         })
     ),
+    policyGroup: trpc.procedure
+        .input(updatePolicyGroupSchema)
+        .mutation(({ ctx, input }) =>
+            runOperation(async () => {
+                const { operations, principal } = authorizedOperations(
+                    ctx,
+                    "updates:configure"
+                );
+                await verifyOperator(ctx, "updates:configure");
+                return writeUpdatePolicyGroup(
+                    operations.client,
+                    operations.updateTargets ?? [],
+                    `${principal.kind}:${principal.id}`,
+                    input
+                );
+            })
+        ),
     policy: trpc.procedure.input(updatePolicySchema).mutation(({ ctx, input }) =>
         runOperation(async () => {
             const { operations, principal } = authorizedOperations(

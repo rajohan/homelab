@@ -23,6 +23,8 @@ export function Shell() {
     const location = useLocation();
     const chatWorkspace =
         location.pathname === "/mira" || location.pathname.startsWith("/mira/");
+    const taskWorkspace = location.pathname === "/tasks";
+    const viewportWorkspace = chatWorkspace || taskWorkspace;
     const [navigationPath, setNavigationPath] = useState<string>();
     const [compactNavigation, setCompactNavigation] = useState(() => {
         try {
@@ -63,7 +65,7 @@ export function Shell() {
     return (
         <JobActivityContext value={revealActivity}>
             <div
-                className={`${chatWorkspace ? "h-dvh overflow-hidden" : "min-h-dvh"} bg-primary-950 text-primary-50`}
+                className={`${viewportWorkspace ? "h-dvh overflow-hidden" : "min-h-dvh"} bg-primary-950 text-primary-50`}
             >
                 <a
                     className="fixed top-3 left-3 z-50 -translate-y-24 rounded-lg bg-accent-700 px-4 py-3 text-sm font-semibold text-white focus:translate-y-0"
@@ -90,7 +92,7 @@ export function Shell() {
                     onClose={() => setNavigationPath(undefined)}
                 />
                 <div
-                    className={`flex min-w-0 flex-col ${compactNavigation ? "lg:pl-18" : "lg:pl-52"} ${chatWorkspace ? "h-full min-h-0" : "min-h-dvh"}`}
+                    className={`flex min-w-0 flex-col ${compactNavigation ? "lg:pl-18" : "lg:pl-52"} ${viewportWorkspace ? "h-full min-h-0" : "min-h-dvh"}`}
                 >
                     <header className="h-shell-header sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 border-b border-primary-700 bg-primary-950/95 px-4 backdrop-blur-sm sm:px-5">
                         <div className="flex min-w-0 items-center gap-3">
@@ -148,7 +150,7 @@ export function Shell() {
                         </div>
                     </header>
                     <main
-                        className={`mx-auto w-full max-w-400 min-w-0 flex-1 ${chatWorkspace ? "flex min-h-0 flex-col overflow-hidden sm:p-3 xl:p-5" : "p-4 sm:p-5"}`}
+                        className={`mx-auto w-full max-w-400 min-w-0 flex-1 ${viewportWorkspace ? "flex min-h-0 flex-col" : ""} ${chatWorkspace ? "overflow-hidden sm:p-3 xl:p-5" : "p-4 sm:p-5"} ${taskWorkspace ? "overflow-y-auto" : ""}`}
                         id="main-content"
                         tabIndex={-1}
                     >

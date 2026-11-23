@@ -6,9 +6,16 @@ import { enqueueJob, lockQueue } from "../../jobs/queue";
 import { authorizedOperations } from "../../operations/authorization";
 import { OperationFailure } from "../../operations/errors";
 import { maintenanceHosts } from "./hosts";
-import { maintenancePlan } from "./jobs";
+import { maintenancePlan, type MaintenanceReading } from "./jobs";
+import { admitProxmoxRestart, latestProxmoxRestart } from "./proxmox";
 
 export const maintenanceRouter = trpc.router({
+    controllerStatus: trpc.procedure.query(({ ctx }) =>
+        runOperation(async () => {
+            const { operations } = authorizedOperations(ctx, "updates:read");
+            return latestProxmoxRestart(operations.client);
+        })
+    ),
     plans: trpc.procedure.query(({ ctx }) =>
         runOperation(async () => {
             const { operations } = authorizedOperations(ctx, "updates:read");
@@ -16,6 +23,10 @@ export const maintenanceRouter = trpc.router({
                 operations.maintenanceTargets ?? [],
                 operations.updateTargets ?? []
             );
+            const readings = await operations.client<
+                (MaintenanceReading & { key: string })[]
+            >`SELECT key,value,captured_at::text AS "capturedAt",captured_at > now()-interval '2 minutes' AS fresh FROM operation_snapshots WHERE key LIKE 'maintenance:%'`;
+            const byKey = new Map(readings.map((row) => [row.key, row]));
             return Promise.all(
                 (operations.maintenanceTargets ?? []).map(async (target) => {
                     const {
@@ -25,11 +36,14 @@ export const maintenanceRouter = trpc.router({
                     } = await maintenancePlan(
                         operations.client,
                         target,
-                        operations.updateTargets ?? []
+                        operations.updateTargets ?? [],
+                        byKey.get(`maintenance:${target.id}`) ?? null
                     );
                     return {
                         ...plan,
                         host: hosts.get(target.id)!,
+                        serviceEvidence: observation?.serviceEvidence ?? null,
+                        observed: Boolean(observation),
                         active: observation?.active ?? null,
                         required:
                             target.kind === "host"
@@ -69,7 +83,7 @@ export const maintenanceRouter = trpc.router({
             const handler = operations.registry.get(
                 `maintenance.restart.${input.target}`
             );
-            if (!target || !connection || !handler)
+            if (!target || !connection || (!handler && !target.proxmox))
                 throw new OperationFailure(
                     "NOT_FOUND",
                     "This restart target is not configured."
@@ -92,6 +106,23 @@ export const maintenanceRouter = trpc.router({
                         );
                     return { id: existing.id };
                 }
+                if (target.proxmox) {
+                    const [previous] = await transaction<
+                        { value: { actor: string; target: string; revision: string } }[]
+                    >`SELECT value FROM operation_snapshots WHERE key=${`maintenance.proxmox.run:${input.requestId}`}`;
+                    if (previous) {
+                        if (
+                            previous.value.actor !== actor ||
+                            previous.value.target !== target.id ||
+                            previous.value.revision !== input.revision
+                        )
+                            throw new OperationFailure(
+                                "CONFLICT",
+                                "This confirmation belongs to another operation."
+                            );
+                        return { id: input.requestId };
+                    }
+                }
                 const plan = await maintenancePlan(
                     transaction,
                     target,
@@ -106,8 +137,18 @@ export const maintenanceRouter = trpc.router({
                         "CONFLICT",
                         "Restart status changed. Refresh and confirm again."
                     );
+                if (target.proxmox)
+                    return admitProxmoxRestart(transaction, {
+                        id: input.requestId,
+                        actor,
+                        target: target.id,
+                        label: target.label,
+                        revision: input.revision,
+                        configuration: plan.configuration,
+                        expected: plan.observation,
+                    });
                 return {
-                    id: await enqueueJob(transaction, handler.definition, actor, key, {
+                    id: await enqueueJob(transaction, handler!.definition, actor, key, {
                         target: target.id,
                         configuration: plan.configuration,
                         revision: input.revision,

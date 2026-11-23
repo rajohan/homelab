@@ -1,3 +1,4 @@
+import { activeMaintenanceWindow } from "@homelab/mira/data/maintenanceWindow";
 import type { SQL } from "bun";
 
 import { reservedCapacity } from "../server/jobs/capacity";
@@ -135,8 +136,7 @@ export async function runWorker(options: {
     };
     const control = async () => {
         while (!signal.aborted) {
-            const [deployment] = await client<{ id: string }[]>`
-                SELECT id FROM release_deployments WHERE finished_at IS NULL LIMIT 1`;
+            const deployment = await activeMaintenanceWindow(client);
             const drained = deployment && state.active === 0 ? deployment.id : null;
             const registered = await client<
                 { id: string }[]

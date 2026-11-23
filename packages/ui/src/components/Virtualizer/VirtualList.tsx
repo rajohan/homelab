@@ -37,7 +37,7 @@ export function VirtualList<T>({
             aria-label={label}
             tabIndex={0}
             className={cn(
-                "max-h-[min(32.5rem,60dvh)] min-w-0 scrollbar-gutter-stable overflow-auto rounded-lg focus-visible:outline-2 focus-visible:outline-accent-500",
+                "max-h-[min(32.5rem,60dvh)] min-w-0 overflow-auto rounded-lg focus-visible:outline-2 focus-visible:outline-accent-500",
                 className
             )}
         >

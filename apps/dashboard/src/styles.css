@@ -6,6 +6,15 @@
     --spacing-shell-header: 3.5rem;
     --color-coverage-surface: #11221e;
     --color-workspace-accent: var(--color-accent-300);
+    --animate-task-arrive: task-arrive 260ms ease-out;
+
+    @keyframes task-arrive {
+        from {
+            border-color: var(--color-accent-400);
+            background-color: var(--color-accent-900);
+            translate: 0 -3px;
+        }
+    }
 }
 
 /* Reserve space for both a usable history rail and the active conversation. */

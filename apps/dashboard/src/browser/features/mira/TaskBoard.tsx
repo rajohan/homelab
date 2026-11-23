@@ -16,7 +16,14 @@ import { TaskColumn } from "./TaskColumn";
 import { taskDragSchema, taskMoveForDrop } from "./taskPresentation";
 import type { useTaskColumn } from "./useTaskColumn";
 
-const sensors = [PointerSensor, KeyboardSensor.configure({ offset: 40 })];
+const sensors = [
+    PointerSensor,
+    KeyboardSensor.configure({
+        offset: 40,
+        preventActivation: (event, source) =>
+            event.key === "Enter" || event.target !== source.element,
+    }),
+];
 
 /**
  * Move tasks across independently paginated columns with conflict-safe server updates.
@@ -34,15 +41,17 @@ export function TaskBoard({
     readonly onSelect: (task: MiraTask) => void;
 }) {
     const [dragged, setDragged] = useState<MiraTask>();
+    const [arrival, setArrival] = useState<Pick<MiraTask, "id" | "status">>();
     const move = useOperation((input: NonNullable<ReturnType<typeof taskMoveForDrop>>) =>
         api.mira.tasks.update.mutate(input)
     );
     return (
-        <div className="@container/task-board space-y-4">
+        <div className="@container/task-board flex min-h-40 min-w-0 flex-1 flex-col gap-3">
             {move.error && <ErrorNotice error={move.error} />}
             <DragDropProvider
                 sensors={sensors}
                 onDragStart={({ operation }) => {
+                    setArrival(undefined);
                     const parsed = v.safeParse(
                         taskDragSchema,
                         operation.source?.data.task
@@ -52,16 +61,30 @@ export function TaskBoard({
                 onDragEnd={({ canceled, operation }) => {
                     if (!canceled && !move.isPending) {
                         const input = taskMoveForDrop(dragged, operation.target?.id);
-                        if (input) move.mutate(input);
+                        if (input)
+                            move.mutate(input, {
+                                onSuccess: () =>
+                                    setArrival({ id: input.id, status: input.status }),
+                            });
                     }
                     setDragged(undefined);
                 }}
             >
-                <div className="grid min-w-0 gap-4 @min-[34rem]/task-board:grid-cols-2 @min-[60rem]/task-board:grid-cols-4">
+                <div
+                    className="grid min-w-0 flex-none grid-cols-1 gap-3 p-px @min-[55rem]/task-board:min-h-0 @min-[55rem]/task-board:flex-1 @min-[55rem]/task-board:grid-cols-4 @min-[55rem]/task-board:grid-rows-[minmax(0,1fr)]"
+                    onAnimationEnd={(event) => {
+                        if (event.animationName === "task-arrive") setArrival(undefined);
+                    }}
+                >
                     {miraTaskStates.map((status) => (
                         <TaskColumn
                             key={status}
                             status={status}
+                            dragged={dragged}
+                            arrivedId={
+                                arrival?.status === status ? arrival.id : undefined
+                            }
+                            moving={move.isPending && move.variables?.status === status}
                             query={columns[status]}
                             filtered={Boolean(search) || assignee !== "all"}
                             onSelect={onSelect}
@@ -69,9 +92,12 @@ export function TaskBoard({
                         />
                     ))}
                 </div>
-                <DragOverlay>
+                <DragOverlay dropAnimation={null}>
                     {dragged && (
-                        <div className="w-72 rounded-xl border border-accent-400 bg-primary-800 p-4 shadow-xl shadow-black/40">
+                        <div
+                            aria-hidden="true"
+                            className="relative w-full cursor-grabbing rounded-lg border border-accent-400 bg-primary-800 shadow-xl shadow-black/45 motion-safe:rotate-1"
+                        >
                             <TaskCardContent task={dragged} />
                         </div>
                     )}

@@ -73,7 +73,7 @@ export function TaskEditor({
     );
     return (
         <Modal
-            title={task ? "Edit task" : "New task"}
+            title={task ? `Edit task #${task.number}` : "New task"}
             onClose={onClose}
             dismissible={!save.isPending}
             size="wide"
