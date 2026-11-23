@@ -1,4 +1,11 @@
 import {
+    type AvailableSourceUpdate,
+    availableSourceUpdates,
+    matchSourceUpdates,
+    type PrepareSourceUpdates,
+} from "@homelab/contracts/sourceDependencies";
+import {
+    ActionGroup,
     Badge,
     Button,
     Card,
@@ -40,42 +47,58 @@ export function BuildDependencies() {
             api.jobs.run.mutate(input, { signal })
     );
     const [selection, setSelection] = useState<{
-        dependency: string;
-        name: string;
-        pinned: string;
-        available: string;
+        request: PrepareSourceUpdates;
+        items: AvailableSourceUpdate[];
     }>();
-    const prepare = useOperation(
-        (input: { dependency: string; pinned: string; available: string }, signal) =>
-            api.mira.tasks.prepareDependency.mutate(input, { signal })
+    const prepare = useOperation((input: PrepareSourceUpdates, signal) =>
+        api.mira.tasks.prepareDependency.mutate(input, { signal })
     );
     const snapshot = query.data?.snapshot;
     const fresh = Boolean(snapshot?.fresh && !query.isError);
+    const available =
+        fresh && snapshot ? availableSourceUpdates(snapshot.value.items) : [];
+    function review(items: AvailableSourceUpdate[], all: boolean) {
+        const versions = items.map(({ dependency, pinned, available: version }) => ({
+            dependency,
+            pinned,
+            available: version,
+        }));
+        setSelection({ request: all ? { all: versions } : versions[0]!, items });
+    }
+    const selectionChanged =
+        selection && !matchSourceUpdates(selection.request, available);
     return (
         <Card className="space-y-4">
             <SectionHeader
                 title="Homelab source dependencies"
-                description="Checked hourly. Updates are incorporated through a reviewed Homelab release."
+                description="Checked hourly. Mira prepares updates on a branch for your review."
                 icon={PackageSearch}
                 badge={
                     snapshot && !fresh && <Badge tone="warning">Status outdated</Badge>
                 }
                 actions={
-                    <Button
-                        variant="secondary"
-                        disabled={!query.data?.configured || refresh.isPending}
-                        onClick={() =>
-                            void refresh
-                                .mutateAsync({
-                                    action: "homelab.dependencies",
-                                    requestId: crypto.randomUUID(),
-                                })
-                                .then(() => query.refetch())
-                                .catch(() => {})
-                        }
-                    >
-                        Check updates
-                    </Button>
+                    <ActionGroup>
+                        <Button
+                            variant="secondary"
+                            disabled={!query.data?.configured || refresh.isPending}
+                            onClick={() =>
+                                void refresh
+                                    .mutateAsync({
+                                        action: "homelab.dependencies",
+                                        requestId: crypto.randomUUID(),
+                                    })
+                                    .then(() => query.refetch())
+                                    .catch(() => {})
+                            }
+                        >
+                            Check updates
+                        </Button>
+                        {available.length > 0 && (
+                            <Button onClick={() => review(available, true)}>
+                                Prepare all ({available.length})
+                            </Button>
+                        )}
+                    </ActionGroup>
                 }
             />
             {query.isPending && <LoadingState label="Loading dependency updates…" />}
@@ -133,32 +156,32 @@ export function BuildDependencies() {
                                 </Badge>
                             ),
                         },
-                        ...(fresh &&
-                        snapshot.value.items.some((row) => row.status === "available")
+                        ...(available.length > 1
                             ? [
                                   {
                                       id: "review",
                                       label: "Review",
                                       render: (
                                           item: (typeof snapshot.value.items)[number]
-                                      ) =>
-                                          item.status === "available" &&
-                                          item.available && (
-                                              <Button
-                                                  size="sm"
-                                                  variant="secondary"
-                                                  onClick={() =>
-                                                      setSelection({
-                                                          dependency: item.id,
-                                                          name: item.name,
-                                                          pinned: item.pinned,
-                                                          available: item.available,
-                                                      })
-                                                  }
-                                              >
-                                                  Prepare with Mira
-                                              </Button>
-                                          ),
+                                      ) => {
+                                          const update = available.find(
+                                              (row) => row.dependency === item.id
+                                          );
+                                          return (
+                                              update && (
+                                                  <Button
+                                                      size="sm"
+                                                      variant="secondary"
+                                                      aria-label={`Prepare ${item.name} with Mira`}
+                                                      onClick={() =>
+                                                          review([update], false)
+                                                      }
+                                                  >
+                                                      Prepare with Mira
+                                                  </Button>
+                                              )
+                                          );
+                                      },
                                   },
                               ]
                             : []),
@@ -176,7 +199,7 @@ export function BuildDependencies() {
             )}
             {prepare.isSuccess && (
                 <output className="text-sm text-primary-300">
-                    Preparation task created.{" "}
+                    Preparation task ready.{" "}
                     <a className="text-accent-300 underline" href="/tasks">
                         View Mira tasks
                     </a>
@@ -184,16 +207,45 @@ export function BuildDependencies() {
             )}
             {selection && (
                 <ConfirmDialog
-                    title={`Prepare ${selection.name} ${selection.available}?`}
-                    description={`Mira will prepare the update from ${selection.pinned} to ${selection.available} in a branch for your review.`}
+                    title={
+                        selection.items.length === 1
+                            ? `Prepare ${selection.items[0]!.name}?`
+                            : `Prepare all ${selection.items.length} updates?`
+                    }
+                    description="Mira will prepare the listed versions in one task and leave the branch ready for review."
                     confirmLabel="Start Mira task"
+                    variant="primary"
+                    confirmDisabled={Boolean(selectionChanged)}
                     onClose={() => setSelection(undefined)}
                     onConfirm={async () => {
-                        const { dependency, pinned, available } = selection;
-                        await prepare.mutateAsync({ dependency, pinned, available });
+                        await prepare.mutateAsync(selection.request);
                         setSelection(undefined);
                     }}
-                />
+                >
+                    <ul className="divide-y divide-primary-700 rounded-lg border border-primary-700 bg-surface-card px-3">
+                        {selection.items.map((item) => (
+                            <li
+                                key={item.dependency}
+                                className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2.5 text-sm"
+                            >
+                                <span className="font-medium text-primary-100">
+                                    {item.name}
+                                </span>
+                                <span className="text-primary-300 tabular-nums">
+                                    {item.pinned}{" "}
+                                    <span className="text-primary-400">to</span>{" "}
+                                    {item.available}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                    {selectionChanged && (
+                        <p className="text-sm text-amber-300">
+                            The available updates changed. Close this dialog and review
+                            the current versions.
+                        </p>
+                    )}
+                </ConfirmDialog>
             )}
         </Card>
     );
