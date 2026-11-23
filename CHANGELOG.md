@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1](https://github.com/rajohan/homelab/compare/v0.24.0...v0.24.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **mira:** run dependency tasks on Main and polish dashboard details ([#259](https://github.com/rajohan/homelab/issues/259)) ([a5a7d6d](https://github.com/rajohan/homelab/commit/a5a7d6dc94de7f6d436ec80f234f0acc459e309b))
+
 ## [0.24.0](https://github.com/rajohan/homelab/compare/v0.23.0...v0.24.0) (2026-11-23)
 
 
