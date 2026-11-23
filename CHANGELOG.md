@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.24.0](https://github.com/rajohan/homelab/compare/v0.23.0...v0.24.0) (2026-11-23)
+
+
+### Features
+
+* **dashboard:** improve maintenance controls and the Mira task board ([#257](https://github.com/rajohan/homelab/issues/257)) ([e3b5eb6](https://github.com/rajohan/homelab/commit/e3b5eb6ad47f4b1251305d95b3c7aaa4332f49fa))
+
+
+### Dependencies
+
+* **deps:** bump the application-minor-and-patch group with 17 updates ([#254](https://github.com/rajohan/homelab/issues/254)) ([2e88096](https://github.com/rajohan/homelab/commit/2e880961d042599828f0f9a118e381570dfd1267))
+
 ## [0.23.0](https://github.com/rajohan/homelab/compare/v0.22.0...v0.23.0) (2026-11-22)
 
 
