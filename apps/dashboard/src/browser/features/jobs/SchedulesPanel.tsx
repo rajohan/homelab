@@ -39,11 +39,7 @@ export function SchedulesPanel() {
                 {query.isPending && <LoadingState label="Loading schedules…" />}
                 {query.isError && <ErrorNotice error={query.error} />}
                 {query.isSuccess && query.data.length === 0 && (
-                    <EmptyState
-                        compact
-                        icon={CalendarClock}
-                        title="No job schedules registered"
-                    />
+                    <EmptyState message="No job schedules registered." />
                 )}
                 {query.data && query.data.length > 0 && (
                     <DataTable
