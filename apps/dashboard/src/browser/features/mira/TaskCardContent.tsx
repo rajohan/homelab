@@ -44,29 +44,31 @@ export function TaskCardContent({ task }: { readonly task: MiraTask }) {
                     </span>
                 )}
             </div>
-            {task.dueAt && (
-                <time
-                    dateTime={task.dueAt}
-                    className="flex items-center gap-1.5 text-xs text-primary-300"
-                >
-                    <CalendarDays size={14} aria-hidden="true" className="shrink-0" />
-                    Due {formatDateTime(task.dueAt)}
-                </time>
-            )}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-primary-700/60 pt-3 text-xs text-primary-400">
-                <span className="inline-flex items-center gap-1.5">
-                    <AssigneeIcon size={14} aria-hidden="true" />
-                    {task.assignee === "mira" ? "Mira" : "You"}
-                </span>
-                <time
-                    dateTime={timestamp}
-                    title={`${completed ? "Completed" : "Updated"} ${formatDateTime(timestamp)}`}
-                >
-                    {new Intl.DateTimeFormat("en-GB", {
-                        day: "numeric",
-                        month: "short",
-                    }).format(new Date(timestamp))}
-                </time>
+            <div className="space-y-2 border-t border-primary-700/60 pt-3 text-xs text-primary-400">
+                {task.dueAt && (
+                    <time
+                        dateTime={task.dueAt}
+                        className="flex items-center gap-1.5 text-primary-300"
+                    >
+                        <CalendarDays size={14} aria-hidden="true" className="shrink-0" />
+                        Due {formatDateTime(task.dueAt)}
+                    </time>
+                )}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5">
+                        <AssigneeIcon size={14} aria-hidden="true" />
+                        {task.assignee === "mira" ? "Mira" : "You"}
+                    </span>
+                    <time
+                        dateTime={timestamp}
+                        title={`${completed ? "Completed" : "Updated"} ${formatDateTime(timestamp)}`}
+                    >
+                        {new Intl.DateTimeFormat("en-GB", {
+                            day: "numeric",
+                            month: "short",
+                        }).format(new Date(timestamp))}
+                    </time>
+                </div>
             </div>
         </div>
     );
