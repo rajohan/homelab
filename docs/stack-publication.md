@@ -3,11 +3,8 @@
 The source workspaces on main are `/srv/workspaces/homelab-services` and
 `/srv/workspaces/homelab-tools`. Their Compose project names match these
 directory names. Dashboard update targets keep their existing IDs so task history
-and automatic-update settings continue to identify each service. During migration,
-the publisher accepts each stack's previous project name (`stremio` or `tools`)
-as an alias for that same repository. The old paths are persistent bind aliases managed by
-`srv-workspaces-stremio.mount` and `srv-workspaces-tools.mount` for existing
-container bind mounts and older update workers.
+and automatic-update settings continue to identify each service. The publisher
+requires the configured project name to match the workspace and its public repository.
 
 The public repositories [homelab-services](https://github.com/rajohan/homelab-services)
 and [homelab-tools](https://github.com/rajohan/homelab-tools) contain audited

@@ -44,15 +44,11 @@ def prepare_stack_pin(driver, previous, image):
     if not PIN_QUEUE.exists():
         return None
     directory = Path(driver["directory"])
-    repo = {Path("/srv/workspaces/stremio"): "homelab-services",
-            Path("/srv/workspaces/homelab-services"): "homelab-services",
-            Path("/srv/workspaces/homelab-tools"): "homelab-tools",
-            Path("/srv/workspaces/tools"): "homelab-tools"}.get(directory)
-    if not repo:
+    repo = directory.name
+    if directory.parent != Path("/srv/workspaces") or repo not in STACK_PINS:
         return None
     service = driver["service"]
-    previous_project = "stremio" if repo == "homelab-services" else "tools"
-    if driver["project"] not in (repo, previous_project) or Path(driver["imageFile"]) != directory/"apps"/service/"compose.yaml":
+    if driver["project"] != repo or Path(driver["imageFile"]) != directory/"apps"/service/"compose.yaml":
         raise ValueError("Unreviewed publication source")
     row = {"repository": repo, "service": service, "previous": public_pin(repo, service, previous),
            "image": public_pin(repo, service, image)}
