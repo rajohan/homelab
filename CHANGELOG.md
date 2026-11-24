@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.2](https://github.com/rajohan/homelab/compare/v0.24.1...v0.24.2) (2026-11-24)
+
+
+### Bug Fixes
+
+* **dashboard:** restart deleted update tasks and refine job views ([#261](https://github.com/rajohan/homelab/issues/261)) ([d19f397](https://github.com/rajohan/homelab/commit/d19f397655dd52eaf235a39a15a80da845ab98c4))
+
 ## [0.24.1](https://github.com/rajohan/homelab/compare/v0.24.0...v0.24.1) (2026-11-23)
 
 
