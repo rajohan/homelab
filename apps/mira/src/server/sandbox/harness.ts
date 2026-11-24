@@ -3,7 +3,7 @@ import path from "node:path";
 
 import * as v from "valibot";
 
-import { sandboxProfileEnvironment } from "../config/environment";
+import { sandboxProfileEnvironment } from "../config/sandboxEnvironment";
 import {
     daytonaCheckProfile,
     type DaytonaSandboxRequest,

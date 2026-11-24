@@ -889,6 +889,7 @@ excludeFiles = [
     "**/*.test.{ts,tsx}",
     "tests/**/*.ts",
     "apps/*/src/server/config/environment.ts",
+    "apps/mira/src/server/config/sandboxEnvironment.ts",
 ]
 
 [lint.overrides.rules]

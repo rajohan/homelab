@@ -11,11 +11,21 @@ export async function daytonaPlatformBuild(root: string): Promise<string> {
         entrypoints: [path.join(root, "apps/mira/src/server/sandbox/harness.ts")],
         target: "bun",
         minify: true,
+        metafile: true,
         env: "disable",
         sourcemap: "none",
     });
-    if (!result.success || result.outputs.length !== 1)
+    if (!result.success || result.outputs.length !== 1 || !result.metafile)
         throw new Error("Could not package the public Daytona check harness.");
+    const manifest = path.join(root, "package.json");
+    if (
+        Object.keys(result.metafile.inputs).some(
+            (input) => path.resolve(input) === manifest
+        )
+    )
+        throw new Error(
+            "The Daytona check harness must be independent of the dashboard release manifest."
+        );
     const harness = await result.outputs[0]!.arrayBuffer();
     if (!harness.byteLength || harness.byteLength > 512 * 1024)
         throw new Error("Daytona check harness exceeded its release bound.");
