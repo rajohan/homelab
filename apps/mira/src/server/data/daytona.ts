@@ -10,7 +10,9 @@ import * as v from "valibot";
 import {
     type DaytonaBinding,
     daytonaBindingHash,
+    daytonaBindingRecord,
 } from "../integrations/daytona/configuration";
+import { platformExecution } from "../integrations/daytona/platform";
 import {
     type CodeJobBinding,
     isLocalCodeBinding,
@@ -209,6 +211,8 @@ export async function saveMiraDaytona(
             "The selected code target is unavailable. No fallback was used."
         );
     if (local) localCodeRequest(input.id, content);
+    else if (account.platformImage)
+        platformExecution(input.id, content, account.platformImage.bootstrapSha256);
     return miraTransaction(context, async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:daytona:${input.id}`},0))`;
@@ -252,7 +256,7 @@ export async function saveMiraDaytona(
         await validateDaytonaInputs(query, context.owner, content);
         await (row
             ? query`UPDATE mira_daytona_jobs SET content=${JSON.stringify(content)}::text::jsonb,content_hash=${hash},conversation_id=${input.conversationId},task_id=${input.taskId},version=version+1,updated_at=now(),message=NULL WHERE id=${input.id}`
-            : query`INSERT INTO mira_daytona_jobs(id,owner,binding,binding_hash,content,content_hash,conversation_id,task_id,execution_target) VALUES(${input.id},${context.owner},${JSON.stringify(isLocalCodeBinding(account) ? v.parse(localCodeBindingSchema, account) : { owner: account.owner, organizationId: account.organizationId, snapshotId: account.snapshotId, target: account.target, trustBoundary: account.trustBoundary, networkAccess: account.networkAccess })}::text::jsonb,${targetHash},${JSON.stringify(content)}::text::jsonb,${hash},${input.conversationId},${input.taskId},${local ? "main" : "daytona"})`);
+            : query`INSERT INTO mira_daytona_jobs(id,owner,binding,binding_hash,content,content_hash,conversation_id,task_id,execution_target) VALUES(${input.id},${context.owner},${JSON.stringify(isLocalCodeBinding(account) ? v.parse(localCodeBindingSchema, account) : daytonaBindingRecord(account))}::text::jsonb,${targetHash},${JSON.stringify(content)}::text::jsonb,${hash},${input.conversationId},${input.taskId},${local ? "main" : "daytona"})`);
         await auditMira(query, context, "daytona.draft_saved", input.id);
         return readMiraDaytona(query, context.owner, input.id);
     });

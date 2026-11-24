@@ -8,6 +8,7 @@ import {
     daytonaSandboxName,
 } from "./configuration";
 import { type DaytonaReference, DaytonaUncertainMutation } from "./controlPlane";
+import { daytonaPlatformUser } from "./platform";
 
 const sandboxId = v.pipe(v.string(), v.regex(/^sbx_[A-Za-z0-9_-]{1,180}$/));
 const idleSeconds = daytonaPolicy.idleMinutes * 60;
@@ -27,6 +28,7 @@ const resourceSchema = v.object({
     status: v.string(),
     labels: v.record(v.string(), v.string()),
     class: v.string(),
+    user: v.nullish(v.string()),
     image: v.nullish(v.object({ id: v.string() })),
     region_id: v.string(),
     cpu: v.number(),
@@ -142,21 +144,50 @@ export class DaytonaV2 {
      */
     async create(runId: string, signal: AbortSignal, authorize: () => Promise<void>) {
         await this.preflight(signal);
-        const image = v.safeParse(
-            v.object({
-                id: v.literal(this.config.snapshotId),
-                class: v.literal("linux"),
-                status: v.literal("ready"),
-                platform: v.literal(false),
-                deprecated: v.literal(false),
-                format_outdated: v.literal(false),
-            }),
-            await this.read(
-                `/images/${encodeURIComponent(this.config.snapshotId)}`,
-                signal
-            )
-        );
-        if (!image.success)
+        const common = {
+            id: v.literal(this.config.snapshotId),
+            class: v.literal("linux"),
+            status: v.literal("ready"),
+            deprecated: v.literal(false),
+            format_outdated: v.literal(false),
+        };
+        const platform = this.config.platformImage;
+        if (platform) {
+            const query = new URLSearchParams({
+                platform: "true",
+                q: this.config.snapshotId,
+                limit: "2",
+            });
+            const result = v.safeParse(
+                v.object({
+                    images: v.tuple([
+                        v.object({
+                            ...common,
+                            platform: v.literal(true),
+                            source: v.object({
+                                type: v.literal("registry"),
+                                ref: v.literal(platform.source),
+                            }),
+                        }),
+                    ]),
+                    next_cursor: v.nullish(v.never()),
+                    total: v.literal(1),
+                }),
+                await this.read("/images/search?" + query.toString(), signal)
+            );
+            if (!result.success)
+                throw new DaytonaV2SetupError(
+                    "Daytona could not verify the exact official platform image and its pinned registry digest."
+                );
+        } else if (
+            !v.safeParse(
+                v.object({ ...common, platform: v.literal(false) }),
+                await this.read(
+                    `/images/${encodeURIComponent(this.config.snapshotId)}`,
+                    signal
+                )
+            ).success
+        )
             throw new DaytonaV2SetupError(
                 "Daytona could not verify the qualified private Linux image. Check the image ID, conversion and readiness."
             );
@@ -164,7 +195,8 @@ export class DaytonaV2 {
         const data = {
             name,
             idempotency_key: runId,
-            image: image.output.id,
+            image: this.config.snapshotId,
+            ...(platform ? { user: daytonaPlatformUser, cpu_arch: "amd64" } : {}),
             region_id: this.config.target,
             wait_seconds: 0,
             cpu: daytonaPolicy.cpu,
@@ -255,6 +287,7 @@ export class DaytonaV2 {
         const policy = s.lifecycle_policy;
         const settingsMatch =
             s.class === "linux" &&
+            (!this.config.platformImage || s.user === daytonaPlatformUser) &&
             s.image?.id === this.config.snapshotId &&
             s.region_id === this.config.target &&
             s.cpu === daytonaPolicy.cpu &&

@@ -42,14 +42,18 @@ export interface DaytonaCommandObservation {
 /**
  * Fingerprint the exact command that a durable caller has approved, without normalizing shell syntax.
  * @param command - Explicit sandbox command, never a host command or credential-bearing shell wrapper.
+ * @param wireLimit - UTF-8 allowance for a packaged v2 command after quoting the approved shell text.
  * @returns SHA-256 digest of valid, bounded UTF-8 command bytes.
  */
-export function daytonaCommandHash(command: string): string {
+export function daytonaCommandHash(
+    command: string,
+    wireLimit: 16_384 | 73_728 = 16_384
+): string {
     if (
         !command.isWellFormed() ||
         !command.trim() ||
         command.includes("\0") ||
-        Buffer.byteLength(command, "utf8") > 16_384
+        Buffer.byteLength(command, "utf8") > wireLimit
     )
         throw new Error("Invalid Daytona command.");
     return new Bun.CryptoHasher("sha256").update(command).digest("hex");

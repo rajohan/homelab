@@ -31,14 +31,17 @@ Configure the following in the dashboard and executor. The Compose overlay passe
 
 - `HOMELAB_MIRA_DAYTONA_OWNER` selects the Homelab owner subject.
 - `HOMELAB_MIRA_DAYTONA_ORGANIZATION_ID` and `HOMELAB_MIRA_DAYTONA_PROJECT_ID` specify the exact v2 organization and project.
-- `HOMELAB_MIRA_DAYTONA_IMAGE_ID` selects an immutable `img_…` for the qualified Linux harness. Image format conversion must already be complete. `HOMELAB_MIRA_DAYTONA_TARGET` is the concrete host region, as returned on an allocated sandbox.
+- `HOMELAB_MIRA_DAYTONA_IMAGE_ID` selects an immutable Linux `img_…`. `HOMELAB_MIRA_DAYTONA_TARGET` is the concrete host region, as returned on an allocated sandbox.
+- To use an official base image, also set `HOMELAB_MIRA_DAYTONA_PLATFORM_SOURCE` to its full `docker.io/daytonaio/<repository>@sha256:<digest>` registry source on **both** services. Use the v2 image search with `platform=true` and the exact ID. The executor checks the unique result, ID, publisher, registry digest, Linux class and ready/current format before allocation. No project image import, conversion or retention is needed. With the source left unset, the existing private-image path requires a ready, converted project image.
 - `HOMELAB_MIRA_DAYTONA_TRUST_BOUNDARY=dedicated-organization` and `HOMELAB_MIRA_DAYTONA_NETWORK_ACCESS=provider-default` record the approved trust and networking configuration.
 - Only Mira receives `HOMELAB_MIRA_DAYTONA_API_KEY`. Use a v2 project key with `read:images`, `read:sandboxes`, `write:sandboxes` and `delete:sandboxes`. Use the provider's read-only `GET /api-keys/current` to verify the key's project and organization. An HTTP 401 means the credential cannot authenticate to v2.
-- Set executor-only `HOMELAB_MIRA_DAYTONA_QUALIFIED_BINDING_HASH` to `daytonaBindingHash(binding)` only after verifying the private image, resource limits, network policy, command behavior, artifact handling, cancellation, deletion and billing for this exact project. Re-enable the changed binding in Settings. Updating the hash alone does not review or approve a job.
+- After verifying the selected image, resource limits, network policy, command behavior, artifact handling, cancellation, deletion and billing for this project, run `bun --no-env-file /app/mira/qualification.js` in the matching packaged Mira environment. It prints the nonsecret hash without a provider request. Set executor-only `HOMELAB_MIRA_DAYTONA_QUALIFIED_BINDING_HASH` to this value and enable the changed binding in Settings. The platform fingerprint includes the bootstrap, check profile and Bun package integrity. Requalify when any of them changes.
 
 Migrated snapshots can exist on v2 as named images. Check the image record's `imported_from.id` against the original v0 snapshot ID and obtain its immutable v2 image ID. The original `HOMELAB_MIRA_DAYTONA_SNAPSHOT_ID` identifies the legacy mapping while migrating. Never substitute a v0 snapshot UUID for a v2 image. An unchanged legacy setup can still reconcile existing attempts. Finish existing cleanup in its original organization before moving credentials or projects.
 
 [Official v2 migration guide](https://www.daytona.com/docs/migrate-from-v0) · [v2 project API keys](https://www.daytona.com/docs/api-keys) · [v2 sandboxes](https://www.daytona.com/docs/sandboxes)
+
+Official platform sandboxes request Linux AMD64 and the named non-root user `nobody`. The executor checks the observed user and runs commands with Linux `no_new_privs`. General commands use the tools supplied by the image. A canonical Homelab check, edit or source request additionally receives the release-built public bootstrap as a separate file (up to 256 KiB). Its command verifies the file's owner, canonical path and SHA-256 before execution. The bootstrap installs the release's bundled check code, profile and Linux x64 Bun into the attempt directory. It fetches only the fixed npm tarball over HTTPS, checks the lockfile SHA-512 before extracting one regular executable, and verifies the Bun revision before invoking the check. The bootstrap and the check share the process deadline. Qualification therefore requires Python 3, Git, glibc, `setpriv` and HTTPS access to npm and the public source repository in the selected image.
 
 ## Execution and recovery
 
@@ -91,8 +94,8 @@ The profile does not run image builds or provider qualification inside itself.
 `deploy/Dockerfile` builds the shared Main image, including the fixed code harness.
 The release workflow publishes this image once in the `dashboard` registry package.
 `daytona-image.json` keeps the logical `daytona-check` role but points to that same
-immutable `dashboard` reference. Import that verified reference for code execution;
-there is no separately published `daytona-check` package.
+immutable `dashboard` reference for the private-image option. The official platform
+option uses Daytona's own image and installs the bounded public tools for each fixed job.
 Dependabot proposes Docker base updates through normal reviewed PRs. Snapshot
 activation in Daytona remains explicit; importing a release must preserve the
 configured resources and fixed runtime.

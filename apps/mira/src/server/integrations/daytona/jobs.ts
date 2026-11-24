@@ -22,6 +22,7 @@ import {
     daytonaPolicy,
 } from "./configuration";
 import { DaytonaClient } from "./controlPlane";
+import { platformExecution } from "./platform";
 import {
     daytonaCommandHash,
     DaytonaToolbox,
@@ -315,9 +316,16 @@ export async function dispatchMiraDaytona(
                 );
         }
         const known = { runId: job.id, sandboxId: job.sandboxId };
-        const toolbox = v2
-            ? new DaytonaV2Toolbox(v2, known, request)
-            : new DaytonaToolbox(original, known, request);
+        const v2Toolbox = v2 ? new DaytonaV2Toolbox(v2, known, request) : undefined;
+        const toolbox = v2Toolbox ?? new DaytonaToolbox(original, known, request);
+        const platform = original.platformImage
+            ? platformExecution(
+                  job.id,
+                  job.content,
+                  original.platformImage.bootstrapSha256
+              )
+            : undefined;
+        const command = platform?.command ?? job.content.command;
         if (job.phase === "waiting") {
             const observed = await control.inspect(reference, signal);
             if (
@@ -357,12 +365,16 @@ export async function dispatchMiraDaytona(
                     await authorize("uploading")();
                 });
                 await client`UPDATE mira_daytona_jobs SET upload_index=upload_index+1,phase='inputs',version=version+1,updated_at=now() WHERE id=${job.id} AND lease_token=${job.token} AND lease_expires_at>clock_timestamp()`;
-            } else await update(client, job, "ready");
+            } else {
+                if (platform?.fixed && v2Toolbox)
+                    await v2Toolbox.uploadPlatform(signal, authorize("uploading"));
+                await update(client, job, "ready");
+            }
             return true;
         }
         if (job.phase === "ready") {
             const commandId = await toolbox.submit(
-                job.content.command,
+                command,
                 signal,
                 authorize("submitting")
             );
@@ -371,7 +383,7 @@ export async function dispatchMiraDaytona(
         }
         if (job.phase === "executing") {
             if (!job.commandId) throw new Error("Missing command receipt.");
-            const hash = daytonaCommandHash(job.content.command);
+            const hash = daytonaCommandHash(command, platform ? 73_728 : 16_384);
             const observed = await toolbox.inspect(hash, signal, job.commandId);
             if (observed.state !== "running" && observed.state !== "completed")
                 throw new Error("Command identity unavailable.");

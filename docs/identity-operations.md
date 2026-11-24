@@ -20,8 +20,8 @@ for real accounts. Fake test delivery is not proof that Resend accepts the real 
 
 The Resend rename/reference step was completed and verified on 2026-09-15 with the operator's
 new temporary Doppler login. `prd.HOMELAB_AUTH_RESEND_API_KEY` owns the value;
-`apps_homelab_auth.HOMELAB_AUTH_RESEND_API_KEY` references it. The legacy `prd.RESEND_API_KEY`
-is only a reference for old consumers, not a duplicate secret. The separate
+`apps_homelab_auth.HOMELAB_AUTH_RESEND_API_KEY` references it. All consumers migrated to the
+canonical name, and the `prd.RESEND_API_KEY` compatibility alias has been removed. The separate
 `apps_homelab_dashboard` config exists without Resend access. New auth/database/cookie/signing
 keys and dashboard credentials are prepared, and both app scopes resolve their complete runtime
 key inventory. Database provisioning, sender qualification and deployment remain production gates.

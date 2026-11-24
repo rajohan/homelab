@@ -2,6 +2,7 @@ import * as v from "valibot";
 
 import { integrationBytes, integrationJson } from "../http";
 import type { DaytonaReference } from "./controlPlane";
+import { platformProgram } from "./platform";
 import { daytonaCommandHash, DaytonaToolboxLifetimeError } from "./toolbox";
 import type { DaytonaV2 } from "./v2";
 
@@ -87,13 +88,13 @@ export class DaytonaV2Toolbox {
                     "toolbox:exec",
                     signal
                 ),
-                32 * 1024
+                192 * 1024
             )
         );
         if (
             row.id !== id ||
             row.tag !== this.ref.runId ||
-            daytonaCommandHash(row.shellCommand) !== hash
+            daytonaCommandHash(row.shellCommand, 73_728) !== hash
         )
             throw new Error("Daytona process does not match the recorded command.");
         return row;
@@ -123,8 +124,30 @@ export class DaytonaV2Toolbox {
     ) {
         if (bytes.byteLength > 1024 * 1024)
             throw new Error("Daytona input exceeds 1 MiB.");
-        const path = this.path(name, "inputs"),
-            form = new FormData();
+        return this.uploadFile(this.path(name, "inputs"), bytes, signal, authorize);
+    }
+
+    /** Stage only the packaged public harness at a fixed path outside the approved input namespace.
+     * @param signal - Cancellation covering this bounded upload.
+     * @param authorize - Persist the nonreplayable upload checkpoint.
+     * @returns The acknowledged attempt-local path.
+     */
+    async uploadPlatform(signal: AbortSignal, authorize: () => Promise<void>) {
+        return this.uploadFile(
+            `/tmp/homelab-mira/${this.ref.runId}/platform.py`,
+            new TextEncoder().encode(platformProgram()),
+            signal,
+            authorize
+        );
+    }
+
+    private async uploadFile(
+        path: string,
+        bytes: Uint8Array,
+        signal: AbortSignal,
+        authorize: () => Promise<void>
+    ) {
+        const form = new FormData();
         form.append("file", new Blob([new Uint8Array(bytes)]), "input");
         const response = await this.response(
             "/files/upload?" + new URLSearchParams({ path }).toString(),
@@ -145,7 +168,7 @@ export class DaytonaV2Toolbox {
      * @returns Provider process ID for subsequent status/log reads.
      */
     async submit(command: string, signal: AbortSignal, authorize: () => Promise<void>) {
-        const hash = daytonaCommandHash(command);
+        const hash = daytonaCommandHash(command, 73_728);
         const body = JSON.stringify({
             kind: "exec",
             shellCommand: command,
@@ -159,12 +182,12 @@ export class DaytonaV2Toolbox {
                     body,
                     authorize,
                 }),
-                32 * 1024
+                192 * 1024
             )
         );
         if (
             record.tag !== this.ref.runId ||
-            daytonaCommandHash(record.shellCommand) !== hash
+            daytonaCommandHash(record.shellCommand, 73_728) !== hash
         )
             throw new Error("Unexpected Daytona process receipt.");
         return record.id;
