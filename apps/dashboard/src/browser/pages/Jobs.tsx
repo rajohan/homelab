@@ -1,7 +1,11 @@
 import { PageHeader, PageSections } from "@homelab/ui";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ListChecks } from "lucide-react";
+import * as v from "valibot";
 
 import { JobHistory } from "../features/jobs/JobHistory";
+import { jobLocation } from "../features/jobs/jobLocation";
+import { RunDetailDialog } from "../features/jobs/RunDetailDialog";
 import { SchedulesPanel } from "../features/jobs/SchedulesPanel";
 import { WorkerPanel } from "../features/jobs/WorkerPanel";
 import { CodeLibrary } from "../features/mira/CodeLibrary";
@@ -13,6 +17,8 @@ import { MiraRunHistory } from "../features/mira/MiraRunHistory";
  * @returns The jobs workspace within the shared dashboard shell.
  */
 export function Jobs() {
+    const { run } = v.parse(jobLocation, useSearch({ from: "/jobs" }));
+    const navigate = useNavigate({ from: "/jobs" });
     return (
         <div className="space-y-4">
             <PageHeader
@@ -33,10 +39,31 @@ export function Jobs() {
                     { id: "schedules", label: "Schedules", content: <SchedulesPanel /> },
                     { id: "history", label: "Job history", content: <JobHistory /> },
                     { id: "mira-runs", label: "Mira runs", content: <MiraRunHistory /> },
-                    { id: "daytona", label: "Daytona", content: <DaytonaJobs /> },
-                    { id: "code", label: "Code library", content: <CodeLibrary /> },
+                    {
+                        id: "code-jobs",
+                        label: "Code jobs",
+                        content: <DaytonaJobs />,
+                    },
+                    {
+                        id: "code-changes",
+                        label: "Code changes",
+                        content: <CodeLibrary />,
+                    },
                 ]}
             />
+            {run && (
+                <RunDetailDialog
+                    id={run}
+                    onClose={() =>
+                        void navigate({
+                            to: "/jobs",
+                            search: {},
+                            hash: "history",
+                            replace: true,
+                        })
+                    }
+                />
+            )}
         </div>
     );
 }

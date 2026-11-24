@@ -124,6 +124,7 @@ import {
     createReport,
     deleteMemory,
     listMemory,
+    listReportPreviews,
     listReports,
     readReport,
     saveMemory,
@@ -701,7 +702,7 @@ export const miraRouter = trpc.router({
                             ])
                         )
                         .digest("hex");
-                    const creationId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-8${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+                    const preparationKey = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-8${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
                     return saveTask(
                         mira,
                         {
@@ -717,7 +718,7 @@ export const miraRouter = trpc.router({
                             conversationId: null,
                             dueAt: null,
                         },
-                        creationId
+                        preparationKey
                     );
                 })
             ),
@@ -768,6 +769,11 @@ export const miraRouter = trpc.router({
             ),
     }),
     reports: trpc.router({
+        history: trpc.procedure
+            .input(miraReportFilterSchema)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => listReportPreviews(mira, input))
+            ),
         list: trpc.procedure
             .input(miraReportFilterSchema)
             .query(({ ctx, input }) => execute(ctx, (mira) => listReports(mira, input))),

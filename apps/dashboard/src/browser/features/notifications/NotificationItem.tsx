@@ -21,13 +21,16 @@ export function NotificationItem({
     notification,
     pending,
     onAction,
+    onNavigate,
 }: {
     readonly notification: NotificationRecord;
     readonly pending: boolean;
     readonly onAction: (id: string, action: "read" | "unread" | "dismiss") => void;
+    readonly onNavigate: () => void;
 }) {
     const unread = notification.readAt === null;
     const target = notificationTarget(notification);
+    const destination = notification.jobRunId ? "job details" : notification.destination;
     const display = describeNotification(notification);
     const source = notification.source.startsWith("automation:")
         ? "Automation"
@@ -56,9 +59,9 @@ export function NotificationItem({
                         {target ? (
                             <Link
                                 {...target}
-                                reloadDocument
+                                onClick={onNavigate}
                                 title={notification.title}
-                                aria-label={`${notification.destination === "alerts" ? "Inspect incident" : "Open " + notification.destination}: ${display.title}`}
+                                aria-label={`${destination === "alerts" ? "Inspect incident" : "Open " + destination}: ${display.title}`}
                                 className="inline-block rounded py-1 underline-offset-4 hover:text-accent-300 hover:underline focus-visible:outline-2 focus-visible:outline-accent-300"
                             >
                                 {display.title}

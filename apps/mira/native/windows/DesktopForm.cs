@@ -20,7 +20,6 @@ internal sealed class DesktopForm : MiraWindow
         Text = "Mira"; Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Size = new Size(1280, 820); MinimumSize = new Size(640, 520);
         StartPosition = FormStartPosition.CenterScreen; AutoScaleMode = AutoScaleMode.Dpi;
-        BackColor = Canvas;
         connection = new DesktopConnection(package, settings, installation, delegate(Action action) {
             try { if (!IsDisposed && IsHandleCreated) BeginInvoke(action); } catch (InvalidOperationException) { }
         });

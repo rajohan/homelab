@@ -87,7 +87,6 @@ namespace Homelab.Mira.Computer
             Text = "Mira · Computer access";
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             Font = new Font("Segoe UI", 10);
-            BackColor = Canvas;
             ForeColor = TextColor;
             Size = new Size(720, 590);
             MinimumSize = new Size(580, 480);

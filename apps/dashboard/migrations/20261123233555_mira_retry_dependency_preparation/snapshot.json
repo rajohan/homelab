@@ -1,0 +1,89 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "12a56550-9ad7-42c7-98bd-b2f7c5d49f3a",
+    "prevIds": ["90188fdd-54ea-4f1d-b35f-22612155fb6c"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_tasks", "preparation_key"],
+            "writes": [
+                "s|col|public.mira_tasks.preparation_key",
+                "n|col|public.mira_tasks.preparation_key",
+                "e|col|public.mira_tasks.preparation_key"
+            ],
+            "reads": ["n|tbl|public.mira_tasks", "n|sch|public"]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_tasks",
+                "mira_tasks_active_preparation"
+            ],
+            "writes": [
+                "s|idx|public.mira_tasks_active_preparation",
+                "n|idx|public.mira_tasks_active_preparation",
+                "e|idx|public.mira_tasks_active_preparation",
+                "n|rel|public.mira_tasks_active_preparation"
+            ],
+            "reads": [
+                "n|tbl|public.mira_tasks",
+                "n|sch|public",
+                "n|col|public.mira_tasks.owner",
+                "n|col|public.mira_tasks.preparation_key"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_tasks",
+                "name": "preparation_key",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_tasks",
+                "name": "mira_tasks_active_preparation",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "owner",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "preparation_key",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": true,
+                "where": "\"preparation_key\" is not null and \"deleted_at\" is null",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        }
+    ]
+}

@@ -52,6 +52,8 @@ export function RunDetailDialog({
         <Modal
             title={run?.label ?? "Run details"}
             titleAccessory={run && <JobStatus state={run.state} />}
+            keepTitleAccessoryInline
+            size="wide"
             description="Execution status and recorded events."
             onClose={onClose}
         >

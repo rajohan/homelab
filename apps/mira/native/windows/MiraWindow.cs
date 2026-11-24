@@ -11,7 +11,6 @@ internal class MiraWindow : Form
     // Native equivalents of the shared dashboard surface, text and link colors.
     internal static readonly Color Canvas = Color.FromArgb(11, 14, 19);
     internal static readonly Color Surface = Color.FromArgb(20, 25, 33);
-    internal static readonly Color Heading = Color.FromArgb(16, 20, 26);
     internal static readonly Color Raised = Color.FromArgb(32, 39, 49);
     internal static readonly Color Border = Color.FromArgb(49, 58, 70);
     internal static readonly Color TextColor = Color.FromArgb(231, 233, 238);
@@ -25,6 +24,7 @@ internal class MiraWindow : Form
     private int pressed;
     private FormWindowState previousWindowState;
     private bool updatingWindowBounds;
+    private bool systemFrame;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect { internal int Left, Top, Right, Bottom; }
@@ -42,20 +42,23 @@ internal class MiraWindow : Form
     private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("dwmapi.dll")]
     private static extern int DwmExtendFrameIntoClientArea(IntPtr window, ref Margins margins);
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
 
     internal MiraWindow()
     {
         AutoScaleMode = AutoScaleMode.Dpi;
         FormBorderStyle = FormBorderStyle.None;
         Font = new Font("Segoe UI", 10);
-        BackColor = Canvas; ForeColor = TextColor;
+        BackColor = Surface; ForeColor = TextColor;
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        caption = new CaptionPanel(this) { Dock = DockStyle.Top, Height = 34, BackColor = Heading };
+        caption = new CaptionPanel(this) { Dock = DockStyle.Top, Height = 34, BackColor = Surface };
         minimize = new CaptionButton(this, 8, "Minimize");
         maximize = new CaptionButton(this, 9, "Maximize");
         close = new CaptionButton(this, 20, "Close");
         caption.Controls.Add(minimize); caption.Controls.Add(maximize); caption.Controls.Add(close);
         Content.Dock = DockStyle.Fill;
+        Content.BackColor = Canvas;
         Controls.Add(Content); Controls.Add(caption);
         TextChanged += delegate { caption.Invalidate(); };
         caption.SizeChanged += delegate { LayoutCaption(); };
@@ -81,7 +84,7 @@ internal class MiraWindow : Form
     {
         if (caption == null) return;
         int edge = WindowState == FormWindowState.Maximized ? 0 : ScalePixels(6);
-        Padding = new Padding(edge, 0, edge, edge);
+        Padding = new Padding(edge, edge == 0 || systemFrame ? 0 : 1, edge, edge);
         caption.Height = ScalePixels(34);
         int width = ScalePixels(44), right = caption.ClientSize.Width;
         close.SetBounds(right - width, 0, width, caption.Height);
@@ -97,12 +100,40 @@ internal class MiraWindow : Form
     protected override void OnHandleCreated(EventArgs args)
     {
         base.OnHandleCreated(args);
-        // Recalculate the non-client region immediately, including on handle
-        // recreation when caption capabilities change.
+        const int DwmWindowCornerPreference = 33;
+        int round = 2; // DWMWCP_ROUND; Windows chooses the shape for snapped and maximized windows.
+        systemFrame = DwmSetWindowAttribute(Handle, DwmWindowCornerPreference, ref round, sizeof(int)) == 0;
+        if (!systemFrame) {
+            var margins = new Margins { Left = 1, Right = 1, Top = 1, Bottom = 1 };
+            DwmExtendFrameIntoClientArea(Handle, ref margins);
+        }
+        ApplyFrameColor();
         SetWindowPos(Handle, IntPtr.Zero, 0, 0, 0, 0, 0x37);
-        var margins = new Margins { Left = 1, Right = 1, Top = 1, Bottom = 1 };
-        DwmExtendFrameIntoClientArea(Handle, ref margins);
         LayoutCaption();
+    }
+
+    private void ApplyFrameColor()
+    {
+        // DWMWA_BORDER_COLOR colors the OS-owned outermost pixel on Windows 11.
+        // Older compositors still get the client-painted outline and resize gutter.
+        const int DwmBorderColor = 34;
+        int color = SystemInformation.HighContrast ? -1 : ColorTranslator.ToWin32(Border);
+        DwmSetWindowAttribute(Handle, DwmBorderColor, ref color, sizeof(int));
+    }
+
+    protected override void OnSystemColorsChanged(EventArgs args)
+    {
+        base.OnSystemColorsChanged(args);
+        if (IsHandleCreated) ApplyFrameColor();
+        Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs args)
+    {
+        base.OnPaint(args);
+        if (systemFrame || WindowState != FormWindowState.Normal || ClientSize.Width < 2 || ClientSize.Height < 2) return;
+        using (var pen = new Pen(SystemInformation.HighContrast ? SystemColors.WindowFrame : Border))
+            args.Graphics.DrawRectangle(pen, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
     }
 
     protected override void OnDpiChanged(DpiChangedEventArgs args)
@@ -184,13 +215,16 @@ internal class MiraWindow : Form
             message.Result = message.Msg == 0x86 ? new IntPtr(1) : IntPtr.Zero; return;
         }
         if (message.Msg == 0x83) { // WM_NCCALCSIZE, including the initial RECT-only form
+            var rect = (Rect)Marshal.PtrToStructure(message.LParam, typeof(Rect));
             if (WindowState == FormWindowState.Maximized) {
-                var rect = (Rect)Marshal.PtrToStructure(message.LParam, typeof(Rect));
                 var work = Screen.FromHandle(Handle).WorkingArea;
                 rect.Left = Math.Max(rect.Left, work.Left); rect.Top = Math.Max(rect.Top, work.Top);
                 rect.Right = Math.Min(rect.Right, work.Right); rect.Bottom = Math.Min(rect.Bottom, work.Bottom);
-                Marshal.StructureToPtr(rect, message.LParam, false);
+            } else if (systemFrame && rect.Right - rect.Left > 2 && rect.Bottom - rect.Top > 2) {
+                // Leave a physical pixel for DWM to draw one continuous border around its own corners.
+                rect.Left++; rect.Top++; rect.Right--; rect.Bottom--;
             }
+            Marshal.StructureToPtr(rect, message.LParam, false);
             message.Result = IntPtr.Zero; return;
         }
         if (message.Msg == 0x84) { // WM_NCHITTEST, including HTMAXBUTTON for Windows Snap
@@ -244,7 +278,7 @@ internal class MiraWindow : Form
         internal CaptionButton(MiraWindow owner, int code, string name)
         {
             window = owner; hit = code; AccessibleName = name; TabStop = false;
-            FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0; BackColor = Heading;
+            FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0; BackColor = Surface;
             Click += delegate { window.CaptionAction(hit); };
         }
         internal bool Hovered { set { if (hovered != value) { hovered = value; Invalidate(); } } }
@@ -258,7 +292,7 @@ internal class MiraWindow : Form
         protected override void OnPaint(PaintEventArgs args)
         {
             bool keyboardFocus = Focused && ShowFocusCues;
-            args.Graphics.Clear(hovered || keyboardFocus ? (hit == 20 ? Color.FromArgb(185, 40, 53) : Raised) : Heading);
+            args.Graphics.Clear(hovered || keyboardFocus ? (hit == 20 ? Color.FromArgb(185, 40, 53) : Raised) : Surface);
             int size = window.ScalePixels(10), x = (Width - size) / 2, y = (Height - size) / 2;
             using (var pen = new Pen(TextColor, Math.Max(1, window.ScalePixels(1)))) {
                 if (hit == 8) args.Graphics.DrawLine(pen, x, y + size / 2, x + size, y + size / 2);
@@ -266,11 +300,11 @@ internal class MiraWindow : Form
                 else if (window.WindowState == FormWindowState.Maximized) {
                     int offset = window.ScalePixels(3);
                     args.Graphics.DrawRectangle(pen, x + offset, y, size - offset, size - offset);
-                    using (var fill = new SolidBrush(hovered || keyboardFocus ? Raised : Heading)) args.Graphics.FillRectangle(fill, x, y + offset, size - offset, size - offset);
+                    using (var fill = new SolidBrush(hovered || keyboardFocus ? Raised : Surface)) args.Graphics.FillRectangle(fill, x, y + offset, size - offset, size - offset);
                     args.Graphics.DrawRectangle(pen, x, y + offset, size - offset, size - offset);
                 } else args.Graphics.DrawRectangle(pen, x, y, size, size);
             }
-            if (keyboardFocus) ControlPaint.DrawFocusRectangle(args.Graphics, new Rectangle(4, 4, Width - 8, Height - 8), Accent, Heading);
+            if (keyboardFocus) ControlPaint.DrawFocusRectangle(args.Graphics, new Rectangle(4, 4, Width - 8, Height - 8), Accent, Surface);
             using (var border = new Pen(Border)) args.Graphics.DrawLine(border, 0, Height - 1, Width, Height - 1);
         }
     }

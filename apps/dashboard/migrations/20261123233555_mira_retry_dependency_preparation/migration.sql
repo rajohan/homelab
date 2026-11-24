@@ -1,0 +1,2 @@
+ALTER TABLE "mira_tasks" ADD COLUMN "preparation_key" uuid;--> statement-breakpoint
+CREATE UNIQUE INDEX "mira_tasks_active_preparation" ON "mira_tasks" ("owner","preparation_key") WHERE "preparation_key" is not null and "deleted_at" is null;

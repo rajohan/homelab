@@ -25,10 +25,12 @@ export function Popover({
     anchor = "bottom end",
     panelClassName,
     layout = "default",
+    triggerStyle = "icon",
     disabled = false,
 }: {
     readonly anchor?: "top start" | "bottom end";
     readonly layout?: "default" | "feed";
+    readonly triggerStyle?: "icon" | "label";
     readonly panelClassName?: string;
     readonly disabled?: boolean;
     readonly label: string;
@@ -54,7 +56,9 @@ export function Popover({
                 title={label}
                 className={buttonStyles({
                     variant: "ghost",
-                    className: "relative size-11 p-0",
+                    size: triggerStyle === "label" ? "sm" : "md",
+                    className:
+                        triggerStyle === "icon" ? "relative size-11 p-0" : undefined,
                 })}
             >
                 {trigger}

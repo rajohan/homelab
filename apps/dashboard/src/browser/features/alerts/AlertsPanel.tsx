@@ -148,19 +148,15 @@ export function AlertsPanel({ state }: { readonly state: "current" | "resolved" 
                                         <BreakableName>{row.name}</BreakableName>
                                     </Link>
                                 ),
-                                detail: (
-                                    <span className="flex flex-wrap items-center gap-2">
-                                        {state === "current" && (
-                                            <IncidentStatus
-                                                incident={row}
-                                                unavailable={unavailable}
-                                            />
-                                        )}
-                                        {[row.host, row.service]
-                                            .filter(Boolean)
-                                            .join(" · ") || "Resource not reported"}
-                                    </span>
+                                badge: state === "current" && (
+                                    <IncidentStatus
+                                        incident={row}
+                                        unavailable={unavailable}
+                                    />
                                 ),
+                                detail:
+                                    [row.host, row.service].filter(Boolean).join(" · ") ||
+                                    "Resource not reported",
                             }))}
                         />
                     )}
