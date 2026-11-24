@@ -51,8 +51,8 @@ def prepare_stack_pin(driver, previous, image):
     if not repo:
         return None
     service = driver["service"]
-    expected_project = "stremio" if repo == "homelab-services" else "tools"
-    if driver["project"] != expected_project or Path(driver["imageFile"]) != directory/"apps"/service/"compose.yaml":
+    previous_project = "stremio" if repo == "homelab-services" else "tools"
+    if driver["project"] not in (repo, previous_project) or Path(driver["imageFile"]) != directory/"apps"/service/"compose.yaml":
         raise ValueError("Unreviewed publication source")
     row = {"repository": repo, "service": service, "previous": public_pin(repo, service, previous),
            "image": public_pin(repo, service, image)}

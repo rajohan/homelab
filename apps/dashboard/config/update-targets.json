@@ -165,8 +165,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "stremio-aiostreams-1",
-            "project": "stremio",
+            "name": "homelab-services-aiostreams-1",
+            "project": "homelab-services",
             "service": "aiostreams",
             "directory": "/srv/workspaces/homelab-services",
             "file": "/srv/workspaces/homelab-services/compose.yaml",
@@ -274,8 +274,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "stremio-jackett-1",
-            "project": "stremio",
+            "name": "homelab-services-jackett-1",
+            "project": "homelab-services",
             "service": "jackett",
             "directory": "/srv/workspaces/homelab-services",
             "file": "/srv/workspaces/homelab-services/compose.yaml",
@@ -384,8 +384,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "stremio-crosswatch-1",
-            "project": "stremio",
+            "name": "homelab-services-crosswatch-1",
+            "project": "homelab-services",
             "service": "crosswatch",
             "directory": "/srv/workspaces/homelab-services",
             "file": "/srv/workspaces/homelab-services/compose.yaml",
@@ -493,8 +493,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "stremio-aiometadata-1",
-            "project": "stremio",
+            "name": "homelab-services-aiometadata-1",
+            "project": "homelab-services",
             "service": "aiometadata",
             "directory": "/srv/workspaces/homelab-services",
             "file": "/srv/workspaces/homelab-services/compose.yaml",
@@ -602,8 +602,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "stremio-valkey-submaker-1",
-            "project": "stremio",
+            "name": "homelab-services-valkey-submaker-1",
+            "project": "homelab-services",
             "service": "valkey-submaker",
             "directory": "/srv/workspaces/homelab-services",
             "file": "/srv/workspaces/homelab-services/compose.yaml",
@@ -711,8 +711,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "stremio-valkey-cache-1",
-            "project": "stremio",
+            "name": "homelab-services-valkey-cache-1",
+            "project": "homelab-services",
             "service": "valkey-cache",
             "directory": "/srv/workspaces/homelab-services",
             "file": "/srv/workspaces/homelab-services/compose.yaml",
@@ -820,8 +820,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "stremio-submaker-1",
-            "project": "stremio",
+            "name": "homelab-services-submaker-1",
+            "project": "homelab-services",
             "service": "submaker",
             "directory": "/srv/workspaces/homelab-services",
             "file": "/srv/workspaces/homelab-services/compose.yaml",
@@ -929,8 +929,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "stremio-mediaflow-1",
-            "project": "stremio",
+            "name": "homelab-services-mediaflow-1",
+            "project": "homelab-services",
             "service": "mediaflow",
             "directory": "/srv/workspaces/homelab-services",
             "file": "/srv/workspaces/homelab-services/compose.yaml",
@@ -1038,8 +1038,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "stremio-bitmagnet-1",
-            "project": "stremio",
+            "name": "homelab-services-bitmagnet-1",
+            "project": "homelab-services",
             "service": "bitmagnet",
             "directory": "/srv/workspaces/homelab-services",
             "file": "/srv/workspaces/homelab-services/compose.yaml",
@@ -1147,18 +1147,18 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "stremio-gost-1",
+            "name": "homelab-services-gost-1",
             "healthChecks": [
                 [
                     "/usr/bin/docker",
                     "exec",
-                    "stremio-aiometadata-1",
+                    "homelab-services-aiometadata-1",
                     "node",
                     "-e",
                     "const h=require('http');const q=h.request({hostname:'gluetun',port:8888,method:'CONNECT',path:'api4.thetvdb.com:443',timeout:8000});q.on('connect',(r,s)=>{s.destroy();process.exit(r.statusCode===200?0:1)});q.on('timeout',()=>q.destroy());q.on('error',()=>process.exit(1));q.end()"
                 ]
             ],
-            "project": "stremio",
+            "project": "homelab-services",
             "service": "gost",
             "directory": "/srv/workspaces/homelab-services",
             "file": "/srv/workspaces/homelab-services/compose.yaml",
@@ -1266,8 +1266,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "stremio-flaresolverr-1",
-            "project": "stremio",
+            "name": "homelab-services-flaresolverr-1",
+            "project": "homelab-services",
             "service": "flaresolverr",
             "directory": "/srv/workspaces/homelab-services",
             "file": "/srv/workspaces/homelab-services/compose.yaml",
@@ -1375,13 +1375,13 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "stremio-gluetun-1",
+            "name": "homelab-services-gluetun-1",
             "namespaceDependents": ["gost", "jackett", "bitmagnet", "flaresolverr"],
             "healthChecks": [
                 [
                     "/usr/bin/docker",
                     "exec",
-                    "stremio-gluetun-1",
+                    "homelab-services-gluetun-1",
                     "/bin/sh",
                     "-ec",
                     "nslookup db.home.rajohan.no | grep -Eq '(^|[[:space:]])10[.]77[.]60[.]2([[:space:]]|$)'"
@@ -1389,13 +1389,13 @@
                 [
                     "/usr/bin/docker",
                     "exec",
-                    "stremio-aiometadata-1",
+                    "homelab-services-aiometadata-1",
                     "node",
                     "-e",
                     "const h=require('http');const q=h.request({hostname:'gluetun',port:8888,method:'CONNECT',path:'api4.thetvdb.com:443',timeout:8000});q.on('connect',(r,s)=>{s.destroy();process.exit(r.statusCode===200?0:1)});q.on('timeout',()=>q.destroy());q.on('error',()=>process.exit(1));q.end()"
                 ]
             ],
-            "project": "stremio",
+            "project": "homelab-services",
             "service": "gluetun",
             "directory": "/srv/workspaces/homelab-services",
             "file": "/srv/workspaces/homelab-services/compose.yaml",
@@ -1503,8 +1503,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "stremio-comet-1",
-            "project": "stremio",
+            "name": "homelab-services-comet-1",
+            "project": "homelab-services",
             "service": "comet",
             "directory": "/srv/workspaces/homelab-services",
             "file": "/srv/workspaces/homelab-services/compose.yaml",
@@ -1612,8 +1612,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "tools-it-tools-1",
-            "project": "tools",
+            "name": "homelab-tools-it-tools-1",
+            "project": "homelab-tools",
             "service": "it-tools",
             "directory": "/srv/workspaces/homelab-tools",
             "file": "/srv/workspaces/homelab-tools/compose.yaml",
@@ -1651,8 +1651,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "tools-shlink-1",
-            "project": "tools",
+            "name": "homelab-tools-shlink-1",
+            "project": "homelab-tools",
             "service": "shlink",
             "directory": "/srv/workspaces/homelab-tools",
             "file": "/srv/workspaces/homelab-tools/compose.yaml",
@@ -1690,8 +1690,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "tools-valkey-shlink-1",
-            "project": "tools",
+            "name": "homelab-tools-valkey-shlink-1",
+            "project": "homelab-tools",
             "service": "valkey-shlink",
             "directory": "/srv/workspaces/homelab-tools",
             "file": "/srv/workspaces/homelab-tools/compose.yaml",
@@ -1729,8 +1729,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "tools-openspeedtest-1",
-            "project": "tools",
+            "name": "homelab-tools-openspeedtest-1",
+            "project": "homelab-tools",
             "service": "openspeedtest",
             "directory": "/srv/workspaces/homelab-tools",
             "file": "/srv/workspaces/homelab-tools/compose.yaml",
@@ -1768,8 +1768,8 @@
         "sudo": true,
         "driver": {
             "kind": "docker",
-            "name": "tools-shlink-web-1",
-            "project": "tools",
+            "name": "homelab-tools-shlink-web-1",
+            "project": "homelab-tools",
             "service": "shlink-web",
             "directory": "/srv/workspaces/homelab-tools",
             "file": "/srv/workspaces/homelab-tools/compose.yaml",
