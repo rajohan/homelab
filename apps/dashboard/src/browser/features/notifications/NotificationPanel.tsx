@@ -116,6 +116,7 @@ export function NotificationPanel({ onClose }: { readonly onClose: () => void })
                         <NotificationItem
                             notification={notification}
                             pending={actions.pending}
+                            onNavigate={onClose}
                             onAction={(id, action) =>
                                 actions.acknowledge.mutate({ id, action })
                             }

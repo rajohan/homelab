@@ -135,7 +135,7 @@ export async function saveTask(
                 { id: string; deleted: boolean }[]
             >`SELECT id, deleted_at IS NOT NULL AS deleted FROM mira_tasks
               WHERE owner=${context.owner} AND (id=${preparationKey} OR (preparation_key=${preparationKey} AND deleted_at IS NULL))
-              ORDER BY deleted_at NULLS FIRST LIMIT 1`;
+              ORDER BY deleted_at NULLS FIRST LIMIT 1 FOR SHARE`;
             if (existing && !existing.deleted) return { id: existing.id };
             // Original tasks used the selection key as their ID. Keep that tombstone and its run history.
             if (existing) id = Bun.randomUUIDv7();

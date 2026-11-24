@@ -8,6 +8,7 @@ import {
 import * as v from "valibot";
 
 import { incidentLocation } from "./features/alerts/incidentLocation";
+import { jobLocation } from "./features/jobs/jobLocation";
 import { Shell } from "./layout/Shell";
 import { Alerts } from "./pages/Alerts";
 import { Backups } from "./pages/Backups";
@@ -104,7 +105,12 @@ export function createDashboardRouter(history?: RouterHistory) {
                         throw: true,
                     }),
             }),
-            createRoute({ getParentRoute: () => root, path: "/jobs", component: Jobs }),
+            createRoute({
+                getParentRoute: () => root,
+                path: "/jobs",
+                validateSearch: (raw) => v.parse(jobLocation, raw),
+                component: Jobs,
+            }),
             createRoute({
                 getParentRoute: () => root,
                 path: "/settings",

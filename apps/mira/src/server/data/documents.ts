@@ -32,6 +32,7 @@ export async function listReports(
 }
 
 const separateBlock = (text: string) => text + " ";
+// Bun.markdown.render passes through decoded inline text. Only block boundaries need spacing.
 const previewBlocks = {
     heading: separateBlock,
     paragraph: separateBlock,
