@@ -213,7 +213,8 @@ export const deploymentRouter = trpc.router({
                         "Prepare and confirm the current release again."
                     );
                 return admitDeployment(transaction, {
-                    target: target.id,
+                    target,
+                    connections: operations.updateTargets ?? [],
                     actor,
                     key,
                     revision: input.revision,

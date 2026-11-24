@@ -239,7 +239,8 @@ export function automaticDeploymentJobs(options: {
                             >`SELECT id FROM release_deployments WHERE finished_at IS NULL OR request_key=${key} OR (target=${target.id} AND policy_version IS NOT NULL AND state<>'cancelled' AND plan->'release'->>'revision'=${release.revision}) LIMIT 1`;
                             if (occupied) return;
                             await admitDeployment(query, {
-                                target: target.id,
+                                target,
+                                connections: options.connections,
                                 actor: "system:automatic-deployment",
                                 key,
                                 revision: deploymentDigest(plan),
