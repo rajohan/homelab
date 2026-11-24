@@ -49,6 +49,7 @@ export function MiraRunDetails({
             title={run?.title ?? "Run details"}
             icon={History}
             size="wide"
+            keepTitleAccessoryInline
             onClose={onClose}
             titleAccessory={
                 run && (
@@ -101,10 +102,13 @@ export function MiraRunDetails({
                                             time: new Date(tool.createdAt).toISOString(),
                                             title: toolLabel(tool.tool),
                                             tone: tone === "info" ? "neutral" : tone,
-                                            label:
-                                                tool.state === "unknown"
-                                                    ? "Needs review"
-                                                    : tool.state.replaceAll("_", " "),
+                                            badge: (
+                                                <Badge tone={tone}>
+                                                    {tool.state === "unknown"
+                                                        ? "Needs review"
+                                                        : tool.state.replaceAll("_", " ")}
+                                                </Badge>
+                                            ),
                                             detail: tool.message,
                                         };
                                     })}

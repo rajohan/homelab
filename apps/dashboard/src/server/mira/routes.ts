@@ -124,6 +124,7 @@ import {
     createReport,
     deleteMemory,
     listMemory,
+    listReportPreviews,
     listReports,
     readReport,
     saveMemory,
@@ -768,6 +769,11 @@ export const miraRouter = trpc.router({
             ),
     }),
     reports: trpc.router({
+        history: trpc.procedure
+            .input(miraReportFilterSchema)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => listReportPreviews(mira, input))
+            ),
         list: trpc.procedure
             .input(miraReportFilterSchema)
             .query(({ ctx, input }) => execute(ctx, (mira) => listReports(mira, input))),

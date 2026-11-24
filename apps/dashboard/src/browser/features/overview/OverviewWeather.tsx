@@ -1,4 +1,4 @@
-import { Button, Modal } from "@homelab/ui";
+import { ActivityPanel, Button, Popover } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import {
     ChevronDown,
@@ -13,7 +13,6 @@ import {
     Snowflake,
     Sun,
 } from "lucide-react";
-import { useState } from "react";
 
 import { api } from "../../api/client";
 import { ForecastRow } from "./ForecastRow";
@@ -43,10 +42,9 @@ const weekday = new Intl.DateTimeFormat("en-GB", {
 const temperature = (value: number) => `${Math.round(value)}°`;
 
 /** Open today's conditions and the following three days without leaving Overview.
- * @returns A compact forecast button and its accessible detail dialog.
+ * @returns A weather trigger and an anchored forecast panel.
  */
 export function OverviewWeather() {
-    const [open, setOpen] = useState(false);
     const query = useQuery({
         queryKey: ["system", "weather"],
         queryFn: ({ signal }) => api.system.weather.query(undefined, { signal }),
@@ -60,34 +58,28 @@ export function OverviewWeather() {
         ? condition(weather.code, weather.daylight)
         : { label: "Weather", Icon: Cloud };
     return (
-        <>
-            <Button
-                variant="ghost"
-                size="sm"
-                aria-haspopup="dialog"
-                aria-expanded={open}
-                aria-label="View Spydeberg weather forecast"
-                onClick={() => setOpen(true)}
-            >
-                <current.Icon size={17} className="text-accent-300" aria-hidden="true" />
-                {weather ? `${temperature(weather.temperature)}C` : fallback}
-                <ChevronDown size={13} aria-hidden="true" />
-            </Button>
-            {open && (
-                <Modal
+        <Popover
+            label="View Spydeberg weather forecast"
+            layout="feed"
+            triggerStyle="label"
+            panelClassName="w-[min(24rem,calc(100vw-1rem))]"
+            trigger={
+                <>
+                    <current.Icon
+                        size={17}
+                        className="text-accent-300"
+                        aria-hidden="true"
+                    />
+                    {weather ? `${temperature(weather.temperature)}C` : fallback}
+                    <ChevronDown size={13} aria-hidden="true" />
+                </>
+            }
+        >
+            {({ close }) => (
+                <ActivityPanel
                     title="Spydeberg weather"
                     icon={current.Icon}
-                    onClose={() => setOpen(false)}
-                    footer={
-                        <a
-                            className="mx-auto block w-fit text-center text-sm text-accent-300 underline"
-                            href="https://open-meteo.com/"
-                            target="_blank"
-                            rel="noreferrer"
-                        >
-                            Weather data by Open-Meteo
-                        </a>
-                    }
+                    onClose={close}
                 >
                     {weather && (
                         <ul className="divide-y divide-primary-700 rounded-lg border border-primary-700 bg-surface-card px-3">
@@ -129,8 +121,16 @@ export function OverviewWeather() {
                             </Button>
                         </div>
                     )}
-                </Modal>
+                    <a
+                        className="mx-auto block w-fit text-center text-sm text-accent-300 underline"
+                        href="https://open-meteo.com/"
+                        target="_blank"
+                        rel="noreferrer"
+                    >
+                        Weather data by Open-Meteo
+                    </a>
+                </ActivityPanel>
             )}
-        </>
+        </Popover>
     );
 }

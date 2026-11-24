@@ -165,9 +165,9 @@ export function JobActivity({
                                     label="Your job activity"
                                     rows={runs}
                                     getKey={(run) => run.id}
-                                    className="max-h-[min(26rem,60dvh)] rounded-none"
+                                    className="max-h-[min(26rem,60dvh)] scrollbar-gutter-stable rounded-none"
                                     itemClassName="pb-0"
-                                    scrollbarGap
+                                    scrollbarGap={false}
                                     renderItem={(run) => (
                                         <JobActivityItem
                                             run={run}
@@ -181,24 +181,26 @@ export function JobActivity({
                                     )}
                                 />
                             )}
-                            <div className="flex flex-wrap gap-x-4 border-t border-primary-700 pt-1">
-                                {(
-                                    [
-                                        { hash: "queue", label: "Open queue" },
-                                        { hash: "history", label: "Job history" },
-                                    ] as const
-                                ).map((item) => (
-                                    <Link
-                                        key={item.hash}
-                                        to="/jobs"
-                                        hash={item.hash}
-                                        onClick={() => close()}
-                                        className="inline-flex min-h-11 items-center gap-1.5 rounded text-sm font-medium text-accent-300 hover:underline"
-                                    >
-                                        {item.label}
-                                        <ArrowRight size={14} aria-hidden="true" />
-                                    </Link>
-                                ))}
+                            <div className="scrollbar-gutter-stable overflow-hidden">
+                                <div className="flex flex-wrap gap-x-4 border-t border-primary-700 pt-1">
+                                    {(
+                                        [
+                                            { hash: "queue", label: "Open queue" },
+                                            { hash: "history", label: "Job history" },
+                                        ] as const
+                                    ).map((item) => (
+                                        <Link
+                                            key={item.hash}
+                                            to="/jobs"
+                                            hash={item.hash}
+                                            onClick={() => close()}
+                                            className="inline-flex min-h-11 items-center gap-1.5 rounded text-sm font-medium text-accent-300 hover:underline"
+                                        >
+                                            {item.label}
+                                            <ArrowRight size={14} aria-hidden="true" />
+                                        </Link>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     </ActivityPanel>

@@ -31,6 +31,43 @@ export async function listReports(
     return { rows, nextCursor: rows.length === 30 ? rows.at(-1)!.id : null };
 }
 
+const separateBlock = (text: string) => text + " ";
+const previewBlocks = {
+    heading: separateBlock,
+    paragraph: separateBlock,
+    listItem: separateBlock,
+    code: separateBlock,
+    th: separateBlock,
+    td: separateBlock,
+    html: () => "",
+};
+
+/**
+ * Read compact, plain-text report previews while preserving full Markdown for report detail.
+ * @param context - Authenticated product context.
+ * @param input - The same filters and cursor used by report search.
+ * @returns One page of report metadata with at most 360 characters of preview per row.
+ */
+export async function listReportPreviews(
+    context: MiraContext,
+    input: v.InferOutput<typeof miraReportFilterSchema>
+) {
+    const { rows, nextCursor } = await listReports(context, input);
+    return {
+        nextCursor,
+        rows: rows.map(({ markdown, ...report }) => {
+            const text = Bun.markdown
+                .render(markdown, previewBlocks)
+                .replaceAll(/\s+/gu, " ")
+                .trim();
+            return {
+                ...report,
+                preview: text.length > 360 ? text.slice(0, 359).trimEnd() + "…" : text,
+            };
+        }),
+    };
+}
+
 /**
  * Resolve a stable report link, retaining an explicit tombstone after content deletion.
  * @param context - Authenticated product context.

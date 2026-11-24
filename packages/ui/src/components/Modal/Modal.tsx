@@ -22,7 +22,7 @@ export function Modal({
     onClose,
     description,
     titleAccessory,
-    titleAccessoryPlacement = "inline",
+    keepTitleAccessoryInline = false,
     navigation,
     contentRef,
     icon: Icon,
@@ -35,7 +35,7 @@ export function Modal({
     onClose: () => void;
     description?: string;
     titleAccessory?: ReactNode;
-    titleAccessoryPlacement?: "inline" | "below";
+    keepTitleAccessoryInline?: boolean;
     navigation?: ReactNode;
     contentRef?: Ref<HTMLElement>;
     icon?: LucideIcon | undefined;
@@ -75,12 +75,12 @@ export function Modal({
                             <div className="min-w-0 flex-1 self-center">
                                 <div
                                     className={
-                                        titleAccessoryPlacement === "below"
-                                            ? "flex flex-col items-start gap-1.5"
+                                        keepTitleAccessoryInline
+                                            ? "flex items-start gap-x-3"
                                             : "flex flex-wrap items-center gap-x-3 gap-y-2"
                                     }
                                 >
-                                    <DialogTitle className="text-xl leading-tight font-semibold tracking-tight wrap-anywhere">
+                                    <DialogTitle className="min-w-0 text-xl leading-tight font-semibold tracking-tight wrap-anywhere">
                                         <BreakableName>{title}</BreakableName>
                                     </DialogTitle>
                                     {titleAccessory && (

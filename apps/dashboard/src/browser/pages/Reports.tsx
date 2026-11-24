@@ -8,7 +8,6 @@ import {
     FilterBar,
     InfiniteScrollTrigger,
     LoadingState,
-    MarkdownText,
     PageHeader,
     SearchInput,
     SectionPanel,
@@ -83,10 +82,10 @@ export function Reports() {
             : {}),
     };
     const query = useInfiniteQuery({
-        queryKey: ["operations", "mira", "reports", filter],
+        queryKey: ["operations", "mira", "reports", "history", filter],
         initialPageParam: undefined as string | undefined,
         queryFn: ({ pageParam, signal }) =>
-            api.mira.reports.list.query(
+            api.mira.reports.history.query(
                 { ...filter, ...(pageParam ? { before: pageParam } : {}) },
                 { signal }
             ),
@@ -196,10 +195,15 @@ export function Reports() {
                                     />
                                 </Link>
                             ),
+                            badge: report.outcome && (
+                                <Badge tone={miraStatusTone(report.outcome)}>
+                                    {report.outcome.replaceAll("_", " ")}
+                                </Badge>
+                            ),
                             detail: (
                                 <>
                                     <div className="mt-1 line-clamp-3 max-w-prose text-sm leading-6 wrap-anywhere text-primary-300">
-                                        <MarkdownText>{report.markdown}</MarkdownText>
+                                        {report.preview}
                                     </div>
                                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-primary-400">
                                         <span className="capitalize">{report.kind}</span>
@@ -207,11 +211,6 @@ export function Reports() {
                                         <span className="capitalize">
                                             {report.source}
                                         </span>
-                                        {report.outcome && (
-                                            <Badge tone={miraStatusTone(report.outcome)}>
-                                                {report.outcome.replaceAll("_", " ")}
-                                            </Badge>
-                                        )}
                                     </div>
                                 </>
                             ),

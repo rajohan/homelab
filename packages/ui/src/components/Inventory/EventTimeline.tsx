@@ -40,6 +40,7 @@ export function EventTimeline({
         id: string;
         time: string;
         title: ReactNode;
+        badge?: ReactNode;
         detail: ReactNode;
         tone: EventTone;
         label?: string | undefined;
@@ -69,7 +70,7 @@ export function EventTimeline({
                 <div
                     className={
                         feed
-                            ? "relative ml-2 grid min-w-0 grid-cols-[minmax(0,1fr)] items-start border-l border-primary-700 py-1 pl-5"
+                            ? "relative ml-2 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2 border-l border-primary-700 py-1 pl-5"
                             : "relative ml-1 grid min-w-0 grid-cols-[3.8rem_minmax(0,1fr)] gap-2 border-l border-primary-700 py-2 pl-4"
                     }
                 >
@@ -89,31 +90,22 @@ export function EventTimeline({
                             />
                         )}
                     </span>
-                    {!feed && (
-                        <time
-                            dateTime={event.time}
-                            className="text-xs leading-5 text-primary-400 tabular-nums"
-                        >
+                    <span className="inline-flex items-baseline gap-2 text-xs leading-5 text-primary-400">
+                        <time dateTime={event.time} className="tabular-nums">
                             {time}
                         </time>
-                    )}
+                        {feed && <span aria-hidden="true">·</span>}
+                    </span>
                     <div className="min-w-0 text-sm">
-                        <div className="font-medium wrap-anywhere text-primary-50">
-                            <BreakableName>{event.title}</BreakableName>
+                        <div className="flex items-baseline gap-2">
+                            <div className="min-w-0 font-medium wrap-anywhere text-primary-50">
+                                <BreakableName>{event.title}</BreakableName>
+                            </div>
+                            {event.badge && <div className="shrink-0">{event.badge}</div>}
                         </div>
                         <div
                             className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs leading-relaxed wrap-anywhere text-primary-400 ${feed ? "pb-1" : "mt-0.5 empty:hidden"}`}
                         >
-                            {feed && (
-                                <span className="inline-flex shrink-0 items-baseline gap-2">
-                                    <time dateTime={event.time} className="tabular-nums">
-                                        {time}
-                                    </time>
-                                    {(event.label || event.detail) && (
-                                        <span aria-hidden="true">·</span>
-                                    )}
-                                </span>
-                            )}
                             {event.label && (
                                 <span className={marker.color}>{event.label}</span>
                             )}

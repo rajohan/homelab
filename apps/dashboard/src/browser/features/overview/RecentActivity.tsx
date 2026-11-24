@@ -1,4 +1,10 @@
-import { ErrorNotice, EventTimeline, LoadingState, SectionPanel } from "@homelab/ui";
+import {
+    Badge,
+    ErrorNotice,
+    EventTimeline,
+    LoadingState,
+    SectionPanel,
+} from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Activity } from "lucide-react";
@@ -36,7 +42,7 @@ export function RecentActivity() {
                         id: n.id,
                         time: n.createdAt,
                         tone: tones[n.severity],
-                        label,
+                        badge: label && <Badge tone={tones[n.severity]}>{label}</Badge>,
                         detail,
                         title: target ? (
                             <Link

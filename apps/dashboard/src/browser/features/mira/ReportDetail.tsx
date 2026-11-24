@@ -54,7 +54,19 @@ export function ReportDetail({
             />
         );
     return (
-        <Modal title={report?.title ?? "Report"} onClose={onClose} size="wide">
+        <Modal
+            title={report?.title ?? "Report"}
+            onClose={onClose}
+            size="wide"
+            keepTitleAccessoryInline
+            titleAccessory={
+                report?.outcome && (
+                    <Badge tone={miraStatusTone(report.outcome)}>
+                        {report.outcome.replaceAll("_", " ")}
+                    </Badge>
+                )
+            }
+        >
             {query.isPending && <LoadingState label="Loading report…" />}
             {(query.error || change.error) && (
                 <ErrorNotice error={query.error ?? change.error} />
@@ -64,11 +76,6 @@ export function ReportDetail({
                     <div className="flex flex-wrap items-center gap-2">
                         <Badge>{report.kind}</Badge>
                         <Badge>{report.source}</Badge>
-                        {report.outcome && (
-                            <Badge tone={miraStatusTone(report.outcome)}>
-                                {report.outcome.replaceAll("_", " ")}
-                            </Badge>
-                        )}
                         <span className="text-xs text-primary-400">
                             {formatDateTime(report.createdAt)}
                         </span>
