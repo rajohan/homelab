@@ -12,8 +12,9 @@ const bindingSchema = v.strictObject({
         v.maxLength(320),
         v.regex(/^[\u0021-\u007E]+$/)
     ),
-    organizationId: id,
-    snapshotId: id,
+    organizationId: v.pipe(v.string(), v.regex(/^[a-zA-Z0-9_-]{1,128}$/)),
+    snapshotId: v.pipe(v.string(), v.regex(/^[a-zA-Z0-9_-]{1,128}$/)),
+    projectId: v.optional(v.pipe(v.string(), v.regex(/^[a-zA-Z0-9_-]{1,128}$/))),
     target: v.pipe(v.string(), v.regex(/^[a-z0-9][a-z0-9-]{0,62}$/)),
 });
 export type DaytonaBinding = v.InferOutput<typeof bindingSchema>;
@@ -51,7 +52,9 @@ export function daytonaBinding(
 ): DaytonaBinding | undefined {
     const owner = environment.HOMELAB_MIRA_DAYTONA_OWNER;
     const organizationId = environment.HOMELAB_MIRA_DAYTONA_ORGANIZATION_ID;
-    const snapshotId = environment.HOMELAB_MIRA_DAYTONA_SNAPSHOT_ID;
+    const projectId = environment.HOMELAB_MIRA_DAYTONA_PROJECT_ID;
+    const imageId = environment.HOMELAB_MIRA_DAYTONA_IMAGE_ID;
+    const snapshotId = imageId || environment.HOMELAB_MIRA_DAYTONA_SNAPSHOT_ID;
     const target = environment.HOMELAB_MIRA_DAYTONA_TARGET;
     const trustBoundary = environment.HOMELAB_MIRA_DAYTONA_TRUST_BOUNDARY;
     const networkAccess = environment.HOMELAB_MIRA_DAYTONA_NETWORK_ACCESS;
@@ -59,6 +62,7 @@ export function daytonaBinding(
         !owner &&
         !organizationId &&
         !snapshotId &&
+        !projectId &&
         !target &&
         !trustBoundary &&
         !networkAccess
@@ -71,10 +75,17 @@ export function daytonaBinding(
         organizationId,
         snapshotId,
         target,
+        ...(projectId ? { projectId } : {}),
     });
-    if (!result.success)
+    if (
+        !result.success ||
+        Boolean(imageId) !== Boolean(projectId) ||
+        (projectId
+            ? !/^img_[A-Za-z0-9_-]+$/.test(snapshotId ?? "")
+            : !v.safeParse(id, snapshotId).success)
+    )
         throw new Error(
-            "Daytona requires an explicit dedicated-organization trust boundary, provider-default network access, owner, organization, snapshot ID and region."
+            "Daytona requires a dedicated organization, network policy, owner and region, plus a v2 project and immutable image ID or the original snapshot for legacy cleanup."
         );
     return result.output;
 }
@@ -108,6 +119,7 @@ function bindingHash(binding: DaytonaBinding, policy: object): string {
         organizationId: binding.organizationId,
         snapshotId: binding.snapshotId,
         target: binding.target,
+        ...(binding.projectId ? { projectId: binding.projectId } : {}),
     });
     return new Bun.CryptoHasher("sha256")
         .update(JSON.stringify([parsed, policy]))
@@ -120,7 +132,10 @@ function bindingHash(binding: DaytonaBinding, policy: object): string {
  * @returns Current policy fingerprint for new admissions.
  */
 export function daytonaBindingHash(binding: DaytonaBinding): string {
-    return bindingHash(binding, daytonaPolicy);
+    return bindingHash(
+        binding,
+        binding.projectId ? { ...daytonaPolicy, platform: 2 } : daytonaPolicy
+    );
 }
 
 /**
@@ -193,7 +208,8 @@ export function daytonaExecutionConfiguration(
     return {
         ...configuration,
         executionQualified:
+            Boolean(configuration.projectId) &&
             environment.HOMELAB_MIRA_DAYTONA_QUALIFIED_BINDING_HASH ===
-            daytonaBindingHash(configuration),
+                daytonaBindingHash(configuration),
     };
 }

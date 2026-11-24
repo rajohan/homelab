@@ -64,6 +64,7 @@ async function read(
         id,
         identityHash,
         organizationId: row.binding.organizationId,
+        ...(row.binding.projectId ? { projectId: row.binding.projectId } : {}),
         snapshotId: row.binding.snapshotId,
         target: row.binding.target,
         sandboxId: row.sandboxId,

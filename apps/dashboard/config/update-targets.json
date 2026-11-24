@@ -168,9 +168,9 @@
             "name": "stremio-aiostreams-1",
             "project": "stremio",
             "service": "aiostreams",
-            "directory": "/srv/workspaces/stremio",
-            "file": "/srv/workspaces/stremio/compose.yaml",
-            "imageFile": "/srv/workspaces/stremio/apps/aiostreams/compose.yaml",
+            "directory": "/srv/workspaces/homelab-services",
+            "file": "/srv/workspaces/homelab-services/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-services/apps/aiostreams/compose.yaml",
             "environment": {
                 "variables": [
                     "BITMAGNET_LOCAL_HOSTNAME",
@@ -257,7 +257,7 @@
                     "/usr/bin/python3",
                     "-B",
                     "-c",
-                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/stremio/bin\");from environment import environment;e=environment(\"/srv/workspaces/stremio\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/stremio/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
+                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/homelab-services/bin\");from environment import environment;e=environment(\"/srv/workspaces/homelab-services\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/homelab-services/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
                 ]
             }
         }
@@ -277,9 +277,9 @@
             "name": "stremio-jackett-1",
             "project": "stremio",
             "service": "jackett",
-            "directory": "/srv/workspaces/stremio",
-            "file": "/srv/workspaces/stremio/compose.yaml",
-            "imageFile": "/srv/workspaces/stremio/apps/jackett/compose.yaml",
+            "directory": "/srv/workspaces/homelab-services",
+            "file": "/srv/workspaces/homelab-services/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-services/apps/jackett/compose.yaml",
             "trackingTag": "latest",
             "environment": {
                 "variables": [
@@ -367,7 +367,7 @@
                     "/usr/bin/python3",
                     "-B",
                     "-c",
-                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/stremio/bin\");from environment import environment;e=environment(\"/srv/workspaces/stremio\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/stremio/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
+                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/homelab-services/bin\");from environment import environment;e=environment(\"/srv/workspaces/homelab-services\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/homelab-services/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
                 ]
             }
         }
@@ -387,9 +387,9 @@
             "name": "stremio-crosswatch-1",
             "project": "stremio",
             "service": "crosswatch",
-            "directory": "/srv/workspaces/stremio",
-            "file": "/srv/workspaces/stremio/compose.yaml",
-            "imageFile": "/srv/workspaces/stremio/apps/crosswatch/compose.yaml",
+            "directory": "/srv/workspaces/homelab-services",
+            "file": "/srv/workspaces/homelab-services/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-services/apps/crosswatch/compose.yaml",
             "environment": {
                 "variables": [
                     "BITMAGNET_LOCAL_HOSTNAME",
@@ -476,7 +476,7 @@
                     "/usr/bin/python3",
                     "-B",
                     "-c",
-                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/stremio/bin\");from environment import environment;e=environment(\"/srv/workspaces/stremio\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/stremio/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
+                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/homelab-services/bin\");from environment import environment;e=environment(\"/srv/workspaces/homelab-services\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/homelab-services/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
                 ]
             }
         }
@@ -496,9 +496,9 @@
             "name": "stremio-aiometadata-1",
             "project": "stremio",
             "service": "aiometadata",
-            "directory": "/srv/workspaces/stremio",
-            "file": "/srv/workspaces/stremio/compose.yaml",
-            "imageFile": "/srv/workspaces/stremio/apps/aiometadata/compose.yaml",
+            "directory": "/srv/workspaces/homelab-services",
+            "file": "/srv/workspaces/homelab-services/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-services/apps/aiometadata/compose.yaml",
             "environment": {
                 "variables": [
                     "BITMAGNET_LOCAL_HOSTNAME",
@@ -585,7 +585,7 @@
                     "/usr/bin/python3",
                     "-B",
                     "-c",
-                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/stremio/bin\");from environment import environment;e=environment(\"/srv/workspaces/stremio\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/stremio/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
+                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/homelab-services/bin\");from environment import environment;e=environment(\"/srv/workspaces/homelab-services\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/homelab-services/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
                 ]
             }
         }
@@ -605,9 +605,9 @@
             "name": "stremio-valkey-submaker-1",
             "project": "stremio",
             "service": "valkey-submaker",
-            "directory": "/srv/workspaces/stremio",
-            "file": "/srv/workspaces/stremio/compose.yaml",
-            "imageFile": "/srv/workspaces/stremio/apps/valkey-submaker/compose.yaml",
+            "directory": "/srv/workspaces/homelab-services",
+            "file": "/srv/workspaces/homelab-services/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-services/apps/valkey-submaker/compose.yaml",
             "environment": {
                 "variables": [
                     "BITMAGNET_LOCAL_HOSTNAME",
@@ -694,7 +694,7 @@
                     "/usr/bin/python3",
                     "-B",
                     "-c",
-                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/stremio/bin\");from environment import environment;e=environment(\"/srv/workspaces/stremio\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/stremio/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
+                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/homelab-services/bin\");from environment import environment;e=environment(\"/srv/workspaces/homelab-services\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/homelab-services/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
                 ]
             }
         }
@@ -714,9 +714,9 @@
             "name": "stremio-valkey-cache-1",
             "project": "stremio",
             "service": "valkey-cache",
-            "directory": "/srv/workspaces/stremio",
-            "file": "/srv/workspaces/stremio/compose.yaml",
-            "imageFile": "/srv/workspaces/stremio/apps/valkey-cache/compose.yaml",
+            "directory": "/srv/workspaces/homelab-services",
+            "file": "/srv/workspaces/homelab-services/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-services/apps/valkey-cache/compose.yaml",
             "environment": {
                 "variables": [
                     "BITMAGNET_LOCAL_HOSTNAME",
@@ -803,7 +803,7 @@
                     "/usr/bin/python3",
                     "-B",
                     "-c",
-                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/stremio/bin\");from environment import environment;e=environment(\"/srv/workspaces/stremio\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/stremio/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
+                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/homelab-services/bin\");from environment import environment;e=environment(\"/srv/workspaces/homelab-services\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/homelab-services/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
                 ]
             }
         }
@@ -823,9 +823,9 @@
             "name": "stremio-submaker-1",
             "project": "stremio",
             "service": "submaker",
-            "directory": "/srv/workspaces/stremio",
-            "file": "/srv/workspaces/stremio/compose.yaml",
-            "imageFile": "/srv/workspaces/stremio/apps/submaker/compose.yaml",
+            "directory": "/srv/workspaces/homelab-services",
+            "file": "/srv/workspaces/homelab-services/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-services/apps/submaker/compose.yaml",
             "environment": {
                 "variables": [
                     "BITMAGNET_LOCAL_HOSTNAME",
@@ -912,7 +912,7 @@
                     "/usr/bin/python3",
                     "-B",
                     "-c",
-                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/stremio/bin\");from environment import environment;e=environment(\"/srv/workspaces/stremio\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/stremio/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
+                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/homelab-services/bin\");from environment import environment;e=environment(\"/srv/workspaces/homelab-services\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/homelab-services/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
                 ]
             }
         }
@@ -932,9 +932,9 @@
             "name": "stremio-mediaflow-1",
             "project": "stremio",
             "service": "mediaflow",
-            "directory": "/srv/workspaces/stremio",
-            "file": "/srv/workspaces/stremio/compose.yaml",
-            "imageFile": "/srv/workspaces/stremio/apps/mediaflow/compose.yaml",
+            "directory": "/srv/workspaces/homelab-services",
+            "file": "/srv/workspaces/homelab-services/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-services/apps/mediaflow/compose.yaml",
             "environment": {
                 "variables": [
                     "BITMAGNET_LOCAL_HOSTNAME",
@@ -1021,7 +1021,7 @@
                     "/usr/bin/python3",
                     "-B",
                     "-c",
-                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/stremio/bin\");from environment import environment;e=environment(\"/srv/workspaces/stremio\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/stremio/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
+                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/homelab-services/bin\");from environment import environment;e=environment(\"/srv/workspaces/homelab-services\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/homelab-services/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
                 ]
             }
         }
@@ -1041,9 +1041,9 @@
             "name": "stremio-bitmagnet-1",
             "project": "stremio",
             "service": "bitmagnet",
-            "directory": "/srv/workspaces/stremio",
-            "file": "/srv/workspaces/stremio/compose.yaml",
-            "imageFile": "/srv/workspaces/stremio/apps/bitmagnet/compose.yaml",
+            "directory": "/srv/workspaces/homelab-services",
+            "file": "/srv/workspaces/homelab-services/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-services/apps/bitmagnet/compose.yaml",
             "environment": {
                 "variables": [
                     "BITMAGNET_LOCAL_HOSTNAME",
@@ -1130,7 +1130,7 @@
                     "/usr/bin/python3",
                     "-B",
                     "-c",
-                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/stremio/bin\");from environment import environment;e=environment(\"/srv/workspaces/stremio\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/stremio/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
+                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/homelab-services/bin\");from environment import environment;e=environment(\"/srv/workspaces/homelab-services\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/homelab-services/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
                 ]
             }
         }
@@ -1160,9 +1160,9 @@
             ],
             "project": "stremio",
             "service": "gost",
-            "directory": "/srv/workspaces/stremio",
-            "file": "/srv/workspaces/stremio/compose.yaml",
-            "imageFile": "/srv/workspaces/stremio/apps/gost/compose.yaml",
+            "directory": "/srv/workspaces/homelab-services",
+            "file": "/srv/workspaces/homelab-services/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-services/apps/gost/compose.yaml",
             "environment": {
                 "variables": [
                     "BITMAGNET_LOCAL_HOSTNAME",
@@ -1249,7 +1249,7 @@
                     "/usr/bin/python3",
                     "-B",
                     "-c",
-                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/stremio/bin\");from environment import environment;e=environment(\"/srv/workspaces/stremio\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/stremio/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
+                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/homelab-services/bin\");from environment import environment;e=environment(\"/srv/workspaces/homelab-services\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/homelab-services/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
                 ]
             }
         }
@@ -1269,9 +1269,9 @@
             "name": "stremio-flaresolverr-1",
             "project": "stremio",
             "service": "flaresolverr",
-            "directory": "/srv/workspaces/stremio",
-            "file": "/srv/workspaces/stremio/compose.yaml",
-            "imageFile": "/srv/workspaces/stremio/apps/flaresolverr/compose.yaml",
+            "directory": "/srv/workspaces/homelab-services",
+            "file": "/srv/workspaces/homelab-services/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-services/apps/flaresolverr/compose.yaml",
             "environment": {
                 "variables": [
                     "BITMAGNET_LOCAL_HOSTNAME",
@@ -1358,7 +1358,7 @@
                     "/usr/bin/python3",
                     "-B",
                     "-c",
-                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/stremio/bin\");from environment import environment;e=environment(\"/srv/workspaces/stremio\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/stremio/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
+                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/homelab-services/bin\");from environment import environment;e=environment(\"/srv/workspaces/homelab-services\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/homelab-services/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
                 ]
             }
         }
@@ -1397,9 +1397,9 @@
             ],
             "project": "stremio",
             "service": "gluetun",
-            "directory": "/srv/workspaces/stremio",
-            "file": "/srv/workspaces/stremio/compose.yaml",
-            "imageFile": "/srv/workspaces/stremio/apps/gluetun/compose.yaml",
+            "directory": "/srv/workspaces/homelab-services",
+            "file": "/srv/workspaces/homelab-services/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-services/apps/gluetun/compose.yaml",
             "environment": {
                 "variables": [
                     "BITMAGNET_LOCAL_HOSTNAME",
@@ -1486,7 +1486,7 @@
                     "/usr/bin/python3",
                     "-B",
                     "-c",
-                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/stremio/bin\");from environment import environment;e=environment(\"/srv/workspaces/stremio\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/stremio/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
+                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/homelab-services/bin\");from environment import environment;e=environment(\"/srv/workspaces/homelab-services\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/homelab-services/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
                 ]
             }
         }
@@ -1506,9 +1506,9 @@
             "name": "stremio-comet-1",
             "project": "stremio",
             "service": "comet",
-            "directory": "/srv/workspaces/stremio",
-            "file": "/srv/workspaces/stremio/compose.yaml",
-            "imageFile": "/srv/workspaces/stremio/apps/comet/compose.yaml",
+            "directory": "/srv/workspaces/homelab-services",
+            "file": "/srv/workspaces/homelab-services/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-services/apps/comet/compose.yaml",
             "environment": {
                 "variables": [
                     "BITMAGNET_LOCAL_HOSTNAME",
@@ -1595,7 +1595,7 @@
                     "/usr/bin/python3",
                     "-B",
                     "-c",
-                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/stremio/bin\");from environment import environment;e=environment(\"/srv/workspaces/stremio\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/stremio/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
+                    "import json,subprocess,sys;sys.path.insert(0,\"/srv/workspaces/homelab-services/bin\");from environment import environment;e=environment(\"/srv/workspaces/homelab-services\");e[\"PATH\"]=\"/usr/bin:/bin\";r=subprocess.check_output([\"/usr/bin/docker\",\"compose\",\"--env-file\",\"/srv/workspaces/homelab-services/.env\",\"config\",\"--environment\"],env=e,text=True);print(json.dumps(dict(line.split(\"=\",1) for line in r.splitlines() if \"=\" in line)))"
                 ]
             }
         }
@@ -1615,9 +1615,9 @@
             "name": "tools-it-tools-1",
             "project": "tools",
             "service": "it-tools",
-            "directory": "/srv/workspaces/tools",
-            "file": "/srv/workspaces/tools/compose.yaml",
-            "imageFile": "/srv/workspaces/tools/apps/it-tools/compose.yaml",
+            "directory": "/srv/workspaces/homelab-tools",
+            "file": "/srv/workspaces/homelab-tools/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-tools/apps/it-tools/compose.yaml",
             "environment": {
                 "variables": [
                     "TOOLS_DB_SHLINK_PASSWORD",
@@ -1633,7 +1633,7 @@
                     "--",
                     "/usr/bin/python3",
                     "-B",
-                    "/srv/workspaces/tools/bin/environment.py",
+                    "/srv/workspaces/homelab-tools/bin/environment.py",
                     "json"
                 ]
             }
@@ -1654,9 +1654,9 @@
             "name": "tools-shlink-1",
             "project": "tools",
             "service": "shlink",
-            "directory": "/srv/workspaces/tools",
-            "file": "/srv/workspaces/tools/compose.yaml",
-            "imageFile": "/srv/workspaces/tools/apps/shlink/compose.yaml",
+            "directory": "/srv/workspaces/homelab-tools",
+            "file": "/srv/workspaces/homelab-tools/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-tools/apps/shlink/compose.yaml",
             "environment": {
                 "variables": [
                     "TOOLS_DB_SHLINK_PASSWORD",
@@ -1672,7 +1672,7 @@
                     "--",
                     "/usr/bin/python3",
                     "-B",
-                    "/srv/workspaces/tools/bin/environment.py",
+                    "/srv/workspaces/homelab-tools/bin/environment.py",
                     "json"
                 ]
             }
@@ -1693,9 +1693,9 @@
             "name": "tools-valkey-shlink-1",
             "project": "tools",
             "service": "valkey-shlink",
-            "directory": "/srv/workspaces/tools",
-            "file": "/srv/workspaces/tools/compose.yaml",
-            "imageFile": "/srv/workspaces/tools/apps/valkey-shlink/compose.yaml",
+            "directory": "/srv/workspaces/homelab-tools",
+            "file": "/srv/workspaces/homelab-tools/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-tools/apps/valkey-shlink/compose.yaml",
             "environment": {
                 "variables": [
                     "TOOLS_DB_SHLINK_PASSWORD",
@@ -1711,7 +1711,7 @@
                     "--",
                     "/usr/bin/python3",
                     "-B",
-                    "/srv/workspaces/tools/bin/environment.py",
+                    "/srv/workspaces/homelab-tools/bin/environment.py",
                     "json"
                 ]
             }
@@ -1732,9 +1732,9 @@
             "name": "tools-openspeedtest-1",
             "project": "tools",
             "service": "openspeedtest",
-            "directory": "/srv/workspaces/tools",
-            "file": "/srv/workspaces/tools/compose.yaml",
-            "imageFile": "/srv/workspaces/tools/apps/openspeedtest/compose.yaml",
+            "directory": "/srv/workspaces/homelab-tools",
+            "file": "/srv/workspaces/homelab-tools/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-tools/apps/openspeedtest/compose.yaml",
             "environment": {
                 "variables": [
                     "TOOLS_DB_SHLINK_PASSWORD",
@@ -1750,7 +1750,7 @@
                     "--",
                     "/usr/bin/python3",
                     "-B",
-                    "/srv/workspaces/tools/bin/environment.py",
+                    "/srv/workspaces/homelab-tools/bin/environment.py",
                     "json"
                 ]
             }
@@ -1771,9 +1771,9 @@
             "name": "tools-shlink-web-1",
             "project": "tools",
             "service": "shlink-web",
-            "directory": "/srv/workspaces/tools",
-            "file": "/srv/workspaces/tools/compose.yaml",
-            "imageFile": "/srv/workspaces/tools/apps/shlink-web/compose.yaml",
+            "directory": "/srv/workspaces/homelab-tools",
+            "file": "/srv/workspaces/homelab-tools/compose.yaml",
+            "imageFile": "/srv/workspaces/homelab-tools/apps/shlink-web/compose.yaml",
             "environment": {
                 "variables": [
                     "TOOLS_DB_SHLINK_PASSWORD",
@@ -1789,7 +1789,7 @@
                     "--",
                     "/usr/bin/python3",
                     "-B",
-                    "/srv/workspaces/tools/bin/environment.py",
+                    "/srv/workspaces/homelab-tools/bin/environment.py",
                     "json"
                 ]
             }

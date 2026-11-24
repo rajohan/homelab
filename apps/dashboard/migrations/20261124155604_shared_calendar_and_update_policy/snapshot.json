@@ -1,0 +1,331 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "1ef644dc-8620-408e-a1fe-7c65a0903dd0",
+    "prevIds": ["12a56550-9ad7-42c7-98bd-b2f7c5d49f3a"],
+    "footprints": [
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "mira_calendar_events"],
+            "writes": [
+                "s|tbl|public.mira_calendar_events",
+                "n|tbl|public.mira_calendar_events",
+                "e|tbl|public.mira_calendar_events",
+                "n|rel|public.mira_calendar_events",
+                "n|type|public.mira_calendar_events",
+                "n|rel|public.mira_calendar_events_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "update_policies", "allow_digest"],
+            "writes": [
+                "s|col|public.update_policies.allow_digest",
+                "n|col|public.update_policies.allow_digest",
+                "e|col|public.update_policies.allow_digest"
+            ],
+            "reads": ["n|tbl|public.update_policies", "n|sch|public"]
+        },
+        {
+            "statementType": "alter_column",
+            "statementTarget": ["column", "public", "mira_daytona_jobs", "sandbox_id"],
+            "writes": [
+                "s|colprop|public.mira_daytona_jobs.sandbox_id.type",
+                "s|colprop|public.mira_daytona_jobs.sandbox_id.default"
+            ],
+            "reads": [
+                "n|tbl|public.mira_daytona_jobs",
+                "n|sch|public",
+                "n|col|public.mira_daytona_jobs.sandbox_id"
+            ],
+            "sqlHash": "45dfed996adb6f0b"
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_calendar_events",
+                "mira_calendar_owner_start"
+            ],
+            "writes": [
+                "s|idx|public.mira_calendar_owner_start",
+                "n|idx|public.mira_calendar_owner_start",
+                "e|idx|public.mira_calendar_owner_start",
+                "n|rel|public.mira_calendar_owner_start"
+            ],
+            "reads": [
+                "n|tbl|public.mira_calendar_events",
+                "n|sch|public",
+                "n|col|public.mira_calendar_events.owner",
+                "n|col|public.mira_calendar_events.starts_at",
+                "n|col|public.mira_calendar_events.id"
+            ]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "name": "mira_calendar_events",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "owner",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "title",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "notes",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "location",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "all_day",
+                "type": "boolean",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "starts_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "ends_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "created_by",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "version",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "1",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "update_policies",
+                "name": "allow_digest",
+                "type": "boolean",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": "false",
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "mira_calendar_owner_start",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "owner",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "starts_at",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": null,
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "mira_calendar_events_pkey",
+                "columns": ["id"],
+                "nameExplicit": false,
+                "entityType": "pks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "mira_calendar_interval",
+                "value": "\"ends_at\" > \"starts_at\"",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "mira_calendar_creator",
+                "value": "\"created_by\" in ('operator','mira')",
+                "entityType": "checks"
+            }
+        },
+        {
+            "op": "alter",
+            "key": "columns\u0000[\"public\",\"mira_daytona_jobs\",\"sandbox_id\"]",
+            "set": {
+                "type": "text"
+            }
+        }
+    ]
+}

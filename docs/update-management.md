@@ -5,6 +5,9 @@ The worker registers installers only for explicit `HOMELAB_DASHBOARD_UPDATE_TARG
 or `HOMELAB_DASHBOARD_UPDATE_TARGETS_FILE` configuration.
 All automatic policies default to **off**, including Docker and digest-pinned images.
 
+The two managed Homelab Compose stacks publish verified image pin changes
+through [the host-side publication queue](stack-publication.md).
+
 ## Authority and lifecycle
 
 - `updates:read` reads inventory and policies. `updates:publish` can publish only the
@@ -22,9 +25,17 @@ All automatic policies default to **off**, including Docker and digest-pinned im
   successful execution on the same host from the same confirmation. Expired work must be confirmed again. Changing a target invalidates its
   previous automatic consent. Disabling a policy stops queued automatic work, not an
   installation already executing on the host.
-- Automatic admission accepts comparable stable patch/minor versions only. Majors,
-  prereleases, downgrades, held packages, stale reports and unknown version schemes
-  never become automatic installs. A Docker tag/digest pin is not a package hold.
+- Automatic admission accepts verified stable patch/minor versions and newer IANA
+  data releases of the APT `tzdata` package (for example `2026e` to `2026f`).
+  The host checks its full APT transaction, including dependency versions and holds.
+  Major upgrades, prereleases, downgrades and stale observations require review.
+  The admission job reports available, queued and skipped counts and sample reasons.
+- **Allow unversioned images** is a separate, per-service exception for Docker's
+  `latest` channel. Both installed and candidate images must have successfully
+  inspected, absent version labels. The registry and the target host independently
+  verify this. An unreadable label, a failed lookup or a known major upgrade does
+  not qualify. This consent starts off, is cleared when automatic updates are
+  disabled or the recipe changes, and cannot be granted by a fleet or host switch.
 - Installers use the existing queue, resource leases, audit trail, progress events,
   notifications and worker-activity UI. An installer has **one attempt**, not retries.
   A failed/expired automatic candidate is not silently requeued while its run remains
@@ -189,8 +200,12 @@ Resolved Compose configuration must differ only in that one service's image.
 The selected service is recreated with `--no-deps --no-build --pull never`. A stopped
 container stays stopped; a running service is awaited as running/healthy using
 [Compose's lifecycle options](https://docs.docker.com/reference/cli/docker/compose/up/).
-Volumes are retained. Automatic execution rechecks actual installed/pulled versions;
-opaque channels require comparable image-version metadata or manual approval.
+Volumes are retained. Automatic execution rechecks actual installed/pulled versions.
+For LinuxServer images the worker understands package revisions such as
+`v0.25.34-ls46`. When a versioned tag resolves to the exact same manifest as
+`latest`, the Compose edit records a version and digest. Otherwise it can retain
+the channel and digest. An explicit `latest` discovery channel continues to find
+new releases even after a versioned pin has been written.
 
 Replacing a network/PID/IPC namespace provider also requires rebinding its existing
 consumers. The driver's explicit `namespaceDependents` must exactly match the

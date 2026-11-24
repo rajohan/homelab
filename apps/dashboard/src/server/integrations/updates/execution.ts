@@ -6,6 +6,7 @@ import type { UpdateTarget } from "./configuration";
 import dockerDependenciesProgram from "./docker_dependencies.py" with { type: "text" };
 import nativeProgram from "./native.py" with { type: "text" };
 import remoteProgram from "./remote.py" with { type: "text" };
+import stackPublication from "./stack_publication.py" with { type: "text" };
 import toolchainProgram from "./toolchain.py" with { type: "text" };
 
 // Both modules travel in one transient interpreter; no helper is installed on a host.
@@ -17,6 +18,8 @@ const program =
     toolchainProgram +
     "\n" +
     dockerDependenciesProgram +
+    "\n" +
+    stackPublication +
     "\n" +
     remoteProgram;
 
@@ -102,7 +105,7 @@ export interface UpdateReceipt {
 export type UpdateExecutor = (
     target: UpdateTarget,
     item: UpdateItem,
-    automatic: boolean,
+    automatic: boolean | "digest",
     signal: AbortSignal,
     report: (message: string) => Promise<void>
 ) => Promise<UpdateReceipt>;

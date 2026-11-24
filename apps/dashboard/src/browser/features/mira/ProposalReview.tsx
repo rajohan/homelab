@@ -5,6 +5,9 @@ import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 
 const actions: Record<string, string> = {
+    mira_calendar_create: "add a calendar event",
+    mira_calendar_update: "edit a calendar event",
+    mira_calendar_delete: "remove a calendar event",
     mira_task_create: "create a task",
     mira_task_update: "update a task",
     mira_task_progress: "record task progress",
@@ -13,7 +16,12 @@ const actions: Record<string, string> = {
 };
 
 const labels: Record<string, string> = {
-    id: "Task reference",
+    id: "Reference",
+    notes: "Notes",
+    allDay: "All day",
+    startsAt: "Starts",
+    endsAt: "Ends (exclusive)",
+    location: "Location",
     taskId: "Task reference",
     title: "Title",
     description: "Description",

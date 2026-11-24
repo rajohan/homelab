@@ -240,14 +240,18 @@ def docker_update(driver, item, automatic=False):
         if pulled != item["available"]:
             raise RuntimeError("Pulled image does not match the approved platform image")
         if automatic:
-            old = image_version(item["image"], item["installed"])
-            new = image_version(candidate, pulled)
-            if not old or not new or old[0] != new[0] or new < old:
+            old, old_unversioned = image_version(item["image"], item["installed"])
+            new, new_unversioned = image_version(candidate, pulled)
+            if automatic == "digest":
+                if not (old_unversioned and new_unversioned and (driver.get("trackingTag") or "latest") == "latest"):
+                    raise RuntimeError("Image metadata does not match the approved digest-only update")
+            elif not old or not new or old[0] != new[0] or new < old:
                 raise RuntimeError("This image change requires manual approval")
         if inspect_container(identity) != before or json.loads(compose(["config", "--format", "json"])) != config:
             raise RuntimeError("Application or Compose configuration changed during preparation")
         verify_namespace_plan(namespace_plan)
         progress("configuring")
+        publication = prepare_stack_pin(driver, item["image"], candidate)
         atomic_content(path, updated, original)
         try:
             expected = copy.deepcopy(config)
@@ -256,6 +260,7 @@ def docker_update(driver, item, automatic=False):
                 raise RuntimeError("The Compose edit changed more than the selected image")
         except Exception:
             atomic_content(path, original, updated)
+            finish_stack_pin(publication, False)
             raise
         progress("installing")
         stop_namespace_consumers(namespace_plan, driver["service"], compose)
@@ -276,18 +281,33 @@ def docker_update(driver, item, automatic=False):
                 UPDATE_HEALTH = "passed"
         if replacements:
             print(json.dumps({"recreatedContainers": replacements}), flush=True)
+        finish_stack_pin(publication, True)
         return item["available"]
 
 
 def image_version(reference, identity):
     """Classify Docker changes using the actual tag or installed image label, not a publisher assertion."""
-    tag = reference.split("@")[0].rsplit("/", 1)[-1].split(":")[-1]
-    tag = re.sub(r"-(?:alpine|bookworm|bullseye|trixie|slim)[\d.-]*$", "", tag)
-    result = stable_parts(tag)
-    if result:
-        return result
-    label = command(["/usr/bin/docker", "image", "inspect", "--format", '{{index .Config.Labels "org.opencontainers.image.version"}}', identity])
-    return stable_parts(label)
+    name = reference.split("@")[0].rsplit("/", 1)[-1]
+    tag = name.split(":", 1)[1] if ":" in name else "latest"
+    release_pattern = r"v?(\d+)\.(\d+)\.(\d+)(?:-(?:alpine|bookworm|bullseye|trixie|slim)[\d.-]*)?"
+    def parts(value):
+        match = re.fullmatch(release_pattern, value)
+        if match:
+            return tuple(map(int, match.groups())) + (0,)
+        if re.match(r"^(?:(?:docker\.io|ghcr\.io|registry-1\.docker\.io|index\.docker\.io)/)?linuxserver/", reference):
+            build = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)-ls(\d+)", value)
+            if build:
+                return tuple(map(int, build.groups()))
+        return None
+    label = json.loads(command(["/usr/bin/docker", "image", "inspect", "--format", '{{if .Config.Labels}}{{json (index .Config.Labels "org.opencontainers.image.version")}}{{else}}null{{end}}', identity]))
+    if not isinstance(label, (str, type(None))):
+        raise RuntimeError("Unexpected image version metadata")
+    # A numeric digest pin may omit the LinuxServer packaging revision.
+    tagged = parts(tag)
+    labelled = parts(label or "")
+    if tagged and labelled and tagged[:3] != labelled[:3]:
+        raise RuntimeError("Image tag disagrees with its version label")
+    return labelled or tagged, tag == "latest" and not label
 
 
 def stable_parts(version):
@@ -324,6 +344,12 @@ def apt_update(item, automatic):
         if not change.candidate or (change.installed and apt_pkg.version_compare(change.candidate.version, change.installed.version) < 0):
             raise RuntimeError("Package downgrades are not permitted")
         if automatic:
+            if change.name == "tzdata" and change.installed:
+                pattern = r"(?:(\d+):)?(\d{4}z*[a-z])(?:-[0-9][A-Za-z0-9.+]*)?"
+                before = re.fullmatch(pattern, change.installed.version)
+                after = re.fullmatch(pattern, change.candidate.version)
+                if before and after and before[1] == after[1] and before[2] < after[2]:
+                    continue
             old = stable_parts(change.installed.version) if change.installed else None
             new = stable_parts(change.candidate.version)
             if not old or not new or old[0] != new[0] or new < old:

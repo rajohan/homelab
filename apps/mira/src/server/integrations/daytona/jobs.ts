@@ -27,6 +27,8 @@ import {
     DaytonaToolbox,
     DaytonaToolboxLifetimeError,
 } from "./toolbox";
+import { DaytonaV2, DaytonaV2SetupError } from "./v2";
+import { DaytonaV2Toolbox } from "./v2Toolbox";
 
 interface Job {
     id: string;
@@ -97,8 +99,12 @@ async function update(client: SQL, job: Job, phase: string): Promise<void> {
     if (!row) throw new MiraFailure("CONFLICT", "Daytona lease expired.");
     job.phase = phase;
 }
-async function resetUnstarted(client: SQL, job: Job): Promise<void> {
-    await client`UPDATE mira_daytona_jobs SET state=CASE WHEN cancel_requested THEN 'cancelled' ELSE 'draft' END,phase=CASE WHEN cancel_requested THEN 'closed' ELSE 'idle' END,cleanup='not_needed',outcome=CASE WHEN cancel_requested THEN 'cancelled' ELSE NULL END,approval_run_id=NULL,approved_at=NULL,control_version=NULL,started_at=NULL,deadline=NULL,retry_at=NULL,message='No sandbox was requested. Review this job again.',version=version+1,updated_at=clock_timestamp() WHERE id=${job.id} AND lease_token=${job.token} AND lease_expires_at>clock_timestamp() AND state='running' AND phase='admitted' AND sandbox_id IS NULL`;
+async function resetUnstarted(
+    client: SQL,
+    job: Job,
+    message = "No sandbox was requested. Review this job again."
+): Promise<void> {
+    await client`UPDATE mira_daytona_jobs SET state=CASE WHEN cancel_requested THEN 'cancelled' ELSE 'draft' END,phase=CASE WHEN cancel_requested THEN 'closed' ELSE 'idle' END,cleanup='not_needed',outcome=CASE WHEN cancel_requested THEN 'cancelled' ELSE NULL END,approval_run_id=NULL,approved_at=NULL,control_version=NULL,started_at=NULL,deadline=NULL,retry_at=NULL,message=${message},version=version+1,updated_at=clock_timestamp() WHERE id=${job.id} AND lease_token=${job.token} AND lease_expires_at>clock_timestamp() AND state='running' AND phase='admitted' AND sandbox_id IS NULL`;
 }
 async function cleanup(
     client: SQL,
@@ -202,7 +208,10 @@ export async function dispatchMiraDaytona(
         }
         // Cleanup uses the persisted original binding even after snapshot or region changes.
         const original = { ...job.binding, apiKey: configuration.apiKey };
-        const control = new DaytonaClient(original, request, job.bindingHash);
+        const v2 = original.projectId
+            ? new DaytonaV2(original, request, job.bindingHash)
+            : undefined;
+        const control = v2 ?? new DaytonaClient(original, request, job.bindingHash);
         const reference = {
             runId: job.id,
             ...(job.sandboxId ? { sandboxId: job.sandboxId } : {}),
@@ -305,13 +314,24 @@ export async function dispatchMiraDaytona(
                     }
                 );
         }
-        const toolbox = new DaytonaToolbox(
-            original,
-            { runId: job.id, sandboxId: job.sandboxId },
-            request
-        );
+        const known = { runId: job.id, sandboxId: job.sandboxId };
+        const toolbox = v2
+            ? new DaytonaV2Toolbox(v2, known, request)
+            : new DaytonaToolbox(original, known, request);
         if (job.phase === "waiting") {
             const observed = await control.inspect(reference, signal);
+            if (
+                v2 &&
+                observed &&
+                ["failed", "lost", "stopped", "destroyed"].includes(observed.state)
+            )
+                throw new Error("Daytona sandbox stopped during provisioning.");
+            if (
+                v2 &&
+                observed &&
+                ["queued", "pending", "assigned", "booting"].includes(observed.state)
+            )
+                return true;
             if (!observed || !observed.settingsMatch)
                 throw new Error("Sandbox settings unavailable.");
             if (observed.state !== "started") return true;
@@ -402,7 +422,11 @@ export async function dispatchMiraDaytona(
                 "Stopped before dispatch because the sandbox activity window expired."
             );
         } else if (job.phase === "admitted") {
-            await resetUnstarted(client, job);
+            await resetUnstarted(
+                client,
+                job,
+                error instanceof DaytonaV2SetupError ? error.message : undefined
+            );
         } else if (job.phase === "cleaning") {
             await client`UPDATE mira_daytona_jobs SET state='needs_attention',message='Sandbox cleanup could not be confirmed. Mira will keep checking.',retry_at=clock_timestamp()+interval '30 seconds',version=version+1 WHERE id=${job.id} AND lease_token=${job.token}`;
         } else await cleanup(client, job, "needs_attention", unknownMessage);

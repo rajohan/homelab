@@ -35,6 +35,7 @@ export interface ImageUpdate {
     readonly current: boolean;
     readonly installedVersion?: string;
     readonly availableVersion?: string;
+    readonly digestOnly?: boolean;
 }
 
 /**
@@ -262,14 +263,21 @@ export async function resolveImageUpdate(
     // platform-manifest pin must therefore keep a platform-manifest candidate,
     // not request its parent index while expecting the child manifest's ID.
     const pullDigest = identityKind === "manifest" ? platformDigest : selected.digest;
-    const labelVersion = async (identity: string): Promise<string | undefined> => {
+    // null means a successful inspection with no version label. Registry errors and
+    // unsupported labels must never grant digest-only consent.
+    const labelVersion = async (identity: string): Promise<string | null | undefined> => {
         if (!v.safeParse(digest, identity).success) return undefined;
         try {
             const config = v.parse(imageConfigSchema, await readConfiguration(identity));
             const label = config.config.Labels?.["org.opencontainers.image.version"];
-            return typeof label === "string"
-                ? imageVersionTag(label)?.version
-                : undefined;
+            if (label === undefined || label === null || label === "") return null;
+            if (typeof label !== "string") return undefined;
+            if (
+                source.repository.startsWith("linuxserver/") &&
+                /^v?\d+\.\d+\.\d+-ls\d+$/.test(label)
+            )
+                return label.replace(/^v/, "");
+            return imageVersionTag(label)?.version;
         } catch {
             signal.throwIfAborted();
             // Optional version metadata can disable automatic admission, never image availability.
@@ -277,18 +285,48 @@ export async function resolveImageUpdate(
         }
     };
     const installedTag = publicImageReference(item.image)?.tag;
-    const installedVersion =
-        (installedTag ? imageVersionTag(installedTag)?.version : undefined) ??
-        (await labelVersion(installedConfig));
-    const availableVersion =
-        imageVersionTag(selectedTag)?.version ??
-        (manifest.config ? await labelVersion(manifest.config.digest) : undefined);
+    const fromTag = installedTag && imageVersionTag(installedTag)?.version;
+    const toTag = imageVersionTag(selectedTag)?.version;
+    const linuxServer = source.repository.startsWith("linuxserver/");
+    const fromLabel =
+        !fromTag || linuxServer ? await labelVersion(installedConfig) : undefined;
+    const toLabel =
+        !toTag || linuxServer ? await labelVersion(manifest.config.digest) : undefined;
+    const installedVersion = fromLabel ?? fromTag;
+    const availableVersion = toLabel ?? toTag;
+    const digestOnly =
+        installedTag === "latest" &&
+        selectedTag === "latest" &&
+        fromLabel === null &&
+        toLabel === null;
+    // Keep a readable pin when the channel and release tag resolve to exactly
+    // the same registry descriptor. The channel remains the discovery source.
+    if (
+        selectedTag === "latest" &&
+        availableVersion &&
+        selected.digest &&
+        installedConfig !== manifest.config.digest
+    ) {
+        const numeric = availableVersion.replace(/-ls\d+$/, "");
+        for (const alias of [numeric, `v${numeric}`]) {
+            try {
+                const versionManifest = await readManifest(alias);
+                if (versionManifest.digest === selected.digest) {
+                    selectedTag = alias;
+                    break;
+                }
+            } catch {
+                signal.throwIfAborted();
+            }
+        }
+    }
     return {
         imageId,
         current: installedConfig === manifest.config.digest,
         reference: `${source.prefix}:${selectedTag}${pullDigest ? `@${pullDigest}` : ""}`,
         ...(installedVersion ? { installedVersion } : {}),
         ...(availableVersion ? { availableVersion } : {}),
+        ...(digestOnly ? { digestOnly: true } : {}),
     };
 }
 

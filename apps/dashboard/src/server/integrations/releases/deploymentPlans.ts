@@ -87,14 +87,19 @@ export function authDeploymentCurrent(
         current: observed.containers[service.name],
         candidate: release.images.find((image) => image.app === service.app)?.reference,
     }));
-    if (services.some(({ current }) => !current?.running || current.health !== "healthy"))
-        throw new Error("Auth deployment is not healthy");
+    if (services.some(({ current }) => !current))
+        throw new Error("Auth deployment identity is missing");
     if (
         services.every(
             ({ current, candidate }) => candidate && current!.image === candidate
         )
     )
-        return true;
+        return (
+            services.every(
+                ({ current }) => current!.running && current!.health === "healthy"
+            ) &&
+            target.auth.units.every((unit) => observed.units[unit]?.active === "active")
+        );
     const next = release.version.split(".").map(Number);
     const older = services.every(({ service, current }) => {
         const version = releaseImageVersion(

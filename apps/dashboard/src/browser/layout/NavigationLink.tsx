@@ -19,6 +19,7 @@ export function NavigationLink({
         | "/jobs"
         | "/mira"
         | "/tasks"
+        | "/calendar"
         | "/reports"
         | "/mira-automations"
         | "/applications"

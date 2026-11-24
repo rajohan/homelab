@@ -28,6 +28,11 @@ import {
     miraTaskUpdateSchema,
 } from "@homelab/contracts/mira";
 import {
+    calendarCreateSchema,
+    calendarRangeSchema,
+    calendarUpdateSchema,
+} from "@homelab/contracts/miraCalendar";
+import {
     miraCodeApproveSchema,
     miraCodeFilterSchema,
     miraCodeSaveSchema,
@@ -81,6 +86,11 @@ import {
     saveMiraAutomation,
     setMiraEnabled,
 } from "@homelab/mira/data/automations";
+import {
+    deleteCalendarEvent,
+    listCalendar,
+    saveCalendarEvent,
+} from "@homelab/mira/data/calendar";
 import { readChatActivity } from "@homelab/mira/data/chatActivity";
 import {
     cancelChatgptLogin,
@@ -650,6 +660,26 @@ export const miraRouter = trpc.router({
             .input(record)
             .mutation(({ ctx, input }) =>
                 execute(ctx, (mira) => cancelRun(mira, input.id))
+            ),
+    }),
+    calendar: trpc.router({
+        list: trpc.procedure
+            .input(calendarRangeSchema)
+            .query(({ ctx, input }) => execute(ctx, (mira) => listCalendar(mira, input))),
+        create: trpc.procedure
+            .input(calendarCreateSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => saveCalendarEvent(mira, input))
+            ),
+        update: trpc.procedure
+            .input(calendarUpdateSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => saveCalendarEvent(mira, input))
+            ),
+        delete: trpc.procedure
+            .input(versionedIdSchema)
+            .mutation(({ ctx, input }) =>
+                execute(ctx, (mira) => deleteCalendarEvent(mira, input))
             ),
     }),
     tasks: trpc.router({

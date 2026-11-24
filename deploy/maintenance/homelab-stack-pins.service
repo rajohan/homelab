@@ -1,0 +1,16 @@
+[Unit]
+Description=Publish verified Homelab Compose image pins as Mira
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=rajohan
+ExecStart=/usr/bin/python3 -B /usr/local/lib/homelab-stack-pins/publish-stack-pins.py
+Environment=GH_PROMPT_DISABLED=1
+UMask=0077
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/spool/homelab-stack-pins

@@ -105,6 +105,7 @@ export interface MiraDaytonaRecovery {
     id: string;
     identityHash: string;
     organizationId: string;
+    projectId?: string;
     snapshotId: string;
     target: string;
     sandboxId: string | null;

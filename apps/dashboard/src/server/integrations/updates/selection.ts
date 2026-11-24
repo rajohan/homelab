@@ -94,6 +94,7 @@ export function updateControl(
                 item.platform?.os,
                 item.platform?.architecture,
                 item.platform?.variant,
+                ...(item.digestOnly ? ["digest-only"] : []),
             ])
         )
         .digest("hex");

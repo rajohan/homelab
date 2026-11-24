@@ -27,8 +27,8 @@ export const deploymentObservationSchema = v.strictObject({
     units: v.record(
         v.string(),
         v.strictObject({
-            active: v.literal("active"),
-            invocation: v.pipe(v.string(), v.regex(/^[a-f0-9]{32}$/)),
+            active: v.picklist(["active", "failed", "inactive"]),
+            invocation: v.pipe(v.string(), v.regex(/^(?:[a-f0-9]{32})?$/)),
         })
     ),
 });
@@ -115,6 +115,7 @@ export type DeploymentHostRequest = { target: ReleaseDeploymentHostTarget } & (
           drained?: boolean;
       }
     | { mode: "status"; id: string }
+    | { mode: "stop-mira"; expected: DeploymentObservation; deadline: number }
     | {
           mode: "submit";
           id: string;
@@ -152,6 +153,20 @@ export function deploymentDigest(value: unknown): string {
     return new Bun.CryptoHasher("sha256")
         .update(JSON.stringify(sortDeploymentValue(value)))
         .digest("hex");
+}
+
+/**
+ * Compare pre-deployment identities while allowing a probe to change its verdict.
+ * @param observation - Configuration and runtime evidence for the installed services.
+ * @returns Fingerprint retaining image, container, running state and unit identities.
+ */
+export function deploymentPreflightDigest(observation: DeploymentObservation): string {
+    const containers = Object.fromEntries(
+        Object.entries(observation.containers).map(
+            ([name, { health: _health, ...rest }]) => [name, rest]
+        )
+    );
+    return deploymentDigest({ ...observation, containers });
 }
 
 /** A definitive host refusal before the caller's requested operation can proceed. */

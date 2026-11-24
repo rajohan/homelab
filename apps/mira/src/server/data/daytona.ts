@@ -78,15 +78,19 @@ export async function daytonaIntegrationStatus(
         { matched: boolean; fresh: boolean; granted: boolean }[]
     >`SELECT integrations @> ${JSON.stringify([{ owner: context.owner, key: "daytona", bindingHash: hash, sendConfigured: true }])}::text::jsonb AS matched,heartbeat_at>clock_timestamp()-interval '45 seconds' AS fresh,NOT EXISTS(SELECT 1 FROM mira_switches WHERE owner=${context.owner} AND key='integration:daytona' AND enabled AND binding_hash IS DISTINCT FROM ${hash}) AS granted FROM mira_runtime_status WHERE id=1`;
     let message: string | null = null;
-    if (!row?.matched)
+    if (!binding.projectId)
         message =
-            "Daytona requires matching configuration and a qualified private snapshot before it can run jobs.";
+            "Daytona is configured for v0. Set the v2 project, region and image, then qualify the v2 binding to run cloud jobs.";
+    else if (!row?.fresh) message = "Waiting for a current executor heartbeat.";
+    else if (!row.matched)
+        message =
+            "The executor needs the matching v2 project, API key and qualified image.";
     else if (!row.granted)
         message = "Pause and enable Daytona to confirm the changed account or snapshot.";
     return {
         ...base,
-        configured: row?.matched === true,
-        ready: row?.matched === true && row.fresh && row.granted,
+        configured: true,
+        ready: Boolean(binding.projectId && row?.matched && row.fresh && row.granted),
         message,
     };
 }
@@ -100,6 +104,7 @@ export async function daytonaPermission(
     query: MiraQuery,
     binding: DaytonaBinding
 ): Promise<number | null> {
+    if (!binding.projectId) return null;
     const hash = daytonaBindingHash(binding);
     const [row] = await query<
         { version: number }[]

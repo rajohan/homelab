@@ -31,6 +31,7 @@ import { readBuildDependencies } from "../integrations/releases/dependencies";
 import { automaticDeploymentJobs } from "../integrations/releases/deploymentAutomatic";
 import type { ReleaseDeploymentTarget } from "../integrations/releases/deploymentConfiguration";
 import { deploymentPreparationJobs } from "../integrations/releases/deploymentPlans";
+import { deploymentRepairJobs } from "../integrations/releases/deploymentRepair";
 import { readHomelabRelease } from "../integrations/releases/read";
 import { snapshotJob } from "../integrations/snapshots/job";
 import { updateActionJobs } from "../integrations/updates/actions";
@@ -87,6 +88,10 @@ export function createOperationsRuntime(
             repository: configuration.releaseRepository,
             token: configuration.githubToken,
         }),
+        ...deploymentRepairJobs(
+            configuration.deploymentTargets ?? [],
+            configuration.updateTargets ?? []
+        ),
         ...maintenanceJobs(
             configuration.maintenanceTargets ?? [],
             configuration.updateTargets ?? []
@@ -113,7 +118,8 @@ export function createOperationsRuntime(
             connection.client,
             createUpdateExecutor(configuration.githubToken),
             configuration.applicationTargets ?? [],
-            updateCheck
+            updateCheck,
+            configuration.updateSources
         ),
         ...(configuration.updateTargets?.length
             ? [restartStatusJob(configuration.updateTargets)]

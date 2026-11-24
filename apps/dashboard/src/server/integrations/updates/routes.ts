@@ -336,6 +336,7 @@ export const updatesRouter = trpc.router({
                         installedVersion: _installed,
                         availableVersion: _version,
                         candidateVerified: _verified,
+                        digestOnly: _digest,
                         ...software
                     } = item;
                     return software;

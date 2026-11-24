@@ -50,6 +50,7 @@ export function Shell() {
     const titles: Readonly<Record<string, string>> = {
         "/mira": "Chat",
         "/tasks": "Tasks",
+        "/calendar": "Calendar",
         "/reports": "Reports",
         "/mira-automations": "Automations",
         "/settings": "Settings",
