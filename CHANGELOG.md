@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.4](https://github.com/rajohan/homelab/compare/v0.24.3...v0.24.4) (2026-11-24)
+
+
+### Dependencies
+
+* **deps:** update WebView2 SDK to 1.0.4370.26 ([#265](https://github.com/rajohan/homelab/issues/265)) ([e687398](https://github.com/rajohan/homelab/commit/e687398896dae5aa10c83c2f13bc9fdee158cc65))
+
 ## [0.24.3](https://github.com/rajohan/homelab/compare/v0.24.2...v0.24.3) (2026-11-24)
 
 
