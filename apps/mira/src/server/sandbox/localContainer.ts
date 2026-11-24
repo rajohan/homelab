@@ -117,7 +117,7 @@ export function localCodeContainerSpec(configuration: Configuration, owner: stri
             NanoCpus: 4_000_000_000,
             PidsLimit: 1024,
             Tmpfs: {
-                "/tmp": "rw,nosuid,nodev,exec,size=2147483648,mode=1777",
+                "/tmp": "rw,nosuid,nodev,exec,size=4g,mode=1777",
             },
             LogConfig: { Type: "none", Config: {} },
             RestartPolicy: { Name: "no", MaximumRetryCount: 0 },

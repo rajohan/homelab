@@ -1,17 +1,23 @@
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { EllipsisVertical, type LucideIcon } from "lucide-react";
+import { Fragment, type ReactElement, type ReactNode } from "react";
 
 import { cn } from "../../lib/classNames";
 import { buttonStyles } from "../Button/buttonStyles";
 
-export interface DropdownMenuAction {
+export type DropdownMenuAction = {
     readonly id: string;
     readonly label: string;
     readonly icon?: LucideIcon;
     readonly disabled?: boolean;
     readonly danger?: boolean;
-    readonly onSelect: () => void;
-}
+} & (
+    | { readonly onSelect: () => void; readonly renderLink?: never }
+    | {
+          readonly renderLink: (content: ReactNode) => ReactElement;
+          readonly onSelect?: never;
+      }
+);
 
 /**
  * Present related actions in an anchored, keyboard-accessible menu.
@@ -53,13 +59,22 @@ export function DropdownMenu({
             >
                 {actions.map((action) => {
                     const Icon = action.icon;
+                    const content = (
+                        <>
+                            {Icon && (
+                                <Icon size={16} className="shrink-0" aria-hidden="true" />
+                            )}
+                            {action.label}
+                        </>
+                    );
                     return (
                         <MenuItem
-                            as="button"
-                            type="button"
+                            as={action.renderLink ? Fragment : "button"}
+                            {...(action.renderLink
+                                ? {}
+                                : { type: "button" as const, onClick: action.onSelect })}
                             key={action.id}
                             disabled={action.disabled ?? false}
-                            onClick={action.onSelect}
                             className={buttonStyles({
                                 variant: "ghost",
                                 size: "sm",
@@ -70,10 +85,7 @@ export function DropdownMenu({
                                 ),
                             })}
                         >
-                            {Icon && (
-                                <Icon size={16} className="shrink-0" aria-hidden="true" />
-                            )}
-                            {action.label}
+                            {action.renderLink ? action.renderLink(content) : content}
                         </MenuItem>
                     );
                 })}

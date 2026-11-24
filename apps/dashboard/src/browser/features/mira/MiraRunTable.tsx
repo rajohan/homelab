@@ -2,13 +2,14 @@ import type { MiraRunSummary } from "@homelab/contracts/mira";
 import type { TableSort } from "@homelab/contracts/tableSort";
 import {
     Badge,
-    Button,
-    buttonStyles,
     DataTable,
+    DropdownMenu,
+    type DropdownMenuAction,
     formatDateTime,
     type InfiniteScrollContinuation,
 } from "@homelab/ui";
 import { Link } from "@tanstack/react-router";
+import { ListChecks, MessageSquare, Square } from "lucide-react";
 import { useState } from "react";
 
 import { MiraRunDetails } from "./MiraRunDetails";
@@ -104,42 +105,55 @@ export function MiraRunTable({
                         id: "actions",
                         label: "Actions",
                         hideLabel: true,
-                        width: "w-56",
+                        width: "w-16",
                         mobile: "footer-actions",
-                        render: (run) => (
-                            <div className="flex flex-wrap justify-end gap-2 @max-3xl:grid @max-3xl:grid-cols-1">
-                                <Button
-                                    variant="secondary"
-                                    className="@max-3xl:w-full"
-                                    onClick={() => setSelected(run.id)}
-                                >
-                                    Details
-                                </Button>
-                                {run.conversationAvailable && (
-                                    <Link
-                                        className={buttonStyles({
-                                            variant: "secondary",
-                                            className: "@max-3xl:w-full",
-                                        })}
-                                        to="/mira/$conversationId"
-                                        params={{ conversationId: run.conversationId }}
-                                    >
-                                        Open chat
-                                    </Link>
-                                )}
-                                {["queued", "running"].includes(run.state) && (
-                                    <Button
-                                        variant="secondary"
-                                        className="@max-3xl:w-full"
-                                        busy={stoppingId === run.id}
-                                        disabled={run.cancelRequested}
-                                        onClick={() => onStop(run.id)}
-                                    >
-                                        {run.cancelRequested ? "Stopping" : "Stop"}
-                                    </Button>
-                                )}
-                            </div>
-                        ),
+                        render: (run) => {
+                            const actions: DropdownMenuAction[] = [
+                                {
+                                    id: "details",
+                                    label: "Details",
+                                    icon: ListChecks,
+                                    onSelect: () => setSelected(run.id),
+                                },
+                            ];
+                            if (run.conversationAvailable)
+                                actions.push({
+                                    id: "chat",
+                                    label: "Open chat",
+                                    icon: MessageSquare,
+                                    renderLink: (content) => (
+                                        <Link
+                                            to="/mira/$conversationId"
+                                            params={{
+                                                conversationId: run.conversationId,
+                                            }}
+                                        >
+                                            {content}
+                                        </Link>
+                                    ),
+                                });
+                            if (["queued", "running"].includes(run.state))
+                                actions.push({
+                                    id: "stop",
+                                    label:
+                                        run.cancelRequested || stoppingId === run.id
+                                            ? "Stopping"
+                                            : "Stop",
+                                    icon: Square,
+                                    danger: true,
+                                    disabled:
+                                        run.cancelRequested || stoppingId === run.id,
+                                    onSelect: () => onStop(run.id),
+                                });
+                            return (
+                                <div className="flex justify-end">
+                                    <DropdownMenu
+                                        label={`Actions for ${run.title}, ${formatDateTime(run.createdAt)}`}
+                                        actions={actions}
+                                    />
+                                </div>
+                            );
+                        },
                     },
                 ]}
             />

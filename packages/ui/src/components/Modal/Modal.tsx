@@ -84,7 +84,9 @@ export function Modal({
                                         <BreakableName>{title}</BreakableName>
                                     </DialogTitle>
                                     {titleAccessory && (
-                                        <div className="shrink-0">{titleAccessory}</div>
+                                        <div className="flex max-w-full flex-wrap items-center gap-1.5">
+                                            {titleAccessory}
+                                        </div>
                                     )}
                                 </div>
                                 {description && (
