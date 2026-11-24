@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0](https://github.com/rajohan/homelab/compare/v0.24.4...v0.25.0) (2026-11-24)
+
+
+### Features
+
+* **dashboard:** add a shared calendar and repair service update workflows ([#267](https://github.com/rajohan/homelab/issues/267)) ([d3a21ba](https://github.com/rajohan/homelab/commit/d3a21ba4f5d6e2cb76bcc1d3ce27939d65e289cc))
+
 ## [0.24.4](https://github.com/rajohan/homelab/compare/v0.24.3...v0.24.4) (2026-11-24)
 
 
