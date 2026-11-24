@@ -5,6 +5,7 @@ import { lockQueue } from "../../jobs/queue";
 import { auditOperation } from "../../operations/audit";
 import type { UpdateTarget } from "../updates/configuration";
 import {
+    deploymentMiraService,
     releaseDeploymentRevision,
     type ReleaseDeploymentTarget,
 } from "./deploymentConfiguration";
@@ -262,19 +263,12 @@ export async function coordinateDeployment(options: {
             // A stopped executor cannot acknowledge a drain. A running one can
             // have a delivery in flight even after losing its database heartbeat.
             // The host rechecks this exact running state and identity before submission.
-            const silentRunningMira =
-                target.mira &&
+            const executor = deploymentMiraService(target);
+            if (
+                executor &&
                 !busy.unexpectedMira &&
-                target.services.some(
-                    (service) =>
-                        service.app === "mira" &&
-                        (service.name === "mira" ||
-                            !target.services.some(
-                                (other) => other.name === "mira" && other.app === "mira"
-                            )) &&
-                        plan.expected.containers[service.name]?.running
-                );
-            if (silentRunningMira) {
+                plan.expected.containers[executor]?.running
+            ) {
                 await write(
                     "failed",
                     "draining",

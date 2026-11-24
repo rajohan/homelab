@@ -388,6 +388,7 @@ def inspect(target, release, allow_current=False, drained=False):
     source = read_file(Path(target["composeFile"]))
     config = configured(target)
     observed = {}
+    candidate = tuple(map(int, release["version"].split(".")))
     for service in target["services"]:
         name, app = service["name"], service["app"]
         if app not in images:
@@ -396,16 +397,23 @@ def inspect(target, release, allow_current=False, drained=False):
         if config.get("services", {}).get(name, {}).get("image") != current["image"]:
             raise Refusal("configuration_changed")
         before = image_version(release["repository"], app, current["image"])
-        exact_auth = app == "auth" and current["image"] == images[app]
-        if before is None or (not allow_current and not exact_auth and before >= tuple(map(int, release["version"].split(".")))):
+        exact = current["image"] == images[app]
+        if before is None or (not allow_current and not exact and before >= candidate):
             raise Refusal("release_not_newer")
-        if current["image"] == images[app] and current["imageId"] != image_identity(target, images[app], release):
+        if exact and current["imageId"] != image_identity(target, images[app], release):
             raise Refusal("image_verification")
         observed[name] = current
     units = {unit: unit_state(target, unit, require_loaded=True) for unit in target["units"]}
     if any(value["active"] not in {"active", "inactive", "failed"} or
            not re.fullmatch("[a-f0-9]{32}" if value["active"] == "active" else "(?:[a-f0-9]{32})?", value["invocation"] or "") for value in units.values()):
         raise Refusal("service_unavailable")
+    # Current, healthy siblings can stay on the verified image while another service is repaired.
+    # A separate Auth host is checked and skipped by the coordinator when already healthy.
+    if (not allow_current and any(service["app"] != "auth" for service in target["services"]) and
+            all(observed[service["name"]]["image"] == images[service["app"]] for service in target["services"]) and
+            all(current["running"] and current["health"] == "healthy" for current in observed.values()) and
+            all(unit["active"] == "active" for unit in units.values())):
+        raise Refusal("release_not_newer")
     browser_hash, code_hash = None, {}
     if target.get("browserConfigFile"):
         if "mira-browser" not in images or "mira-browser-proxy" not in images:
@@ -440,22 +448,23 @@ def verify_preflight(target, release, expected):
 def stop_unresponsive_mira(request):
     """Stop only the previously confirmed executor container; a racing recreation cannot be stopped."""
     target, expected = request["target"], request["expected"]
-    if (target.get("mira") is not True or
-            not any(s["name"] == "mira" and s["app"] == "mira" for s in target["services"]) or
+    executors = [service["name"] for service in target["services"] if service["app"] == "mira"]
+    if (target.get("mira") is not True or (len(executors) != 1 and "mira" not in executors) or
             digest(encoded(target)) != expected["targetHash"]):
         raise Refusal("operation_invalid")
+    executor = "mira" if "mira" in executors else executors[0]
     with directory_lock(Path(target["directory"])):
         if (not time.time() < request["deadline"] <= time.time() + 31 or
                 digest(read_file(Path(target["composeFile"]))) != expected["composeHash"] or
                 digest(encoded(configured(target))) != expected["configHash"]):
             raise Refusal("confirmation_changed")
-        current, previous = container(target, "mira"), expected["containers"]["mira"]
+        current, previous = container(target, executor), expected["containers"][executor]
         if not previous["running"] or any(current[key] != previous[key] for key in ("id", "image", "imageId", "running")):
             raise Refusal("confirmation_changed")
         if time.time() >= request["deadline"]:
             raise Refusal("request_expired")
         command(["/usr/bin/docker", "stop", "--timeout", "10", previous["id"]], target["directory"], timeout=18)
-        after = container(target, "mira")
+        after = container(target, executor)
         if after["id"] != previous["id"] or after["running"]:
             raise Refusal("stop_verification")
         return {"id": after["id"], "stopped": True}

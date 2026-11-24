@@ -3,7 +3,10 @@ import * as v from "valibot";
 
 import type { JobHandler } from "../../jobs/types";
 import { updateResourceKeys, type UpdateTarget } from "../updates/configuration";
-import type { ReleaseDeploymentTarget } from "./deploymentConfiguration";
+import {
+    deploymentMiraService,
+    type ReleaseDeploymentTarget,
+} from "./deploymentConfiguration";
 import { preparedDeployment } from "./deploymentPlans";
 import {
     type DeploymentHost,
@@ -26,16 +29,12 @@ export async function miraRepairState(
     target: ReleaseDeploymentTarget,
     observed?: DeploymentObservation
 ) {
-    if (
-        !target.mira ||
-        !target.services.some((s) => s.name === "mira" && s.app === "mira") ||
-        !observed?.containers.mira?.running
-    )
-        return null;
+    const executor = deploymentMiraService(target);
+    if (!executor || !observed?.containers[executor]?.running) return null;
     const [row] = await query<{ fresh: boolean; busy: boolean }[]>`
         SELECT EXISTS(SELECT 1 FROM mira_runtime_status WHERE heartbeat_at > clock_timestamp()-interval '45 seconds') AS fresh,
             EXISTS(SELECT 1 FROM release_deployments WHERE finished_at IS NULL)
-            OR EXISTS(SELECT 1 FROM mira_runs WHERE state='running')
+            OR EXISTS(SELECT 1 FROM mira_runs WHERE state='running' AND lease_expires_at>clock_timestamp())
             OR EXISTS(SELECT 1 FROM mira_chat_inputs WHERE state='sending')
             OR EXISTS(SELECT 1 FROM mira_daytona_jobs WHERE cleanup='pending' OR state='running' OR lease_expires_at>clock_timestamp())
             OR EXISTS(SELECT 1 FROM mira_integration_state WHERE lease_expires_at>clock_timestamp())
@@ -62,10 +61,11 @@ export function deploymentRepairJobs(
     host: DeploymentHost = deploymentHost
 ): JobHandler[] {
     return targets
-        .filter(
-            (t) => t.mira && t.services.some((s) => s.name === "mira" && s.app === "mira")
-        )
-        .map((target) => {
+        .flatMap((target) => {
+            const executor = deploymentMiraService(target);
+            return executor ? [{ target, executor }] : [];
+        })
+        .map(({ target, executor }) => {
             const connection = connections.find((c) => c.id === target.connection)!;
             return {
                 definition: {
@@ -117,7 +117,9 @@ export function deploymentRepairJobs(
                         );
                         v.parse(
                             v.object({
-                                id: v.literal(prepared.plan.expected.containers.mira!.id),
+                                id: v.literal(
+                                    prepared.plan.expected.containers[executor]!.id
+                                ),
                                 stopped: v.literal(true),
                             }),
                             receipt
