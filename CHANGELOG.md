@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.26.0](https://github.com/rajohan/homelab/compare/v0.25.0...v0.26.0) (2026-11-24)
+
+
+### Features
+
+* **dashboard:** add calendar reminders, availability history and update checks ([#270](https://github.com/rajohan/homelab/issues/270)) ([6055b20](https://github.com/rajohan/homelab/commit/6055b20fa4b7a4525fcfa0b5ffb0c2e048493244))
+
+
+### Bug Fixes
+
+* **mira:** keep Daytona qualification stable across dashboard releases ([#269](https://github.com/rajohan/homelab/issues/269)) ([97c6246](https://github.com/rajohan/homelab/commit/97c6246e9690d458fbfba328659168f29fa1999e))
+
 ## [0.25.0](https://github.com/rajohan/homelab/compare/v0.24.4...v0.25.0) (2026-11-24)
 
 
