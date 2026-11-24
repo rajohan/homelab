@@ -45,6 +45,14 @@ export async function listNotifications(
             return {
                 notifications: notifications.map(
                     ({ cursor: _cursor, sourceKey, ...notification }) => {
+                        if (
+                            notification.destination === "calendar" &&
+                            notification.source === "calendar"
+                        ) {
+                            const [calendarEventId] = sourceKey.split(":");
+                            if (v.is(idSchema, calendarEventId))
+                                return { ...notification, calendarEventId };
+                        }
                         const jobRunId =
                             notification.destination === "jobs"
                                 ? notificationJobRunId(notification.source, sourceKey)

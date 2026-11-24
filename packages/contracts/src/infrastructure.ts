@@ -1,4 +1,28 @@
 export type ResourceState = "healthy" | "unhealthy" | "stopped" | "unknown";
+export const availabilityKinds = [
+    "host",
+    "application",
+    "service",
+    "storage",
+    "diskHealth",
+    "network",
+    "filesystem",
+] as const;
+export type AvailabilityKind = (typeof availabilityKinds)[number];
+export type AvailabilityPeriod = "day" | "week" | "month" | "year" | "all";
+export interface ResourceAvailability {
+    readonly measure: string;
+    readonly capturedAt: string;
+    readonly firstSampleAt: string | null;
+    readonly monitorUnavailable: boolean;
+    readonly stepSeconds: number;
+    readonly periods: readonly {
+        readonly period: AvailabilityPeriod;
+        readonly available: number;
+        readonly observed: number;
+        readonly expected: number;
+    }[];
+}
 export type HostKind = "node" | "vm" | "container" | "host";
 
 export interface InfrastructureHost {

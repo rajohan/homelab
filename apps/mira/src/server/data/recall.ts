@@ -46,6 +46,7 @@ export async function readMiraRecallPolicy(
             "Conversation context is no longer available for this run."
         );
     const allowed =
+        !run.calendarEventId &&
         !run.taskAssessment &&
         (!row.automationId || (row.kind !== null && row.kind !== "improvement"));
     return {

@@ -161,7 +161,8 @@ export function createOperationsRuntime(
                           url: configuration.metricsUrl,
                           token: configuration.metricsToken,
                       },
-                      () => readSavedInventory(connection.client)
+                      () => readSavedInventory(connection.client),
+                      connection.client
                   ),
                   backupsJob(
                       {

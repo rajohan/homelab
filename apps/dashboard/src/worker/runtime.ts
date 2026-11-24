@@ -7,6 +7,7 @@ import { readWorkerControl } from "../server/jobs/control";
 import { reportJobProgress } from "../server/jobs/progress";
 import { listSchedules, scheduleDueJobs } from "../server/jobs/queue";
 import type { ClaimedJob, JobHandler } from "../server/jobs/types";
+import { publishCalendarReminders } from "../server/notifications/calendar";
 import { createWorkerState, type WorkerState } from "./health";
 
 /**
@@ -146,6 +147,7 @@ export async function runWorker(options: {
                     "Worker registration expired; restart before accepting more work"
                 );
             await scheduleDueJobs(client, registry);
+            if (!deployment) await publishCalendarReminders(client);
             const controlState = await readWorkerControl(client);
             const schedules = await listSchedules(client, registry);
             state.paused = controlState.paused;

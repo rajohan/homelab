@@ -6,6 +6,9 @@ export const miraRunConcurrencyPerLane = 4;
 /** Keep two general-lane slots available to scheduled work and automatic follow-up. */
 export const miraGeneralManualRunLimit = 2;
 
+/** Active background requests allowed for each operator. */
+export const miraAutomaticOwnerQueueLimit = 28;
+
 /**
  * Reserve bounded queue space while retaining capacity for manually started work.
  * @param query - Enqueue transaction; its capacity lock remains held through insertion.
@@ -23,6 +26,8 @@ export async function miraQueueAvailable(
         { owned: number; total: number }[]
     >`SELECT count(*)::int AS total, count(*) FILTER (WHERE owner = ${owner})::int AS owned FROM mira_runs WHERE state IN ('queued','running')`;
     return Boolean(
-        counts && counts.total < (manual ? 128 : 120) && counts.owned < (manual ? 32 : 28)
+        counts &&
+        counts.total < (manual ? 128 : 120) &&
+        counts.owned < (manual ? 32 : miraAutomaticOwnerQueueLimit)
     );
 }

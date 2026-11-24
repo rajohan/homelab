@@ -7,18 +7,16 @@ import { UpdateBatchDialog } from "./UpdateBatchDialog";
 /**
  * Open an exact update plan for one host or the entire configured inventory.
  * @param props - Optional host scope and current inventory availability.
- * @returns A full-width mobile action; opening it never queues an installation.
+ * @returns A source action or a button sized by the surrounding action group.
  */
 export function UpdateBatchAction({
     source,
     label,
     disabled,
-    className,
 }: {
     readonly source?: string;
     readonly label?: string;
     readonly disabled: boolean;
-    readonly className?: string;
 }) {
     const [open, setOpen] = useState(false);
     return (
@@ -34,7 +32,6 @@ export function UpdateBatchAction({
             ) : (
                 <Button
                     variant="secondary"
-                    className={`w-full ${className ?? ""}`}
                     disabled={disabled}
                     aria-label={label ? `Update all on ${label}` : "Update all hosts"}
                     onClick={() => setOpen(true)}

@@ -43,6 +43,12 @@ through [the host-side publication queue](stack-publication.md).
 
 ## Current package observations
 
+The **Check updates** action in Update sources runs the registered read-only
+checker across configured sources with current inventory. It joins an existing
+full check when one is queued or running. Operators need `updates:refresh` and
+`jobs:run`. The button follows the worker through completion before refreshing
+the displayed counts.
+
 Manual single, per-host bulk and global bulk confirmations run the same scoped,
 read-only worker check before showing versions. It reads installed APT packages,
 current local candidates and holds through each configured SSH target, then resolves

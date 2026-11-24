@@ -1,6 +1,7 @@
 import type { MaintenanceResult } from "@homelab/contracts/maintenance";
 export * from "@homelab/mira/data/schema";
 export * from "../integrations/releases/deploymentSchema";
+export * from "../integrations/metrics/availabilitySchema";
 import type {
     Capability,
     InfrastructureSnapshot,
@@ -238,7 +239,7 @@ export const notifications = pgTable(
         ),
         check(
             "dashboard_notifications_destination",
-            sql`${table.destination} is null or ${table.destination} in ('jobs','applications','infrastructure','alerts','mira','reports')`
+            sql`${table.destination} is null or ${table.destination} in ('jobs','applications','infrastructure','alerts','mira','reports','calendar')`
         ),
     ]
 );

@@ -223,7 +223,7 @@ export async function executeMiraTurn(
         const repositoryOnly = await miraSkillsRepositoryOnly(skillContext);
         const skillCatalog = await listMiraSkills(skillContext, repositoryOnly);
         const nativeSkills = skillCatalog
-            .filter((skill) => skill.control.enabled)
+            .filter((skill) => !run.calendarEventId && skill.control.enabled)
             .map((skill) => skill.id)
             .toSorted();
         activity = { phase: "connecting", tool: null };

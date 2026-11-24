@@ -16,6 +16,9 @@ import { miraSkillsCompatibility } from "../skills/status";
 import { validateMiraAutomationSettings } from "./chatSettings";
 import { auditMira, type MiraContext, MiraFailure, type MiraQuery } from "./context";
 
+/** Default local clock for Mira's schedules and unzoned calendar reads. */
+export const miraScheduleTimeZone = "Europe/Oslo";
+
 export const miraControlKeys = [
     ...miraSkillIds.map((id) => `skill:${id}` as const),
     "autonomy",
@@ -50,7 +53,7 @@ export function nextMiraOccurrence(
         const at = new Date(schedule.at);
         return at.getTime() > after ? at : null;
     }
-    return nextScheduleOccurrence(schedule, after, anchor, "Europe/Oslo");
+    return nextScheduleOccurrence(schedule, after, anchor, miraScheduleTimeZone);
 }
 
 /**
@@ -249,6 +252,9 @@ export async function setMiraEnabled(
                 ? input.key.slice(11)
                 : null;
             const event = input.key === "integration:agentmail" ? "agentmail" : null;
+            if (input.key === "autonomy")
+                await query`UPDATE mira_runs r SET cancel_requested=true WHERE r.owner=${context.owner}
+                    AND r.state='running' AND EXISTS (SELECT 1 FROM mira_calendar_events e WHERE e.owner=r.owner AND e.mira_reminder_run_id=r.id)`;
             if (input.key === "autonomy" || automationId || event) {
                 const cancelled = await query<
                     { assistantMessageId: string }[]

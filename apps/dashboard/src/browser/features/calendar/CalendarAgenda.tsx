@@ -1,7 +1,7 @@
 import type { CalendarEvent } from "@homelab/contracts/miraCalendar";
 import { EmptyState, SectionPanel } from "@homelab/ui";
 import { isSameDay } from "date-fns";
-import { CalendarClock, ChevronRight, MapPin } from "lucide-react";
+import { Bell, CalendarClock, ChevronRight, MapPin } from "lucide-react";
 
 const dayFormat = new Intl.DateTimeFormat("en-GB", {
     weekday: "long",
@@ -15,6 +15,13 @@ const dateTime = new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
 });
+
+function formatReminder(who: string, instant: string | null, day: Date) {
+    if (!instant) return null;
+    const date = new Date(instant);
+    const clock = isSameDay(date, day) ? time : dateTime;
+    return `${who} · ${clock.format(date)}`;
+}
 
 /** Present appointments for one day, with the complete time span of overnight events.
  * @param props - Display date, overlapping appointments, query state and edit handler.
@@ -38,11 +45,17 @@ export function CalendarAgenda({
             className="self-start"
         >
             {events.length > 0 ? (
-                <ul className="divide-y divide-primary-700">
+                <ul className="divide-y divide-primary-700 @min-[44rem]/calendar:max-h-[max(15rem,calc(100dvh-19rem))] @min-[44rem]/calendar:overflow-y-auto @min-[44rem]/calendar:pe-1">
                     {events.map((event) => {
                         const start = new Date(event.startsAt),
                             end = new Date(event.endsAt);
                         const clock = isSameDay(start, end) ? time : dateTime;
+                        const reminders = [
+                            formatReminder("You", event.operatorReminderAt, day),
+                            formatReminder("Mira", event.miraReminderAt, day),
+                        ]
+                            .filter(Boolean)
+                            .join(" / ");
                         return (
                             <li key={event.id}>
                                 <button
@@ -73,6 +86,21 @@ export function CalendarAgenda({
                                         {event.notes && (
                                             <span className="mt-1 line-clamp-2 text-sm wrap-anywhere text-primary-400">
                                                 {event.notes}
+                                            </span>
+                                        )}
+                                        {reminders && (
+                                            <span className="mt-2 flex items-start gap-1.5 text-xs leading-5 text-primary-300">
+                                                <Bell
+                                                    size={13}
+                                                    className="mt-0.5 shrink-0"
+                                                    aria-hidden="true"
+                                                />
+                                                <span>
+                                                    <span className="sr-only">
+                                                        Reminders:{" "}
+                                                    </span>
+                                                    {reminders}
+                                                </span>
                                             </span>
                                         )}
                                     </span>

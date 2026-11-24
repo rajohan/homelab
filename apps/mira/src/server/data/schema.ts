@@ -44,11 +44,30 @@ export const miraCalendarEvents = pgTable(
         allDay: boolean("all_day").notNull(),
         startsAt: time("starts_at").notNull(),
         endsAt: time("ends_at").notNull(),
+        timeZone: text("time_zone"),
+        operatorReminderAt: time("operator_reminder_at"),
+        operatorRemindedAt: time("operator_reminded_at"),
+        miraReminderAt: time("mira_reminder_at"),
+        miraReminderUntil: time("mira_reminder_until"),
+        miraReminderRunId: uuid("mira_reminder_run_id"),
         createdBy: text("created_by").notNull(),
         version: integer().notNull().default(1),
     },
     (t) => [
         index("mira_calendar_owner_start").on(t.owner, t.startsAt, t.id),
+        index("mira_calendar_operator_due")
+            .on(t.operatorReminderAt, t.id)
+            .where(
+                sql`${t.operatorReminderAt} is not null and ${t.operatorRemindedAt} is null`
+            ),
+        index("mira_calendar_mira_due")
+            .on(t.miraReminderAt, t.id)
+            .where(
+                sql`${t.miraReminderAt} is not null and ${t.miraReminderRunId} is null`
+            ),
+        uniqueIndex("mira_calendar_reminder_run")
+            .on(t.miraReminderRunId)
+            .where(sql`${t.miraReminderRunId} is not null`),
         check("mira_calendar_interval", sql`${t.endsAt} > ${t.startsAt}`),
         check("mira_calendar_creator", sql`${t.createdBy} in ('operator','mira')`),
     ]

@@ -9,7 +9,7 @@ const pointSchema = v.tuple([v.number(), v.string()]);
 const labelsSchema = v.record(v.string(), v.string());
 const matrixSampleSchema = v.object({
     metric: labelsSchema,
-    values: v.pipe(v.array(pointSchema), v.maxLength(750)),
+    values: v.pipe(v.array(pointSchema), v.maxLength(1441)),
 });
 const responseSchema = v.object({
     status: v.literal("success"),
@@ -34,17 +34,22 @@ const responseSchema = v.object({
  * @param expression - A server-owned, fixed or safely constructed PromQL expression.
  * @param signal - The caller's cancellation and deadline signal.
  * @param live - Read current samples with a one-second ingestion allowance, leaving history unchanged.
+ * @param at - Optional server-selected historical evaluation time in Unix seconds.
+ * @param singleDay - Accept one minute-resolution series spanning one UTC day.
  * @returns A validated vector or matrix; upstream bodies are never included in errors.
  */
 export async function queryMetrics(
     configuration: MetricsConfiguration,
     expression: string,
     signal: AbortSignal,
-    live = false
+    live = false,
+    at?: number,
+    singleDay = false
 ) {
     const url = new URL(`${configuration.url.replace(/\/$/, "")}/api/v1/query`);
     url.searchParams.set("query", expression);
     if (live) url.searchParams.set("latency_offset", "1s");
+    if (at !== undefined) url.searchParams.set("time", String(at));
     const response = await fetch(url, {
         signal,
         redirect: "error",
@@ -75,7 +80,15 @@ export async function queryMetrics(
             offset += chunk.byteLength;
         }
         const text = new TextDecoder().decode(bytes);
-        return v.parse(responseSchema, JSON.parse(text) as unknown).data;
+        const data = v.parse(responseSchema, JSON.parse(text) as unknown).data;
+        if (
+            data.resultType === "matrix" &&
+            (singleDay
+                ? data.result.length > 1
+                : data.result.some((series) => series.values.length > 750))
+        )
+            throw new Error("Historical query exceeded its point budget");
+        return data;
     } finally {
         await reader.cancel();
         reader.releaseLock();

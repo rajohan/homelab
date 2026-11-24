@@ -254,7 +254,7 @@ export function createMiraTools(
                 };
             },
         },
-        ...calendarTools(),
+        ...calendarTools(run.calendarEventId),
         {
             name: "mira_tasks_list",
             readOnly: true,
@@ -597,9 +597,15 @@ export function createMiraTools(
         job: run.executionTarget === "main" ? localCode : daytona,
         directory: filesDirectory,
     });
-    const available = run.taskAssessment
-        ? direct.filter((definition) => taskAssessmentTools.has(definition.name))
-        : direct;
+    let available = direct;
+    if (run.calendarEventId)
+        available = direct.filter(
+            (definition) => definition.name === "mira_calendar_get"
+        );
+    else if (run.taskAssessment)
+        available = direct.filter((definition) =>
+            taskAssessmentTools.has(definition.name)
+        );
     return available.map(
         ({
             action,

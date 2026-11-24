@@ -18,6 +18,7 @@ import {
     type MiraContext,
     MiraFailure,
     type MiraQuery,
+    miraTransaction,
     requireTask,
 } from "./context";
 import { readMessageParts } from "./historyMessages";
@@ -309,7 +310,7 @@ export async function enqueueTurn(
  * @returns Completion after the cancellation intent is durable.
  */
 export async function cancelRun(context: MiraContext, id: string): Promise<void> {
-    await context.client.begin(async (query) => {
+    await miraTransaction(context, async (query) => {
         const [run] = await query<
             { state: string; assistantMessage: string }[]
         >`SELECT state, assistant_message_id AS "assistantMessage" FROM mira_runs WHERE id = ${id} AND owner = ${context.owner} FOR UPDATE`;
