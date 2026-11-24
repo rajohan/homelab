@@ -28,6 +28,8 @@ export function ChatEmojiPicker({
             {({ close }) => (
                 <Suspense fallback={<LoadingState label="Loading emojis…" />}>
                     <Picker
+                        className="mira-emoji-picker"
+                        cssLayer="epr"
                         width="100%"
                         height="min(24rem, 48dvh)"
                         colorScheme="dark"

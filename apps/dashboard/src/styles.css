@@ -17,6 +17,27 @@
     }
 }
 
+.mira-emoji-picker {
+    --epr-bg-color: var(--homelab-panel);
+    --epr-category-label-bg-color: var(--homelab-panel);
+    --epr-picker-border-color: transparent;
+    --epr-text-color: var(--color-primary-100);
+    --epr-category-label-text-color: var(--homelab-muted);
+    --epr-category-icon-inactive-color: var(--homelab-muted);
+    --epr-category-icon-active-color: var(--homelab-link);
+    --epr-highlight-color: var(--homelab-link);
+    --epr-hover-bg-color: var(--homelab-raised);
+    --epr-focus-bg-color: var(--homelab-raised);
+    --epr-search-input-bg-color: var(--homelab-canvas);
+    --epr-search-input-bg-color-active: var(--homelab-canvas);
+    --epr-search-input-text-color: var(--color-primary-100);
+    --epr-search-input-placeholder-color: var(--homelab-muted);
+    --epr-search-border-color: var(--homelab-line);
+    --epr-search-border-color-active: var(--homelab-link);
+    --epr-emoji-variation-picker-bg-color: var(--homelab-raised);
+    --epr-skin-tone-picker-menu-color: var(--homelab-raised);
+}
+
 /* Reserve space for both a usable history rail and the active conversation. */
 @custom-variant chat-split {
     @media (min-height: 28rem) {

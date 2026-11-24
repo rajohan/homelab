@@ -2,45 +2,13 @@ import { constants } from "node:fs";
 import { mkdir, open, realpath } from "node:fs/promises";
 import path from "node:path";
 
-import { requireSandboxImage, runDaytonaChecks } from "./harness";
+import { requireSandboxImage } from "./harness";
 import {
     type LocalCheckResult,
     parseLocalCheckInput,
     parseLocalCheckResult,
 } from "./localProtocol";
-import { daytonaCheckProfile } from "./profile";
-
-async function readOutput(directory: string, name: string): Promise<string> {
-    if ((await realpath(directory)) !== directory)
-        throw new Error("Output directory changed.");
-    const file = await open(
-        path.join(directory, name),
-        constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
-    );
-    try {
-        const info = await file.stat();
-        if (!info.isFile() || info.size > 1_048_576)
-            throw new Error("Invalid output file.");
-        const buffer = Buffer.alloc(1_048_577);
-        let count = 0;
-        while (count < buffer.length) {
-            const { bytesRead } = await file.read(
-                buffer,
-                count,
-                buffer.length - count,
-                null
-            );
-            if (!bytesRead) break;
-            count += bytesRead;
-        }
-        if (count > 1_048_576) throw new Error("Output exceeded its limit.");
-        return new TextDecoder("utf-8", { fatal: true }).decode(
-            buffer.subarray(0, count)
-        );
-    } finally {
-        await file.close();
-    }
-}
+import { executeDaytonaChecks } from "./workflow";
 
 /**
  * Run the same fixed verification harness used by Daytona, inside a local disposable image.
@@ -78,14 +46,20 @@ export async function runLocalCheck(
             await file.close();
         }
     }
-    const exitCode = await runDaytonaChecks(request, signal, () => {});
-    const names =
-        "paths" in request
-            ? daytonaCheckProfile.sourceOutputs
-            : daytonaCheckProfile.outputs;
-    const files = [];
-    for (const name of names)
-        files.push({ name, text: await readOutput(path.join(attempt, "outputs"), name) });
+    // Keep the bounded results available even when the checkout fills its temporary disk.
+    const files: { name: string; text: string }[] = [];
+    const exitCode = await executeDaytonaChecks(
+        request,
+        attempt,
+        signal,
+        undefined,
+        () => {},
+        (name, text) => {
+            if (Buffer.byteLength(text) > 1_048_576)
+                throw new Error("Invalid output size.");
+            files.push({ name, text });
+        }
+    );
     return parseLocalCheckResult({ exitCode, files }, request);
 }
 

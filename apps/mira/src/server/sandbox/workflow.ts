@@ -57,6 +57,7 @@ export function sandboxEnvironment(directory: string): Record<string, string> {
  * @param stopping - Cancellation signal for this invocation.
  * @param execute - Subprocess boundary for the fixed checks.
  * @param announce - Status sink, defaulting to stdout outside the local JSON transport.
+ * @param collect - Local stdio result sink. The cloud runner writes artifacts to its output directory.
  * @returns Exit status after recording the check results.
  */
 export async function executeDaytonaChecks(
@@ -66,7 +67,8 @@ export async function executeDaytonaChecks(
     execute: typeof runSandboxProcess = runSandboxProcess,
     announce: (message: string) => void = (message) => {
         process.stdout.write(message);
-    }
+    },
+    collect?: (name: string, text: string) => void
 ): Promise<number> {
     const input = v.parse(daytonaSandboxSchema, request);
     const editHash = "editsSha256" in input ? input.editsSha256 : null;
@@ -74,7 +76,11 @@ export async function executeDaytonaChecks(
     const inputHash = editHash ?? patchHash;
     const inspecting = "paths" in input;
     const work = await createSandboxDirectory(attempt, "work");
-    const outputs = await createSandboxDirectory(attempt, "outputs");
+    const outputs = collect
+        ? undefined
+        : await createSandboxDirectory(attempt, "outputs");
+    const output = (name: string, text: string) =>
+        collect ? collect(name, text) : writeSandboxArtifact(outputs!, name, text);
     const repo = await createSandboxDirectory(work, "repo");
     await createSandboxDirectory(work, "home");
     await createSandboxDirectory(work, "tmp");
@@ -153,8 +159,7 @@ export async function executeDaytonaChecks(
             });
             if (tree.exitCode !== 0 || tree.timedOut || tree.truncated)
                 throw new Error("Source tree exceeded its recovery limit.");
-            await writeSandboxArtifact(
-                outputs,
+            await output(
                 "source-tree.json",
                 JSON.stringify(
                     {
@@ -166,8 +171,7 @@ export async function executeDaytonaChecks(
                     2
                 ) + "\n"
             );
-            await writeSandboxArtifact(
-                outputs,
+            await output(
                 "source-files.json",
                 await readSandboxSources(repo, input.commit, input.paths, signal)
             );
@@ -250,21 +254,15 @@ export async function executeDaytonaChecks(
     const ok =
         failure === null && steps.every((step) => step.exitCode === 0 && !step.timedOut);
     if (!inspecting)
-        await writeSandboxArtifact(
-            outputs,
+        await output(
             "changes.txt",
             patch ||
                 (inputHash
                     ? "# Normalized patch unavailable. See check-result.json.\n"
                     : "# No patch supplied.\n")
         );
-    await writeSandboxArtifact(
-        outputs,
-        "check-log.txt",
-        log || "No subprocess output.\n"
-    );
-    await writeSandboxArtifact(
-        outputs,
+    await output("check-log.txt", log || "No subprocess output.\n");
+    await output(
         "check-result.json",
         JSON.stringify(
             {
