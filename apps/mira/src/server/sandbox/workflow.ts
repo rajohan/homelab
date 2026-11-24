@@ -3,7 +3,7 @@ import path from "node:path";
 
 import * as v from "valibot";
 
-import { sandboxProxyEnvironment } from "../config/environment";
+import { sandboxProxyEnvironment } from "../config/sandboxEnvironment";
 import { buildSandboxEdits, readSandboxSources } from "./edits";
 import { createSandboxDirectory, readSandboxPatch, writeSandboxArtifact } from "./files";
 import { runSandboxProcess, type SandboxProcessResult } from "./process";
