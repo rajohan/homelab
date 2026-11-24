@@ -147,8 +147,8 @@
                 }
             },
             "webview2": {
-                "version": "1.0.4314.35",
-                "sha256": "90778deb1b77e36292828b4b5833c9255c27533f40e0ddd55891ae718944edc4",
+                "version": "1.0.4370.26",
+                "sha256": "1c0dacac84b70109b3fd42f90c53a0ba942abc3a87590d7a4e0ccd86e4a06cf4",
                 "publisher": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
                 "update": {
                     "kind": "nuget",
