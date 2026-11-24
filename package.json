@@ -89,12 +89,12 @@
     "config": {
         "skills": {
             "impeccable": {
-                "version": "4.10.0",
-                "revision": "b49177d32788f2dc585c42831d845dacf1ebed2c",
+                "version": "4.11.0",
+                "revision": "88cfafae649164e6dc48b88d3c0c1bf6662eaade",
                 "update": {
                     "kind": "github",
                     "repository": "pbakaus/impeccable",
-                    "tagPrefix": "cli-v"
+                    "tagPrefix": "skill-v"
                 },
                 "paths": [
                     ".agents/skills/impeccable/SKILL.md",
@@ -107,7 +107,7 @@
                     "README.md"
                 ],
                 "entrypoint": ".agents/skills/impeccable/SKILL.md",
-                "contentHash": "1da452d697bb5630b9cd3bd182ba785371e3fbc70f35e2dd9caf67cc6031c8ba"
+                "contentHash": "d4baed2203195f6065735264aed97970cacdc6e77c9133ef3ee3330444565e0b"
             },
             "intent": {
                 "version": "1.7.5",
