@@ -19,6 +19,7 @@ import {
     DeploymentHostRefusal,
     type DeploymentObservation,
     deploymentObservationSchema,
+    type DeploymentPlan,
     deploymentPlanSchema,
     deploymentPreflightDigest,
     type DeploymentProgress,
@@ -79,6 +80,7 @@ export async function coordinateDeployment(options: {
             source: string;
             expected: DeploymentObservation;
             receipt: DeploymentReceipt;
+            before: DeploymentPlan["inventory"];
         }
     ) =>
         client.begin(async (transaction) => {
@@ -123,7 +125,8 @@ export async function coordinateDeployment(options: {
                     transaction,
                     inventory.source,
                     inventory.expected,
-                    inventory.receipt
+                    inventory.receipt,
+                    inventory.before
                 );
             return rows.length === 1 && allowed;
         });
@@ -482,7 +485,12 @@ export async function coordinateDeployment(options: {
                     "Auth is updated and verified. Preparing the dashboard, worker and Mira deployment.",
                     false,
                     { ...progress, stage: "main", submitted: false },
-                    { source: connection.source, expected, receipt }
+                    {
+                        source: connection.source,
+                        expected,
+                        receipt,
+                        before: plan.inventory,
+                    }
                 );
                 return;
             }
@@ -492,7 +500,7 @@ export async function coordinateDeployment(options: {
                 "Release deployed and all configured services verified.",
                 true,
                 evidence,
-                { source: connection.source, expected, receipt }
+                { source: connection.source, expected, receipt, before: plan.inventory }
             );
         } else if (receipt.state === "failed") {
             const recovered =

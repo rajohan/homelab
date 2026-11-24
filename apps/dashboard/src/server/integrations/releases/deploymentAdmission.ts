@@ -3,6 +3,9 @@ import type { TransactionSQL } from "bun";
 
 import { auditOperation } from "../../operations/audit";
 import { OperationFailure } from "../../operations/errors";
+import type { UpdateTarget } from "../updates/configuration";
+import type { ReleaseDeploymentTarget } from "./deploymentConfiguration";
+import { readDeploymentInventory } from "./deploymentInventory";
 import type { DeploymentPlan } from "./deploymentProtocol";
 
 /**
@@ -14,7 +17,8 @@ import type { DeploymentPlan } from "./deploymentProtocol";
 export async function admitDeployment(
     query: TransactionSQL,
     input: {
-        target: string;
+        target: ReleaseDeploymentTarget;
+        connections: readonly UpdateTarget[];
         actor: string;
         key: string;
         revision: string;
@@ -37,8 +41,15 @@ export async function admitDeployment(
             "A current deployment-capable worker must be running."
         );
     const id = Bun.randomUUIDv7();
+    const inventory = await readDeploymentInventory(
+        query,
+        input.target,
+        input.connections,
+        input.plan
+    );
+    const plan = { ...input.plan, inventory };
     await query`INSERT INTO release_deployments(id,target,requested_by,request_key,confirmation_revision,configuration,plan,state,phase,message,policy_version,window_ends_at)
- VALUES(${id},${input.target},${input.actor},${input.key},${input.revision},${input.plan.configuration},${JSON.stringify(input.plan)}::text::jsonb,'waiting','draining','Waiting for active work to finish.',${input.automatic?.version ?? null},${input.automatic ? new Date(input.automatic.windowEndsAt) : null})`;
+ VALUES(${id},${input.target.id},${input.actor},${input.key},${input.revision},${plan.configuration},${JSON.stringify(plan)}::text::jsonb,'waiting','draining','Waiting for active work to finish.',${input.automatic?.version ?? null},${input.automatic ? new Date(input.automatic.windowEndsAt) : null})`;
     await query`DELETE FROM operation_snapshots WHERE key LIKE 'homelab.prepare.%'`;
     await auditOperation(query, input.actor, "releases.requested", id);
     return { id };

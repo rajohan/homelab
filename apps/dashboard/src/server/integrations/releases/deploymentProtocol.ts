@@ -64,6 +64,17 @@ export const deploymentPlanSchema = v.strictObject({
     release: deploymentReleaseSchema,
     expected: deploymentObservationSchema,
     authExpected: v.optional(deploymentObservationSchema),
+    inventory: v.optional(
+        v.array(
+            v.object({
+                snapshot: v.string(),
+                capturedAt: v.string(),
+                name: v.string(),
+                id: v.string(),
+                installed: v.string(),
+            })
+        )
+    ),
 });
 const id = v.pipe(v.string(), v.uuid());
 export const deploymentReceiptSchema = v.variant("state", [

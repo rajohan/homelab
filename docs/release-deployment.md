@@ -87,6 +87,11 @@ The initial release introducing this feature requires the ordinary qualified man
 4. A systemd transient service owns the replacement independently of SSH and the replaced worker. It stops the selected units, writes a private PostgreSQL custom-format backup and checks it with `pg_restore --list`, preserves the original files, changes only approved image pins, and checks the complete rendered configuration before migration.
 5. After migration, it starts the units and checks exact image IDs, references and health. A durable host receipt allows the replacement worker to finish the operation and reopen the queue.
 
+At admission, the dashboard also records the last published container identities for
+the approved service names. If a service has been recreated since that publication,
+its verified release receipt can still advance Software inventory. A later host
+report or a different container identity supersedes this fallback.
+
 The host stores `intent.json`, `runner.py`, `status.json`, `compose.before`, optional `browser.before` and `database.dump` under `<stateDirectory>/<operation-id>`. The dashboard never exposes command output, expanded Compose secrets or backup contents. A submission is never replayed after a lost acknowledgement. An interrupted runner or uncertain migration leaves the queue closed.
 
 Failures before migration restore the original pins and only resume after verifying the previous services. If the stopped proxy units recreate their containers during this recovery, the runner starts and verifies the original proxy images first, refreshes only their saved container/image IDs, then starts the remaining services. A changed network, concurrent configuration edit or failed verification keeps recovery blocked. After migration starts, do not restore an old image alone. Stop the affected units, inspect the journal and backup, restore the correct database/configuration using the existing operator procedure, and verify the original services. The staged runner provides an operator-only final verification:
