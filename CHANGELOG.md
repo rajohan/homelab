@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.3](https://github.com/rajohan/homelab/compare/v0.24.2...v0.24.3) (2026-11-24)
+
+
+### Bug Fixes
+
+* **mira:** preserve local check results and refine task actions ([#263](https://github.com/rajohan/homelab/issues/263)) ([fda6c06](https://github.com/rajohan/homelab/commit/fda6c067be1bb53ca9e30fabc121e09d46ead482))
+
 ## [0.24.2](https://github.com/rajohan/homelab/compare/v0.24.1...v0.24.2) (2026-11-24)
 
 
