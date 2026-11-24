@@ -19,7 +19,7 @@ const directoryStyles = {
     list: {
         wrapper: "@container/directory space-y-5",
         group: "min-w-0",
-        items: "grid gap-x-5 @min-[42rem]/directory:grid-cols-2",
+        items: "grid gap-x-5 @min-[42rem]/directory:grid-cols-2 [&>li:only-child]:col-span-full",
     },
 };
 
@@ -61,6 +61,7 @@ export function GroupedDirectory<T>({
     const directoryId = useId();
     const style = directoryStyles[layout];
     const index = layout === "index";
+    const wrapStatus = layout === "list" && !readings;
     let itemClassName = index
         ? "flex min-w-0 items-center gap-1"
         : "flex min-w-0 items-center gap-1 border-b border-primary-700/70 py-0.5 last:border-0";
@@ -129,9 +130,15 @@ export function GroupedDirectory<T>({
                         >
                             {members.map((item) => {
                                 const descriptionId = `${directoryId}-${encodeURIComponent(getKey(item))}`;
-                                const content = (
+                                const fields = (
                                     <>
-                                        <span className="min-w-0 flex-1">
+                                        <span
+                                            className={
+                                                wrapStatus
+                                                    ? "min-w-0 flex-[1_1_9rem]"
+                                                    : "min-w-0 flex-1"
+                                            }
+                                        >
                                             <span className="block font-semibold wrap-anywhere text-primary-50">
                                                 <BreakableName>
                                                     {name(item)}
@@ -149,12 +156,19 @@ export function GroupedDirectory<T>({
                                             className={
                                                 index
                                                     ? "order-first shrink-0"
-                                                    : "min-w-0 text-xs"
+                                                    : "max-w-full min-w-0 text-xs"
                                             }
                                         >
                                             {status(item)}
                                         </span>
                                     </>
+                                );
+                                const content = wrapStatus ? (
+                                    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+                                        {fields}
+                                    </span>
+                                ) : (
+                                    fields
                                 );
                                 return (
                                     <li key={getKey(item)} className={itemClassName}>

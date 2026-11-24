@@ -1,12 +1,16 @@
-import type { CalendarEvent, CalendarInput } from "@homelab/contracts/miraCalendar";
+import {
+    calendarEndTimestamp,
+    type CalendarEvent,
+    type CalendarInput,
+} from "@homelab/contracts/miraCalendar";
 import {
     ActionGroup,
     Button,
     DatePicker,
     DateTimePicker,
     dateTimePickerTimestamp,
-    dateTimePickerValue,
     ErrorNotice,
+    Fieldset,
     FormField,
     Input,
     Modal,
@@ -18,7 +22,12 @@ import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
-import { floatingDay, localDay } from "./calendarDays";
+import { floatingDay } from "./calendarDays";
+import { calendarEditorDraft } from "./calendarEditorDraft";
+import { reminderInstant, reminderSelection } from "./calendarReminder";
+import { CalendarReminderField } from "./CalendarReminderField";
+
+const viewerTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 /** Create, edit or remove an appointment using the shared dashboard controls.
  * @param props - Selected day, optional existing revision, and close action.
@@ -26,66 +35,107 @@ import { floatingDay, localDay } from "./calendarDays";
  */
 export function CalendarEditor({
     day,
-    event,
+    event: initialEvent,
     onClose,
 }: {
     day: Date;
     event?: CalendarEvent | undefined;
     onClose: () => void;
 }) {
-    const initial = new Date(day);
-    initial.setHours(9, 0, 0, 0);
-    const [title, setTitle] = useState(event?.title ?? "");
-    const [location, setLocation] = useState(event?.location ?? "");
-    const [notes, setNotes] = useState(event?.notes ?? "");
-    const [allDay, setAllDay] = useState(event?.allDay ?? false);
-    const [start, setStart] = useState(() => {
-        if (event?.allDay)
-            return dateTimePickerValue(localDay(Date.parse(event.startsAt)));
-        return dateTimePickerValue(event?.startsAt ?? initial);
-    });
-    const [end, setEnd] = useState(() => {
-        if (event?.allDay)
-            return dateTimePickerValue(localDay(Date.parse(event.endsAt) - 86_400_000));
-        return dateTimePickerValue(event?.endsAt ?? initial.getTime() + 3_600_000);
-    });
+    // Keep the revision the operator opened while background calendar reads refresh.
+    const [draft] = useState(() => calendarEditorDraft(day, initialEvent));
+    const target = draft.target;
+    const [checkedAt, setCheckedAt] = useState(Date.now);
+    const [title, setTitle] = useState(draft.title);
+    const [location, setLocation] = useState(draft.location);
+    const [notes, setNotes] = useState(draft.notes);
+    const [allDay, setAllDay] = useState(draft.allDay);
+    const [start, setStart] = useState(draft.start);
+    const [end, setEnd] = useState(draft.end);
     const [confirmDelete, setConfirmDelete] = useState(false);
-    const from = allDay ? floatingDay(start.date) : dateTimePickerTimestamp(start);
-    const until = allDay
-        ? floatingDay(end.date) + 86_400_000
-        : dateTimePickerTimestamp(end);
-    const valid = Number.isFinite(from) && Number.isFinite(until) && until > from;
+    // Preserve the saved instant when only another field changes, including the repeated hour in autumn.
+    const timedStart =
+        start === draft.start && !draft.allDay
+            ? start.date.getTime()
+            : dateTimePickerTimestamp(start);
+    const timedEnd =
+        end === draft.end && !draft.allDay
+            ? end.date.getTime()
+            : dateTimePickerTimestamp(end);
+    const from = allDay ? floatingDay(start.date) : timedStart;
+    const until = allDay ? floatingDay(end.date) + 86_400_000 : timedEnd;
+    function boundary(value: number) {
+        if (!allDay || !Number.isFinite(value)) return value;
+        return calendarEndTimestamp({
+            allDay,
+            endsAt: new Date(value).toISOString(),
+            timeZone: draft.timeZone,
+        });
+    }
+    const localStart = boundary(from);
+    const localEnd = boundary(until);
+    const [operator, setOperator] = useState(() =>
+        reminderSelection(draft.operatorReminderAt, localStart, draft.timeZone)
+    );
+    const [mira, setMira] = useState(() =>
+        reminderSelection(draft.miraReminderAt, localStart, draft.timeZone)
+    );
+    const operatorAt = reminderInstant(operator, localStart, draft.timeZone);
+    const miraAt = reminderInstant(mira, localStart, draft.timeZone);
+    function reminderError(
+        at: number | null,
+        recipient: "operator" | "mira",
+        now = checkedAt
+    ) {
+        if (at === null) return null;
+        if (!Number.isFinite(at)) return "Choose a valid reminder time.";
+        if (allDay && recipient === "mira" && at >= localEnd)
+            return "Choose a time before this all-day event ends.";
+        if (at > localEnd) return "Choose a time on or before the event ends.";
+        const saved =
+            recipient === "mira" ? draft.miraReminderAt : draft.operatorReminderAt;
+        if (at < now && !(saved && Date.parse(saved) === at))
+            return "Choose a reminder time in the future.";
+        return null;
+    }
+    const operatorError = reminderError(operatorAt, "operator");
+    const miraError = reminderError(miraAt, "mira");
+    const validInterval = Number.isFinite(from) && Number.isFinite(until) && until > from;
+    const valid = validInterval && !operatorError && !miraError;
     const save = useOperation(
         (input: CalendarInput, signal) =>
-            event
-                ? api.mira.calendar.update.mutate(
-                      { ...input, id: event.id, version: event.version },
-                      { signal }
-                  )
+            target
+                ? api.mira.calendar.update.mutate({ ...input, ...target }, { signal })
                 : api.mira.calendar.create.mutate(input, { signal }),
         onClose
     );
     const remove = useOperation(
-        (_input: void, signal) =>
-            api.mira.calendar.delete.mutate(
-                { id: event!.id, version: event!.version },
-                { signal }
-            ),
+        (saved: NonNullable<typeof target>, signal) =>
+            api.mira.calendar.delete.mutate(saved, { signal }),
         onClose
     );
     const pending = save.isPending || remove.isPending;
-    const editorTitle = event ? "Edit event" : "New event";
+    const editorTitle = target ? "Edit event" : "New event";
     return (
         <Modal
             title={confirmDelete ? "Delete event" : editorTitle}
+            {...(confirmDelete
+                ? {}
+                : {
+                      description:
+                          viewerTimeZone === draft.timeZone
+                              ? `Times shown in ${viewerTimeZone}.`
+                              : `Times shown in ${viewerTimeZone}. Event time zone: ${draft.timeZone}.`,
+                  })}
             icon={CalendarDays}
+            size={confirmDelete ? "md" : "wide"}
             onClose={onClose}
             dismissible={!pending}
         >
-            {confirmDelete ? (
+            {confirmDelete && target ? (
                 <div className="space-y-4">
                     <p className="text-sm wrap-anywhere text-primary-200">
-                        Remove <strong>{event?.title}</strong> from the shared calendar?
+                        Remove <strong>{draft.title}</strong> from the shared calendar?
                     </p>
                     {remove.error && <ErrorNotice error={remove.error} />}
                     <ActionGroup>
@@ -99,7 +149,7 @@ export function CalendarEditor({
                         <Button
                             variant="danger"
                             busy={remove.isPending}
-                            onClick={() => remove.mutate()}
+                            onClick={() => remove.mutate(target)}
                         >
                             Delete event
                         </Button>
@@ -110,26 +160,51 @@ export function CalendarEditor({
                     className="flex flex-col gap-4"
                     onSubmit={(e) => {
                         e.preventDefault();
+                        const now = Date.now();
+                        if (
+                            reminderError(operatorAt, "operator", now) ||
+                            reminderError(miraAt, "mira", now)
+                        ) {
+                            setCheckedAt(now);
+                            return;
+                        }
                         if (valid && title.trim())
                             save.mutate({
                                 title,
                                 location,
                                 notes,
                                 allDay,
+                                timeZone: draft.timeZone,
                                 startsAt: new Date(from).toISOString(),
                                 endsAt: new Date(until).toISOString(),
+                                operatorReminderAt:
+                                    operatorAt === null
+                                        ? null
+                                        : new Date(operatorAt).toISOString(),
+                                miraReminderAt:
+                                    miraAt === null
+                                        ? null
+                                        : new Date(miraAt).toISOString(),
                             });
                     }}
                 >
-                    <FormField label="Event title">
-                        <Input
-                            required
-                            maxLength={160}
-                            value={title}
-                            onChange={(e) => setTitle(e.target.value)}
-                        />
-                    </FormField>
-                    <Switch label="All day" checked={allDay} onChange={setAllDay} />
+                    <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                        <FormField label="Event title">
+                            <Input
+                                required
+                                maxLength={160}
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                            />
+                        </FormField>
+                        <div className="flex min-h-10 items-center">
+                            <Switch
+                                label="All day"
+                                checked={allDay}
+                                onChange={setAllDay}
+                            />
+                        </div>
+                    </div>
                     {allDay ? (
                         <div className="grid gap-4 sm:grid-cols-2">
                             <DatePicker
@@ -145,20 +220,38 @@ export function CalendarEditor({
                             />
                         </div>
                     ) : (
-                        <>
+                        <div className="grid gap-4 lg:grid-cols-2">
                             <DateTimePicker
                                 label="Starts"
                                 value={start}
                                 onChange={setStart}
                             />
                             <DateTimePicker label="Ends" value={end} onChange={setEnd} />
-                        </>
+                        </div>
                     )}
-                    {!valid && (
+                    {!validInterval && (
                         <p role="alert" className="text-sm text-amber-300">
                             Choose an end after the start.
                         </p>
                     )}
+                    <Fieldset legend="Reminders">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            <CalendarReminderField
+                                label="Notify me"
+                                description="Sends a dashboard notification."
+                                selection={operator}
+                                onChange={setOperator}
+                                error={operatorError ?? undefined}
+                            />
+                            <CalendarReminderField
+                                label="Wake Mira"
+                                description="Starts a chat when automatic work is enabled."
+                                selection={mira}
+                                onChange={setMira}
+                                error={miraError ?? undefined}
+                            />
+                        </div>
+                    </Fieldset>
                     <FormField label="Location">
                         <Input
                             maxLength={240}
@@ -175,7 +268,7 @@ export function CalendarEditor({
                     </FormField>
                     {save.error && <ErrorNotice error={save.error} />}
                     <ActionGroup>
-                        {event ? (
+                        {target ? (
                             <Button
                                 variant="danger"
                                 disabled={pending}

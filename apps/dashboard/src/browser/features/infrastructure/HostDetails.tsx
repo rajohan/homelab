@@ -3,9 +3,10 @@ import type {
     InfrastructureInventory,
 } from "@homelab/contracts/infrastructure";
 import { DetailSection, formatDateTime, Modal, SectionJumpMenu } from "@homelab/ui";
-import { Gauge, Server } from "lucide-react";
+import { Gauge, History, Server } from "lucide-react";
 import { useId, useRef } from "react";
 
+import { AvailabilityReadings } from "./AvailabilityReadings";
 import { hostInventorySections } from "./hostInventorySections";
 import { HostReadings } from "./HostReadings";
 import { HostResources } from "./HostResources";
@@ -78,6 +79,13 @@ export function HostDetails({
                         filesystems={inventory.filesystems}
                         stale={stale}
                     />
+                </DetailSection>
+                <DetailSection
+                    icon={History}
+                    title="Availability"
+                    anchor={scoped.sections.availability.value}
+                >
+                    <AvailabilityReadings kind="host" id={host.id} />
                 </DetailSection>
                 <HostResources
                     scoped={scoped}

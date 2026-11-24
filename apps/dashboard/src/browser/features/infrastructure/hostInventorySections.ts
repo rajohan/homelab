@@ -23,6 +23,11 @@ export function hostInventorySections(
     const disks = inventory.disks.filter((row) => row.host === host.host);
     const sections = {
         usage: { label: "Resource usage", value: prefix + "-usage", visible: true },
+        availability: {
+            label: "Availability",
+            value: prefix + "-availability",
+            visible: true,
+        },
         history: { label: "Resource history", value: prefix + "-history", visible: true },
         mounts: {
             label: "Filesystems",

@@ -3,6 +3,7 @@ import { PageSections } from "@homelab/ui";
 import { useState } from "react";
 
 import { ApplicationCatalog } from "../applications/ApplicationCatalog";
+import { AvailabilityBrowser } from "./AvailabilityBrowser";
 import { HostDetails } from "./HostDetails";
 import { HostInventory } from "./HostInventory";
 import { ServiceInventory } from "./ServiceInventory";
@@ -79,6 +80,11 @@ export function InfrastructureOverview({
                                           stale={stale}
                                       />
                                   ),
+                              },
+                              {
+                                  id: "availability",
+                                  label: "Availability",
+                                  content: <AvailabilityBrowser inventory={inventory} />,
                               },
                           ]
                         : []),

@@ -1,0 +1,37 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "467ab971-11a9-41ee-8528-59971c30276d",
+    "prevIds": ["9162fb20-4e59-45b4-a7c3-c9aafa35eff9"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": ["column", "public", "mira_calendar_events", "time_zone"],
+            "writes": [
+                "s|col|public.mira_calendar_events.time_zone",
+                "n|col|public.mira_calendar_events.time_zone",
+                "e|col|public.mira_calendar_events.time_zone"
+            ],
+            "reads": ["n|tbl|public.mira_calendar_events", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "time_zone",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}

@@ -30,6 +30,7 @@ export function CalendarMonth({
     return (
         <SectionPanel
             icon={CalendarDays}
+            centerWhenStacked
             title={monthFormat.format(month)}
             actions={
                 <div className="flex items-center gap-1">
@@ -74,9 +75,8 @@ export function CalendarMonth({
                         month: "w-full",
                         month_caption: "sr-only",
                         month_grid: "w-full table-fixed border-collapse",
-                        weekday:
-                            "py-2 text-center text-xs font-medium text-primary-400 sm:px-2 sm:text-left",
-                        day: "border-t border-primary-700/70 p-0.5 align-top sm:p-1",
+                        weekday: "pb-2 text-center text-xs font-medium text-primary-400",
+                        day: "border-t border-primary-700/70 p-0.5 align-top",
                         today: "",
                         selected: "",
                         outside: "",

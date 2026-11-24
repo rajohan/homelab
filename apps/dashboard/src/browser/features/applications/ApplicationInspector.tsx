@@ -1,8 +1,9 @@
-import { Modal, SectionJumpMenu } from "@homelab/ui";
-import { Boxes } from "lucide-react";
+import { DetailSection, Modal, SectionJumpMenu } from "@homelab/ui";
+import { Boxes, History } from "lucide-react";
 import { useId, useRef } from "react";
 
 import { ApplicationMeasurements } from "../infrastructure/ApplicationMeasurements";
+import { AvailabilityReadings } from "../infrastructure/AvailabilityReadings";
 import { ResourceStatus } from "../infrastructure/ResourceStatus";
 import type { ApplicationEntry } from "./applicationDirectory";
 import { ApplicationLogs } from "./ApplicationLogs";
@@ -39,6 +40,7 @@ export function ApplicationInspector({
             ? [
                   { value: prefix + "-usage", label: "Resource usage" },
                   { value: prefix + "-history", label: "Resource history" },
+                  { value: prefix + "-availability", label: "Availability" },
               ]
             : []),
         ...(container
@@ -90,6 +92,15 @@ export function ApplicationInspector({
                         stale={stale}
                         prefix={prefix}
                     />
+                )}
+                {metric && (
+                    <DetailSection
+                        icon={History}
+                        title="Availability"
+                        anchor={prefix + "-availability"}
+                    >
+                        <AvailabilityReadings kind="application" id={metric.id} />
+                    </DetailSection>
                 )}
                 {container && (
                     <ApplicationMetadata

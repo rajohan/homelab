@@ -43,6 +43,51 @@ async function verifyOperator(context: OperationsContext, capability: Capability
 }
 
 export const updatesRouter = trpc.router({
+    check: trpc.procedure
+        .input(v.pick(updateRequestSchema, ["requestId"]))
+        .mutation(({ ctx, input }) =>
+            runOperation(async () => {
+                const { operations, principal } = authorizedOperations(
+                    ctx,
+                    "updates:refresh"
+                );
+                requireCapability(principal, "jobs:run");
+                const handler = operations.registry.get("updates.releases");
+                const sources = operations.updateSources ?? [];
+                if (!handler || sources.length === 0)
+                    throw new OperationFailure(
+                        "PRECONDITION_FAILED",
+                        "No update sources are configured."
+                    );
+                const actor = `${principal.kind}:${principal.id}`;
+                const key = `${actor}:check-updates:${input.requestId}`;
+                return operations.client.begin(async (transaction) => {
+                    await lockQueue(transaction);
+                    const [existing] = await transaction<{ id: string }[]>`
+                        SELECT id FROM job_runs WHERE action = 'updates.releases'
+                        AND (idempotency_key = ${key} OR (state IN ('queued', 'running')
+                          AND NOT cancel_requested AND payload->>'source' IS NULL
+                          AND payload->>'purpose' IS NULL))
+                        ORDER BY (idempotency_key = ${key}) DESC, created_at DESC LIMIT 1`;
+                    if (existing) return { id: existing.id };
+                    const [report] = await transaction<{ key: string }[]>`
+                        SELECT key FROM operation_snapshots
+                        WHERE key = ANY(${transaction.array(
+                            sources.map((source) => `updates:${source.id}`),
+                            "TEXT"
+                        )})
+                        AND captured_at > now() - interval '26 hours' LIMIT 1`;
+                    if (!report)
+                        throw new OperationFailure(
+                            "PRECONDITION_FAILED",
+                            "No source has published inventory in the last 26 hours. Refresh a host publisher before checking versions."
+                        );
+                    return {
+                        id: await enqueueJob(transaction, handler.definition, actor, key),
+                    };
+                });
+            })
+        ),
     prepare: trpc.procedure
         .input(
             v.strictObject({

@@ -47,6 +47,44 @@ host IDs, saved interface/disk selections, and a fixed time-window enum, never a
 URL or arbitrary PromQL. Queries have deadlines, response-size limits, result
 limits and point limits. Upstream error bodies are not exposed to the browser.
 
+## Availability history
+
+Infrastructure → Availability shows the past 24 hours, 7, 30 and 365 days plus the full
+retained history of one selected resource. Host and monitored application
+inspectors show the same readings. Each percentage divides healthy observations
+by all observations with a known state. Coverage separately divides those known
+observations by the number of scheduled checkpoints in the requested window.
+An empty window has unknown availability. The all-time denominator starts at
+the first retained sample for that identity. A year with only a few months of
+retained data shows correspondingly low coverage.
+
+The read-only VictoriaMetrics integration uses the existing instant-query endpoint
+for timestamp discovery and bounded MetricsQL rollups. Each checkpoint requires
+a sample in its preceding minute. Availability follows Proxmox power/pool state,
+application readiness, probe success, service activity, exporter reachability,
+SMART, interface link state or filesystem telemetry as appropriate. Collector
+failure, stale application data, ambiguous series and absent observations leave
+gaps. A host with only node-exporter monitoring measures exporter reachability.
+Disk I/O or remaining capacity alone does not establish a healthy state.
+
+The existing minute worker collects the health families in three bounded batch
+queries shared by all resources. Its lease-fenced transaction stores two daily
+bitmaps per resource in PostgreSQL (observed and healthy minutes). Repeated runs
+only count a minute once. Missing worker runs remain unknown. The archive has
+no time-based expiry, so annual and all-time histories outlive monitor retention.
+In the same minute job, a separate bounded recovery pass reconciles up to 12
+resource-days, three at a time under a shared five-second deadline. It starts
+at each resource's earliest retained sample, fills gaps from worker outages,
+and advances a per-resource cursor atomically with the merged observed minutes.
+Retries never overwrite an already observed minute. Once caught up it only reads
+completed UTC days. Background reads rotate among resources; each requested
+detail also merges still-retained samples with any incomplete day on demand.
+The dashboard cannot recover history the monitor had already discarded. The
+two known Compose project and system service renames use their verified label
+cutovers, so a rename neither duplicates nor severs a resource's history.
+Detail reads are cached for five minutes and limited to four concurrent resources.
+If the historical monitor is unavailable, saved daily observations remain readable.
+
 ## Metric sources
 
 - Proxmox exporter: node, guest and storage inventory; CPU allocation, CPU usage,

@@ -1,6 +1,8 @@
 import { compareTableValues } from "@homelab/contracts/tableSort";
 import {
+    ActionGroup,
     Badge,
+    Button,
     buttonStyles,
     ErrorNotice,
     GroupedDirectory,
@@ -11,10 +13,13 @@ import {
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { PackageCheck } from "lucide-react";
+import { PackageCheck, RefreshCw } from "lucide-react";
 import { useRef, useState } from "react";
 
+import { api } from "../../api/client";
+import { waitForJob } from "../jobs/waitForJob";
 import { ObservationBadge } from "../operations/ObservationBadge";
+import { useOperation } from "../operations/useOperation";
 import { AutomaticUpdates } from "./AutomaticUpdates";
 import { RestartStatus } from "./RestartStatus";
 import { SoftwareUpdates } from "./SoftwareUpdates";
@@ -29,6 +34,15 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
     const [selection, setSelection] = useState("");
     const softwareHeading = useRef<HTMLDivElement>(null);
     const query = useQuery(updateInventoryQuery);
+    const check = useOperation(async (requestId: string, signal) => {
+        const { id } = await api.updates.check.mutate({ requestId }, { signal });
+        await waitForJob(
+            id,
+            signal,
+            undefined,
+            "The update check did not finish. Open Jobs for details."
+        );
+    });
     const sources = query.data ?? [];
     const currentReports = sources.flatMap((item) =>
         item.report && !item.stale ? [item.report] : []
@@ -87,21 +101,42 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                 }
                 actions={
                     !compact && (
-                        <UpdateBatchAction
-                            disabled={
-                                query.isError ||
-                                !sources.some(
-                                    (item) =>
-                                        !item.stale && (item.report?.available ?? 0) > 0
-                                )
-                            }
-                            className="min-[30rem]:w-auto"
-                        />
+                        <ActionGroup stretch={false}>
+                            <Button
+                                variant="secondary"
+                                disabled={check.isPending || sources.length === 0}
+                                onClick={() => check.mutate(crypto.randomUUID())}
+                            >
+                                <RefreshCw
+                                    aria-hidden="true"
+                                    className="size-4 shrink-0"
+                                />
+                                <span className="whitespace-nowrap">
+                                    {check.isPending ? "Checking…" : "Check updates"}
+                                </span>
+                            </Button>
+                            <UpdateBatchAction
+                                disabled={
+                                    query.isError ||
+                                    !sources.some(
+                                        (item) =>
+                                            !item.stale &&
+                                            (item.report?.available ?? 0) > 0
+                                    )
+                                }
+                            />
+                        </ActionGroup>
                     )
                 }
             >
                 {query.isPending && <LoadingState label="Loading update inventory…" />}
                 {query.isError && <ErrorNotice error={query.error} />}
+                {check.isError && <ErrorNotice error={check.error} />}
+                {check.isSuccess && (
+                    <output className="text-sm text-primary-400">
+                        Update check finished.
+                    </output>
+                )}
                 {query.data && (
                     <>
                         <SummaryStrip
@@ -168,11 +203,11 @@ export function UpdatesPanel({ compact = false }: { readonly compact?: boolean }
                                                 "Checks not reported"
                                             }
                                             status={(item) => (
-                                                <span className="flex flex-wrap items-center justify-end gap-2">
+                                                <span className="flex flex-wrap items-center gap-2">
                                                     {!query.isError &&
                                                         !item.stale &&
                                                         item.report && (
-                                                            <span className="tabular-nums">
+                                                            <span className="whitespace-nowrap tabular-nums">
                                                                 {item.report.available}{" "}
                                                                 available
                                                             </span>

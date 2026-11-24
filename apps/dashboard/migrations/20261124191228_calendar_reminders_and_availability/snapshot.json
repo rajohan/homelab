@@ -1,0 +1,545 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "9162fb20-4e59-45b4-a7c3-c9aafa35eff9",
+    "prevIds": ["1ef644dc-8620-408e-a1fe-7c65a0903dd0"],
+    "footprints": [
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "availability_backfill"],
+            "writes": [
+                "s|tbl|public.availability_backfill",
+                "n|tbl|public.availability_backfill",
+                "e|tbl|public.availability_backfill",
+                "n|rel|public.availability_backfill",
+                "n|type|public.availability_backfill",
+                "n|rel|public.availability_backfill_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "create_table",
+            "statementTarget": ["table", "public", "availability_days"],
+            "writes": [
+                "s|tbl|public.availability_days",
+                "n|tbl|public.availability_days",
+                "e|tbl|public.availability_days",
+                "n|rel|public.availability_days",
+                "n|type|public.availability_days",
+                "n|rel|public.availability_days_pkey"
+            ],
+            "reads": ["n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_calendar_events",
+                "operator_reminder_at"
+            ],
+            "writes": [
+                "s|col|public.mira_calendar_events.operator_reminder_at",
+                "n|col|public.mira_calendar_events.operator_reminder_at",
+                "e|col|public.mira_calendar_events.operator_reminder_at"
+            ],
+            "reads": ["n|tbl|public.mira_calendar_events", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_calendar_events",
+                "operator_reminded_at"
+            ],
+            "writes": [
+                "s|col|public.mira_calendar_events.operator_reminded_at",
+                "n|col|public.mira_calendar_events.operator_reminded_at",
+                "e|col|public.mira_calendar_events.operator_reminded_at"
+            ],
+            "reads": ["n|tbl|public.mira_calendar_events", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_calendar_events",
+                "mira_reminder_at"
+            ],
+            "writes": [
+                "s|col|public.mira_calendar_events.mira_reminder_at",
+                "n|col|public.mira_calendar_events.mira_reminder_at",
+                "e|col|public.mira_calendar_events.mira_reminder_at"
+            ],
+            "reads": ["n|tbl|public.mira_calendar_events", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_calendar_events",
+                "mira_reminder_until"
+            ],
+            "writes": [
+                "s|col|public.mira_calendar_events.mira_reminder_until",
+                "n|col|public.mira_calendar_events.mira_reminder_until",
+                "e|col|public.mira_calendar_events.mira_reminder_until"
+            ],
+            "reads": ["n|tbl|public.mira_calendar_events", "n|sch|public"]
+        },
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "mira_calendar_events",
+                "mira_reminder_run_id"
+            ],
+            "writes": [
+                "s|col|public.mira_calendar_events.mira_reminder_run_id",
+                "n|col|public.mira_calendar_events.mira_reminder_run_id",
+                "e|col|public.mira_calendar_events.mira_reminder_run_id"
+            ],
+            "reads": ["n|tbl|public.mira_calendar_events", "n|sch|public"]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_calendar_events",
+                "mira_calendar_operator_due"
+            ],
+            "writes": [
+                "s|idx|public.mira_calendar_operator_due",
+                "n|idx|public.mira_calendar_operator_due",
+                "e|idx|public.mira_calendar_operator_due",
+                "n|rel|public.mira_calendar_operator_due"
+            ],
+            "reads": [
+                "n|tbl|public.mira_calendar_events",
+                "n|sch|public",
+                "n|col|public.mira_calendar_events.operator_reminder_at",
+                "n|col|public.mira_calendar_events.id"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_calendar_events",
+                "mira_calendar_mira_due"
+            ],
+            "writes": [
+                "s|idx|public.mira_calendar_mira_due",
+                "n|idx|public.mira_calendar_mira_due",
+                "e|idx|public.mira_calendar_mira_due",
+                "n|rel|public.mira_calendar_mira_due"
+            ],
+            "reads": [
+                "n|tbl|public.mira_calendar_events",
+                "n|sch|public",
+                "n|col|public.mira_calendar_events.mira_reminder_at",
+                "n|col|public.mira_calendar_events.id"
+            ]
+        },
+        {
+            "statementType": "create_index",
+            "statementTarget": [
+                "index",
+                "public",
+                "mira_calendar_events",
+                "mira_calendar_reminder_run"
+            ],
+            "writes": [
+                "s|idx|public.mira_calendar_reminder_run",
+                "n|idx|public.mira_calendar_reminder_run",
+                "e|idx|public.mira_calendar_reminder_run",
+                "n|rel|public.mira_calendar_reminder_run"
+            ],
+            "reads": [
+                "n|tbl|public.mira_calendar_events",
+                "n|sch|public",
+                "n|col|public.mira_calendar_events.mira_reminder_run_id"
+            ]
+        },
+        {
+            "statementType": "alter_check",
+            "statementTarget": ["table", "public", "dashboard_notifications"],
+            "writes": [
+                "s|ck|public.dashboard_notifications.dashboard_notifications_destination"
+            ],
+            "reads": [
+                "n|tbl|public.dashboard_notifications",
+                "n|sch|public",
+                "n|col|public.dashboard_notifications.destination",
+                "e|col|public.dashboard_notifications.destination"
+            ],
+            "sqlHash": "9ee930fbe676d173"
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "name": "availability_backfill",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "name": "availability_days",
+                "isRlsEnabled": false,
+                "entityType": "tables"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "availability_backfill",
+                "name": "kind",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "availability_backfill",
+                "name": "resource",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "availability_backfill",
+                "name": "next_day",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "availability_days",
+                "name": "kind",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "availability_days",
+                "name": "resource",
+                "type": "text",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "availability_days",
+                "name": "day",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "availability_days",
+                "name": "first_minute",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "availability_days",
+                "name": "observed",
+                "type": "bit(1440)",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "availability_days",
+                "name": "healthy",
+                "type": "bit(1440)",
+                "typeSchema": null,
+                "notNull": true,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "operator_reminder_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "operator_reminded_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "mira_reminder_at",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "mira_reminder_until",
+                "type": "timestamp with time zone",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "mira_reminder_run_id",
+                "type": "uuid",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "mira_calendar_operator_due",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "operator_reminder_at",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": "\"operator_reminder_at\" is not null and \"operator_reminded_at\" is null",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "mira_calendar_mira_due",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "mira_reminder_at",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    },
+                    {
+                        "value": "id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": false,
+                "where": "\"mira_reminder_at\" is not null and \"mira_reminder_run_id\" is null",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "mira_calendar_events",
+                "name": "mira_calendar_reminder_run",
+                "nameExplicit": true,
+                "columns": [
+                    {
+                        "value": "mira_reminder_run_id",
+                        "isExpression": false,
+                        "asc": true,
+                        "nullsFirst": false,
+                        "opclass": null
+                    }
+                ],
+                "isUnique": true,
+                "where": "\"mira_reminder_run_id\" is not null",
+                "with": "",
+                "method": "btree",
+                "concurrently": false,
+                "entityType": "indexes"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "availability_backfill",
+                "name": "availability_backfill_pkey",
+                "columns": ["kind", "resource"],
+                "nameExplicit": false,
+                "entityType": "pks"
+            }
+        },
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "availability_days",
+                "name": "availability_days_pkey",
+                "columns": ["kind", "resource", "day"],
+                "nameExplicit": false,
+                "entityType": "pks"
+            }
+        },
+        {
+            "op": "alter",
+            "key": "checks\u0000[\"public\",\"dashboard_notifications\",\"dashboard_notifications_destination\"]",
+            "set": {
+                "value": "\"destination\" is null or \"destination\" in ('jobs','applications','infrastructure','alerts','mira','reports','calendar')"
+            }
+        }
+    ]
+}

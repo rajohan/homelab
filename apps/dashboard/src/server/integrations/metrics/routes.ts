@@ -1,4 +1,4 @@
-import { historyRanges } from "@homelab/contracts/infrastructure";
+import { availabilityKinds, historyRanges } from "@homelab/contracts/infrastructure";
 import type { InfrastructureSnapshot } from "@homelab/contracts/operations";
 import * as v from "valibot";
 
@@ -7,6 +7,7 @@ import { authorizedOperations } from "../../operations/authorization";
 import { OperationFailure } from "../../operations/errors";
 import type { OperationsRuntime } from "../../operations/runtime";
 import { applicationHistoryExpressions } from "./applicationHistory";
+import { readAvailability } from "./availability";
 import { collectHistory, collectMetricHistory } from "./history";
 import { readSavedInventory } from "./snapshot";
 
@@ -23,6 +24,36 @@ async function readInventory(operations: OperationsRuntime) {
 }
 
 export const infrastructureRouter = trpc.router({
+    availability: trpc.procedure
+        .input((input) =>
+            v.parse(
+                v.strictObject({
+                    kind: v.picklist(availabilityKinds),
+                    id: v.pipe(v.string(), v.minLength(1), v.maxLength(1024)),
+                }),
+                input
+            )
+        )
+        .query(({ ctx, input }) =>
+            runOperation(async () => {
+                const { operations } = authorizedOperations(ctx, "infrastructure:read");
+                const inventory = await readInventory(operations).catch(() =>
+                    readSavedInventory(operations.client)
+                );
+                if (!inventory)
+                    throw new OperationFailure(
+                        "PRECONDITION_FAILED",
+                        "Monitoring has not collected a resource inventory yet."
+                    );
+                return readAvailability(
+                    operations.client,
+                    operations.metrics,
+                    inventory,
+                    input.kind,
+                    input.id
+                );
+            })
+        ),
     applicationHistory: trpc.procedure
         .input((input) =>
             v.parse(

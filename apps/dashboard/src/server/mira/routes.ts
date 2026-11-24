@@ -88,6 +88,7 @@ import {
 } from "@homelab/mira/data/automations";
 import {
     deleteCalendarEvent,
+    getCalendarEvent,
     listCalendar,
     saveCalendarEvent,
 } from "@homelab/mira/data/calendar";
@@ -663,6 +664,11 @@ export const miraRouter = trpc.router({
             ),
     }),
     calendar: trpc.router({
+        get: trpc.procedure
+            .input(record)
+            .query(({ ctx, input }) =>
+                execute(ctx, (mira) => getCalendarEvent(mira, input.id))
+            ),
         list: trpc.procedure
             .input(calendarRangeSchema)
             .query(({ ctx, input }) => execute(ctx, (mira) => listCalendar(mira, input))),

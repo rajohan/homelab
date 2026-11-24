@@ -1,23 +1,43 @@
-import type { CalendarEvent, CalendarRange } from "@homelab/contracts/miraCalendar";
+import type { CalendarRange } from "@homelab/contracts/miraCalendar";
 import { Button, ErrorNotice, LoadingState, PageHeader } from "@homelab/ui";
-import { useInfiniteQuery } from "@tanstack/react-query";
-import { addDays, endOfMonth, isSameMonth, startOfMonth, startOfWeek } from "date-fns";
+import { skipToken, useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import { addDays, endOfMonth, startOfMonth, startOfWeek } from "date-fns";
 import { CalendarDays, Plus } from "lucide-react";
 import { useState } from "react";
+import * as v from "valibot";
 
 import { api } from "../api/client";
 import { CalendarAgenda } from "../features/calendar/CalendarAgenda";
-import { eventsOnDay } from "../features/calendar/calendarDays";
+import { eventsOnDay, localDay } from "../features/calendar/calendarDays";
 import { CalendarEditor } from "../features/calendar/CalendarEditor";
+import { calendarLocation } from "../features/calendar/calendarLocation";
 import { CalendarMonth } from "../features/calendar/CalendarMonth";
 
 /** Show the calendar shared by the operator and Mira.
  * @returns A responsive month view and daily agenda backed by owned appointments.
  */
 export function Calendar() {
-    const [day, setDay] = useState(() => new Date());
-    const [month, setMonth] = useState(() => startOfMonth(new Date()));
-    const [edit, setEdit] = useState<CalendarEvent | "new" | null>(null);
+    const { event: eventId } = v.parse(
+        calendarLocation,
+        useSearch({ from: "/calendar" })
+    );
+    const navigate = useNavigate({ from: "/calendar" });
+    const linked = useQuery({
+        queryKey: ["operations", "mira", "calendar-event", eventId],
+        queryFn: eventId
+            ? ({ signal }) => api.mira.calendar.get.query({ id: eventId }, { signal })
+            : skipToken,
+    });
+    const [selected, setDay] = useState(() => new Date());
+    const [creating, setCreating] = useState(false);
+    const event = eventId ? linked.data : null;
+    let day = selected;
+    if (event)
+        day = event.allDay
+            ? localDay(Date.parse(event.startsAt))
+            : new Date(event.startsAt);
+    const month = startOfMonth(day);
     const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 });
     const end = addDays(start, 42);
     const range = {
@@ -39,11 +59,10 @@ export function Calendar() {
     const events = query.data?.pages.flatMap((page) => page.items) ?? [];
     const select = (date: Date) => {
         setDay(date);
-        if (!isSameMonth(date, month)) setMonth(startOfMonth(date));
+        if (eventId) void navigate({ search: {}, replace: true });
     };
     const move = (date: Date) => {
         const first = startOfMonth(date);
-        setMonth(first);
         setDay(
             new Date(
                 first.getFullYear(),
@@ -53,19 +72,27 @@ export function Calendar() {
         );
     };
     return (
-        <div className="flex min-w-0 flex-col gap-4">
+        <div className="@container/calendar flex min-w-0 flex-col gap-3">
             <PageHeader
                 title="Calendar"
                 icon={CalendarDays}
+                compactActions
                 description="Appointments shared with Mira."
                 actions={
-                    <Button onClick={() => setEdit("new")}>
+                    <Button onClick={() => setCreating(true)}>
                         <Plus size={16} aria-hidden="true" />
                         New event
                     </Button>
                 }
             />
             {query.isError && <ErrorNotice error={query.error} />}
+            {eventId && linked.isPending && <LoadingState label="Opening event…" />}
+            {eventId && linked.isError && <ErrorNotice error={linked.error} />}
+            {eventId && linked.isSuccess && !event && (
+                <output className="text-sm text-primary-300">
+                    This event is no longer available.
+                </output>
+            )}
             {query.isPending && <LoadingState label="Loading calendar…" />}
             {query.hasNextPage && (
                 <Button
@@ -76,7 +103,7 @@ export function Calendar() {
                     Load more events for this month
                 </Button>
             )}
-            <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1.9fr)_minmax(18rem,1fr)]">
+            <div className="grid min-w-0 items-start gap-3 @min-[44rem]/calendar:grid-cols-[minmax(0,1.9fr)_minmax(14rem,1fr)]">
                 <CalendarMonth
                     month={month}
                     selected={day}
@@ -87,15 +114,20 @@ export function Calendar() {
                 <CalendarAgenda
                     day={day}
                     events={eventsOnDay(events, day)}
-                    onSelect={setEdit}
+                    onSelect={(item) => void navigate({ search: { event: item.id } })}
                     ready={query.isSuccess && !query.hasNextPage}
                 />
             </div>
-            {edit && (
+            {(creating || event) && (
                 <CalendarEditor
+                    key={event?.id ?? "new"}
                     day={day}
-                    event={edit === "new" ? undefined : edit}
-                    onClose={() => setEdit(null)}
+                    event={event ?? undefined}
+                    onClose={() => {
+                        setCreating(false);
+                        setDay(day);
+                        if (eventId) void navigate({ search: {}, replace: true });
+                    }}
                 />
             )}
         </div>

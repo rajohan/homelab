@@ -8,6 +8,7 @@ import {
 import * as v from "valibot";
 
 import { incidentLocation } from "./features/alerts/incidentLocation";
+import { calendarLocation } from "./features/calendar/calendarLocation";
 import { jobLocation } from "./features/jobs/jobLocation";
 import { Shell } from "./layout/Shell";
 import { Alerts } from "./pages/Alerts";
@@ -58,6 +59,7 @@ export function createDashboardRouter(history?: RouterHistory) {
             createRoute({
                 getParentRoute: () => root,
                 path: "/calendar",
+                validateSearch: (raw) => v.parse(calendarLocation, raw),
                 component: Calendar,
             }),
             createRoute({ getParentRoute: () => root, path: "/tasks", component: Tasks }),

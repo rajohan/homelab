@@ -21,7 +21,7 @@ export function CalendarDayButton({
             day={day}
             modifiers={modifiers}
             aria-label={`${props["aria-label"] ?? day.date.toLocaleDateString()}${events.length > 0 ? `, ${events.length} ${events.length === 1 ? "event" : "events"}` : ""}`}
-            className={`group relative flex min-h-11 w-full cursor-pointer flex-col items-center justify-start gap-1 rounded-lg px-1 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent-300 sm:min-h-21 sm:items-start sm:px-2 ${modifiers.selected ? "bg-accent-900/60 text-accent-100 ring-1 ring-accent-400 ring-inset" : "hover:bg-primary-800"} ${modifiers.outside ? "text-primary-500" : "text-primary-100"}`}
+            className={`group flex h-11 w-full cursor-pointer flex-col items-center justify-start gap-0.5 rounded-lg px-1 pt-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent-300 sm:h-[clamp(2.75rem,calc((100dvh-27rem)/6),5.5rem)] ${modifiers.selected ? "bg-accent-900/60 text-accent-100 ring-1 ring-accent-400 ring-inset" : "hover:bg-primary-800"} ${modifiers.outside ? "text-primary-500" : "text-primary-100"}`}
         >
             <span
                 className={`inline-flex size-6 items-center justify-center rounded-full font-medium tabular-nums ${modifiers.today ? "bg-accent-700 text-white" : ""}`}
@@ -34,14 +34,16 @@ export function CalendarDayButton({
                         className="size-1.5 rounded-full bg-accent-300 sm:hidden"
                         aria-hidden="true"
                     />
-                    <span className="hidden max-w-full truncate text-left text-xs font-medium text-accent-200 sm:block">
-                        {events[0]?.title}
-                    </span>
-                    {events.length > 1 && (
-                        <span className="hidden text-xs text-primary-300 sm:block">
-                            +{events.length - 1}
+                    <span className="hidden w-full min-w-0 items-baseline justify-center gap-1 text-xs sm:flex">
+                        <span className="truncate font-medium text-accent-200">
+                            {events[0]?.title}
                         </span>
-                    )}
+                        {events.length > 1 && (
+                            <span className="shrink-0 text-primary-300">
+                                +{events.length - 1}
+                            </span>
+                        )}
+                    </span>
                 </>
             )}
         </DayButton>

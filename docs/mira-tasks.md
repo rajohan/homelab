@@ -21,6 +21,28 @@ remove it from chat. Calendar writes follow the task board's existing action
 permissions and proposal review. An edit to an older revision requires reopening
 the appointment. Appointments and work items have separate lifecycles.
 
+An appointment can have two independent reminders, both off by default. The
+operator reminder appears in the personal notification inbox and opens the current
+appointment. Missed notifications arrive when the dashboard worker returns.
+The Mira reminder opens a conversation for Mira to summarize the appointment and
+its preparation. It uses the automatic queue, reads only the scheduled event and
+can wait for an available model, queue space or **Automatic work** to resume.
+Mira skips a wake that has outlived the appointment. An explicit reminder at the
+end of a timed appointment gets one scheduler minute to start. For all-day
+appointments with a saved IANA time zone, Mira can start until the exclusive end
+at local midnight in that zone, including daylight-saving changes. Older floating
+dates without a zone retain their last possible midnight across time zones.
+
+The editor records the source time zone alongside the UTC instants. Mira's
+calendar tools return local clock times with their UTC offsets and zone name.
+An event edit that omits the zone keeps its existing zone. For older unzoned
+events, Mira uses the requested display zone or its scheduling zone, Europe/Oslo,
+and labels it as a fallback.
+
+Changing a reminder replaces its pending delivery. Removing it or deleting the
+appointment cancels a pending wake and requests cancellation of any running wake.
+Editing the title or notes retains an already delivered reminder.
+
 ## Starting and continuing work
 
 Assign an unfinished task to Mira, open its details and select **Start work**.

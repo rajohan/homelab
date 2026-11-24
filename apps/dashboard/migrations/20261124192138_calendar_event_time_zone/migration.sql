@@ -1,0 +1,1 @@
+ALTER TABLE "mira_calendar_events" ADD COLUMN "time_zone" text;

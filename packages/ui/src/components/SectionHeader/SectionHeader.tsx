@@ -15,6 +15,7 @@ export function SectionHeader({
     actions,
     badge,
     compactActions = false,
+    centerWhenStacked = false,
 }: {
     readonly title: ReactNode;
     readonly description?: string;
@@ -22,21 +23,32 @@ export function SectionHeader({
     readonly actions?: ReactNode;
     readonly badge?: ReactNode;
     readonly compactActions?: boolean;
+    readonly centerWhenStacked?: boolean;
 }) {
+    const layout = compactActions
+        ? "flex-row flex-wrap items-center justify-between"
+        : "flex-col @min-[34rem]/section-header:flex-row @min-[34rem]/section-header:items-center @min-[34rem]/section-header:justify-between";
+    // A compact header fits a 10rem title, a 20rem action group and the gap on one row.
+    const actionGroupLayout = compactActions
+        ? "has-[[data-ui=action-group]]:w-full @min-[31rem]/section-header:has-[[data-ui=action-group]]:w-80 @max-[31rem]/section-header:[&_[data-ui=action-group]]:grid @max-[31rem]/section-header:[&_[data-ui=action-group]]:grid-cols-1"
+        : "has-[[data-ui=action-group]]:w-full @min-[34rem]/section-header:has-[[data-ui=action-group]]:w-80";
     return (
         <div className="@container/section-header min-w-0">
             <div
                 className={cn(
                     "flex gap-3",
-                    compactActions
-                        ? "flex-row flex-wrap items-center justify-between"
-                        : "flex-col @min-[34rem]/section-header:flex-row @min-[34rem]/section-header:items-center @min-[34rem]/section-header:justify-between"
+                    centerWhenStacked
+                        ? "flex-col items-center @min-[24rem]/section-header:flex-row @min-[24rem]/section-header:justify-between"
+                        : layout
                 )}
             >
                 <div
                     className={cn(
                         "min-w-0 flex-1",
-                        compactActions && actions && "min-w-[min(100%,10rem)]"
+                        compactActions &&
+                            actions &&
+                            !centerWhenStacked &&
+                            "min-w-[min(100%,10rem)]"
                     )}
                 >
                     <div className="flex flex-wrap items-center gap-2">
@@ -59,7 +71,7 @@ export function SectionHeader({
                 {actions && (
                     <div
                         className={cn(
-                            "has-[[data-ui=action-group]]:w-full @min-[34rem]/section-header:has-[[data-ui=action-group]]:w-80",
+                            actionGroupLayout,
                             compactActions
                                 ? "max-w-full min-w-0"
                                 : "min-w-0 @min-[34rem]/section-header:shrink-0 [&>a]:w-full @min-[34rem]/section-header:[&>a]:w-auto [&>button]:w-full @min-[34rem]/section-header:[&>button]:w-auto"
