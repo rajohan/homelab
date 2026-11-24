@@ -30,6 +30,7 @@ export const updatePolicies = pgTable(
     {
         target: text().primaryKey(),
         enabled: boolean().notNull().default(false),
+        allowDigest: boolean("allow_digest").notNull().default(false),
         version: integer().notNull().default(1),
         configuration: text().notNull(),
     },

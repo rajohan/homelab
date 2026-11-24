@@ -12,13 +12,11 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Archive } from "lucide-react";
-import { useState } from "react";
 
 import { ObservationBadge } from "../operations/ObservationBadge";
 import { backupInventoryQuery } from "./backupInventoryQuery";
 import { BackupStatus } from "./BackupStatus";
 
-type StatusScope = "healthy" | "attention" | "unknown";
 const statusLabels = {
     healthy: "Healthy",
     attention: "Needs attention",
@@ -35,31 +33,16 @@ function category(state: BackupState, stale: boolean) {
  * @returns Independent freshness, status totals and tasks grouped by host.
  */
 export function BackupsPanel({ compact = false }: { readonly compact?: boolean }) {
-    const [scope, setScope] = useState<StatusScope | null>(null);
     const query = useQuery(backupInventoryQuery);
     const data = query.data;
     const stale = !data?.configured || query.isError || (data?.stale ?? true);
     const rows = data?.inventory?.backups ?? [];
-    const filtered = scope
-        ? rows.filter((row) => category(row.state, stale) === scope)
-        : rows;
     const items = (["healthy", "attention", "unknown"] as const).map((status) => {
         const count = rows.filter((row) => category(row.state, stale) === status).length;
-        const selected = scope === status;
-        const canFilter = !compact && (selected || (count > 0 && count < rows.length));
         return {
             label: statusLabels[status],
             value: stale && (status !== "unknown" || rows.length === 0) ? "—" : count,
             tone: status === "healthy" ? ("positive" as const) : ("warning" as const),
-            ...(canFilter && {
-                toggle: {
-                    label: selected
-                        ? "Show all backup jobs"
-                        : `Filter backup jobs by status: ${statusLabels[status]} (${count})`,
-                    pressed: selected,
-                    onClick: () => setScope(selected ? null : status),
-                },
-            }),
         };
     });
     return (
@@ -82,9 +65,9 @@ export function BackupsPanel({ compact = false }: { readonly compact?: boolean }
                     <SummaryStrip label="Backup job status" items={items} />
                     {!compact && (
                         <>
-                            {filtered.length > 0 ? (
+                            {rows.length > 0 ? (
                                 <GroupedDirectory
-                                    items={filtered}
+                                    items={rows}
                                     group={(row) => row.host}
                                     getKey={(row) => row.id}
                                     name={(row) => row.task}
@@ -111,16 +94,8 @@ export function BackupsPanel({ compact = false }: { readonly compact?: boolean }
                             ) : (
                                 <EmptyState
                                     icon={Archive}
-                                    title={
-                                        scope
-                                            ? "No jobs match this status"
-                                            : "No backup observations available"
-                                    }
-                                    description={
-                                        scope
-                                            ? "Select the highlighted status again to show all backup jobs."
-                                            : "Backup tasks appear after the first observation."
-                                    }
+                                    title="No backup observations available"
+                                    description="Backup tasks appear after the first observation."
                                 />
                             )}
                         </>

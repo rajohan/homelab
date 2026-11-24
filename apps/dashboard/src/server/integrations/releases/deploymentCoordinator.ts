@@ -5,6 +5,7 @@ import { lockQueue } from "../../jobs/queue";
 import { auditOperation } from "../../operations/audit";
 import type { UpdateTarget } from "../updates/configuration";
 import {
+    deploymentMiraService,
     releaseDeploymentRevision,
     type ReleaseDeploymentTarget,
 } from "./deploymentConfiguration";
@@ -19,6 +20,7 @@ import {
     type DeploymentObservation,
     deploymentObservationSchema,
     deploymentPlanSchema,
+    deploymentPreflightDigest,
     type DeploymentProgress,
     deploymentProgressSchema,
     type DeploymentReceipt,
@@ -242,7 +244,9 @@ export async function coordinateDeployment(options: {
                 SELECT EXISTS(SELECT 1 FROM job_runs WHERE state='running') AS jobs,
                 EXISTS(SELECT 1 FROM workers WHERE heartbeat_at>clock_timestamp()-interval '30 seconds' AND deployment_drained_for IS DISTINCT FROM ${claim.id}::uuid) AS workers,
                 EXISTS(SELECT 1 FROM workers WHERE heartbeat_at>clock_timestamp()-interval '30 seconds' AND deployment_protocol<>1) AS legacy,
-                NOT EXISTS(SELECT 1 FROM mira_runtime_status WHERE deployment_drained_for=${claim.id} AND heartbeat_at>clock_timestamp()-interval '15 seconds') AS mira,
+                EXISTS(SELECT 1 FROM mira_runtime_status WHERE heartbeat_at>clock_timestamp()-interval '30 seconds' AND deployment_drained_for IS DISTINCT FROM ${claim.id}::uuid)
+                    OR EXISTS(SELECT 1 FROM mira_runs WHERE state='running' AND lease_expires_at>clock_timestamp())
+                    OR EXISTS(SELECT 1 FROM mira_daytona_jobs WHERE lease_expires_at>clock_timestamp()) AS mira,
                 EXISTS(SELECT 1 FROM mira_browser_processes WHERE state<>'removed') AS browsers,
                 EXISTS(SELECT 1 FROM mira_daytona_jobs WHERE execution_target='main' AND (state='running' OR cleanup='pending')) AS code,
                 EXISTS(SELECT 1 FROM mira_runtime_status WHERE heartbeat_at>clock_timestamp()-interval '30 seconds') AS "unexpectedMira"`;
@@ -252,6 +256,23 @@ export async function coordinateDeployment(options: {
                     "failed",
                     "incompatible",
                     "The running services do not support this deployment recipe. Complete the initial installation before using self-update.",
+                    true
+                );
+                return;
+            }
+            // A stopped executor cannot acknowledge a drain. A running one can
+            // have a delivery in flight even after losing its database heartbeat.
+            // The host rechecks this exact running state and identity before submission.
+            const executor = deploymentMiraService(target);
+            if (
+                executor &&
+                !busy.unexpectedMira &&
+                plan.expected.containers[executor]?.running
+            ) {
+                await write(
+                    "failed",
+                    "draining",
+                    "Mira is running without a heartbeat. Reopen Deploy release to review the recovery stop before installing.",
                     true
                 );
                 return;
@@ -360,7 +381,10 @@ export async function coordinateDeployment(options: {
                         AbortSignal.any([options.signal, AbortSignal.timeout(30_000)])
                     )
                 );
-                if (deploymentDigest(current) !== deploymentDigest(expected))
+                if (
+                    deploymentPreflightDigest(current) !==
+                    deploymentPreflightDigest(expected)
+                )
                     throw new DeploymentHostRefusal("confirmation_changed");
             } catch (error) {
                 if (options.signal.aborted) return;

@@ -6,7 +6,7 @@ import * as v from "valibot";
 
 import { runOperation, trpc } from "../../api/trpc";
 import { requireCapability } from "../../automation/authentication";
-import { lockQueue } from "../../jobs/queue";
+import { enqueueJob, lockQueue } from "../../jobs/queue";
 import { auditOperation } from "../../operations/audit";
 import { authorizedOperations } from "../../operations/authorization";
 import type { OperationsContext } from "../../operations/context";
@@ -18,6 +18,7 @@ import {
     readDeploymentPolicy,
     writeDeploymentPolicy,
 } from "./deploymentPolicies";
+import { miraRepairState } from "./deploymentRepair";
 
 const requestSchema = v.strictObject({
     target: v.pipe(v.string(), v.regex(/^[a-z][a-z0-9-]{0,49}$/)),
@@ -90,6 +91,11 @@ export const deploymentRouter = trpc.router({
                         ),
                         version: prepared.plan?.release.version ?? null,
                         revision: prepared.revision,
+                        repair: await miraRepairState(
+                            operations.client,
+                            target,
+                            prepared.plan?.expected
+                        ),
                         publication: prepared.publication,
                     };
                 })
@@ -108,6 +114,54 @@ export const deploymentRouter = trpc.router({
             SELECT id,target,plan->'release'->>'version' AS version,state,phase,message,finished_at IS NULL AS active
             FROM release_deployments ORDER BY id DESC LIMIT 10`;
             return { targets, history };
+        })
+    ),
+    stopMira: trpc.procedure.input(requestSchema).mutation(({ ctx, input }) =>
+        runOperation(async () => {
+            const { operations, actor } = await authorize(ctx);
+            const target = operations.deploymentTargets?.find(
+                (t) => t.id === input.target
+            );
+            const handler = operations.registry.get(`homelab.repair.${input.target}`);
+            if (!target || !handler || !operations.releaseRepository)
+                throw new OperationFailure(
+                    "NOT_FOUND",
+                    "Mira recovery is not configured."
+                );
+            return operations.client.begin(async (t) => {
+                await lockQueue(t);
+                const key = `${actor}:deployment-repair:${input.requestId}`;
+                const [existing] = await t<
+                    { id: string; action: string; revision: string }[]
+                >`SELECT id,action,payload->>'revision' AS revision FROM job_runs WHERE idempotency_key=${key}`;
+                if (existing) {
+                    if (
+                        existing.action !== handler.definition.key ||
+                        existing.revision !== input.revision
+                    )
+                        throw new OperationFailure(
+                            "CONFLICT",
+                            "This recovery request belongs to another release preparation."
+                        );
+                    return { id: existing.id };
+                }
+                const prepared = await preparedDeployment(
+                    t,
+                    target,
+                    operations.updateTargets ?? []
+                );
+                const repair = await miraRepairState(t, target, prepared.plan?.expected);
+                if (prepared.revision !== input.revision || !repair?.canStop)
+                    throw new OperationFailure(
+                        "CONFLICT",
+                        "Prepare the release again. Mira recovered, or work is still active."
+                    );
+                return {
+                    id: await enqueueJob(t, handler.definition, actor, key, {
+                        revision: input.revision,
+                    }),
+                };
+            });
         })
     ),
     request: trpc.procedure.input(requestSchema).mutation(({ ctx, input }) =>

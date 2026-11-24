@@ -230,10 +230,12 @@ def container(target, service):
             "running": data["State"]["Running"], "health": data["State"].get("Health", {}).get("Status")}
 
 
-def unit_state(target, unit):
-    raw = command(["/usr/bin/systemctl", "show", unit, "--property=ActiveState,InvocationID"], target["directory"]).decode()
+def unit_state(target, unit, require_loaded=False):
+    raw = command(["/usr/bin/systemctl", "show", unit, "--property=LoadState,ActiveState,InvocationID"], target["directory"]).decode()
     fields = dict(line.split("=", 1) for line in raw.splitlines() if "=" in line)
-    return {"active": fields.get("ActiveState"), "invocation": fields.get("InvocationID")}
+    if require_loaded and fields.get("LoadState") != "loaded":
+        raise Refusal("service_unavailable")
+    return {"active": fields.get("ActiveState"), "invocation": fields.get("InvocationID", "")}
 
 
 def browser_bindings(target, configuration, observed, code=None):
@@ -282,7 +284,7 @@ def browser_bindings(target, configuration, observed, code=None):
     return result
 
 
-def browser_slots(target, bindings, observed):
+def browser_slots(target, bindings, observed, preflight=False):
     """Keep the approved network identities and verify their sole healthy managed peers."""
     slots = []
     for binding in bindings:
@@ -291,12 +293,16 @@ def browser_slots(target, bindings, observed):
         data = json.loads(command(["/usr/bin/docker", "inspect", proxy["id"]], target["directory"]))[0]
         endpoints = list(data.get("NetworkSettings", {}).get("Networks", {}).values())
         slot = next((endpoint for endpoint in endpoints if endpoint.get("NetworkID") == binding["networkId"]), {})
+        peers = set(network.get("Containers") or {})
         if (network.get("Id") != binding["networkId"] or network.get("Driver") != "bridge" or
                 network.get("Internal") is not True or network.get("EnableIPv6") is not False or
                 network.get("Options", {}).get("com.docker.network.bridge.gateway_mode_ipv4") != "isolated" or
-                set(network.get("Containers", {})) != {proxy["id"]} or data.get("Id") != proxy["id"] or
-                data.get("Image") != proxy["imageId"] or data.get("State", {}).get("Running") is not True or
-                data.get("State", {}).get("Health", {}).get("Status") != "healthy" or len(endpoints) != 2 or
+                peers - {proxy["id"]} or data.get("Id") != proxy["id"] or data.get("Image") != proxy["imageId"]):
+            raise Refusal("browser_proxy_verification")
+        if preflight and not proxy["running"] and not peers:
+            continue
+        if (peers != {proxy["id"]} or not proxy["running"] or
+                (not preflight and proxy["health"] != "healthy") or len(endpoints) != 2 or
                 "mira-egress" not in (slot.get("Aliases") or []) or
                 (slot.get("DriverOpts") or {}).get("com.docker.network.endpoint.ifname") != "browser"):
             raise Refusal("browser_proxy_verification")
@@ -382,22 +388,32 @@ def inspect(target, release, allow_current=False, drained=False):
     source = read_file(Path(target["composeFile"]))
     config = configured(target)
     observed = {}
+    candidate = tuple(map(int, release["version"].split(".")))
     for service in target["services"]:
         name, app = service["name"], service["app"]
         if app not in images:
             raise Refusal("release_incomplete")
         current = container(target, name)
-        if config.get("services", {}).get(name, {}).get("image") != current["image"] or not current["running"] or current["health"] != "healthy":
-            raise Refusal("service_unavailable")
+        if config.get("services", {}).get(name, {}).get("image") != current["image"]:
+            raise Refusal("configuration_changed")
         before = image_version(release["repository"], app, current["image"])
-        if before is None or (not allow_current and before >= tuple(map(int, release["version"].split(".")))):
+        exact = current["image"] == images[app]
+        if before is None or (not allow_current and not exact and before >= candidate):
             raise Refusal("release_not_newer")
-        if allow_current and current["image"] == images[app] and current["imageId"] != image_identity(target, images[app], release):
+        if exact and current["imageId"] != image_identity(target, images[app], release):
             raise Refusal("image_verification")
         observed[name] = current
-    units = {unit: unit_state(target, unit) for unit in target["units"]}
-    if any(value["active"] != "active" or not re.fullmatch("[a-f0-9]{32}", value["invocation"] or "") for value in units.values()):
+    units = {unit: unit_state(target, unit, require_loaded=True) for unit in target["units"]}
+    if any(value["active"] not in {"active", "inactive", "failed"} or
+           not re.fullmatch("[a-f0-9]{32}" if value["active"] == "active" else "(?:[a-f0-9]{32})?", value["invocation"] or "") for value in units.values()):
         raise Refusal("service_unavailable")
+    # Current, healthy siblings can stay on the verified image while another service is repaired.
+    # A separate Auth host is checked and skipped by the coordinator when already healthy.
+    if (not allow_current and any(service["app"] != "auth" for service in target["services"]) and
+            all(observed[service["name"]]["image"] == images[service["app"]] for service in target["services"]) and
+            all(current["running"] and current["health"] == "healthy" for current in observed.values()) and
+            all(unit["active"] == "active" for unit in units.values())):
+        raise Refusal("release_not_newer")
     browser_hash, code_hash = None, {}
     if target.get("browserConfigFile"):
         if "mira-browser" not in images or "mira-browser-proxy" not in images:
@@ -413,9 +429,45 @@ def inspect(target, release, allow_current=False, drained=False):
             code = json.loads(code_source)
         bindings = browser_bindings(target, json.loads(browser_source), observed, code)
         if drained:
-            browser_slots(target, bindings, observed)
+            browser_slots(target, bindings, observed, preflight=True)
     return {"targetHash": digest(encoded(target)), "composeHash": digest(source), "configHash": digest(encoded(config)),
             "browserHash": browser_hash, **code_hash, "containers": observed, "units": units}
+
+
+def verify_preflight(target, release, expected):
+    """Fence image, configuration, unit and process identities. Probe results can change while draining."""
+    observed = inspect(target, release, drained=True)
+    previous = copy.deepcopy(expected)
+    for observation in (observed, previous):
+        for service in observation["containers"].values():
+            service.pop("health", None)
+    if previous != observed:
+        raise Refusal("confirmation_changed")
+
+
+def stop_unresponsive_mira(request):
+    """Stop only the previously confirmed executor container; a racing recreation cannot be stopped."""
+    target, expected = request["target"], request["expected"]
+    executors = [service["name"] for service in target["services"] if service["app"] == "mira"]
+    if (target.get("mira") is not True or (len(executors) != 1 and "mira" not in executors) or
+            digest(encoded(target)) != expected["targetHash"]):
+        raise Refusal("operation_invalid")
+    executor = "mira" if "mira" in executors else executors[0]
+    with directory_lock(Path(target["directory"])):
+        if (not time.time() < request["deadline"] <= time.time() + 31 or
+                digest(read_file(Path(target["composeFile"]))) != expected["composeHash"] or
+                digest(encoded(configured(target))) != expected["configHash"]):
+            raise Refusal("confirmation_changed")
+        current, previous = container(target, executor), expected["containers"][executor]
+        if not previous["running"] or any(current[key] != previous[key] for key in ("id", "image", "imageId", "running")):
+            raise Refusal("confirmation_changed")
+        if time.time() >= request["deadline"]:
+            raise Refusal("request_expired")
+        command(["/usr/bin/docker", "stop", "--timeout", "10", previous["id"]], target["directory"], timeout=18)
+        after = container(target, executor)
+        if after["id"] != previous["id"] or after["running"]:
+            raise Refusal("stop_verification")
+        return {"id": after["id"], "stopped": True}
 
 
 def operation_directory(target, identity):
@@ -464,8 +516,7 @@ def submit(request, source):
             return status(target, identity)
         if not time.time() < request["deadline"] <= time.time() + 90:
             raise Refusal("request_expired")
-        if inspect(target, request["release"], drained=True) != request["expected"]:
-            raise Refusal("confirmation_changed")
+        verify_preflight(target, request["release"], request["expected"])
         if time.time() >= request["deadline"]:
             raise Refusal("request_expired")
         if shutil.disk_usage(target["stateDirectory"]).free < 1024 * 1024 * 1024:
@@ -592,8 +643,7 @@ def run(directory):
         sources, written = {}, {}
         try:
             phase("checking")
-            if inspect(target, release, drained=True) != intent["expected"]:
-                raise Refusal("confirmation_changed")
+            verify_preflight(target, release, intent["expected"])
             config = configured(target)
             images = release_images(release)
             apps = {service["app"] for service in target["services"]}
@@ -606,8 +656,7 @@ def run(directory):
             for app in sorted(apps):
                 command(["/usr/bin/docker", "pull", "--platform=linux/amd64", images[app]], target["directory"], timeout=300)
                 identities[app] = image_identity(target, images[app], release)
-            if inspect(target, release, drained=True) != intent["expected"]:
-                raise Refusal("confirmation_changed")
+            verify_preflight(target, release, intent["expected"])
             compose_path = Path(target["composeFile"])
             sources[compose_path] = read_file(compose_path)
             replacement, expected_config = compose_replacement(sources[compose_path], config, target, images)
@@ -779,6 +828,8 @@ def main():
         result = inspect(request["target"], request["release"], request.get("allowCurrent") is True, request.get("drained") is True)
     elif request["mode"] == "status":
         result = status(request["target"], request["id"])
+    elif request["mode"] == "stop-mira":
+        result = stop_unresponsive_mira(request)
     elif request["mode"] == "submit":
         source = globals().get("SOURCE") or Path(__file__).read_text()
         result = submit(request, source)

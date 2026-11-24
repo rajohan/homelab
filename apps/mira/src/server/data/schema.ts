@@ -33,6 +33,26 @@ import {
 import type { CodeJobBinding } from "../sandbox/localBinding";
 
 const time = (name: string) => timestamp(name, { withTimezone: true });
+export const miraCalendarEvents = pgTable(
+    "mira_calendar_events",
+    {
+        id: uuid().primaryKey(),
+        owner: text().notNull(),
+        title: text().notNull(),
+        notes: text().notNull(),
+        location: text().notNull(),
+        allDay: boolean("all_day").notNull(),
+        startsAt: time("starts_at").notNull(),
+        endsAt: time("ends_at").notNull(),
+        createdBy: text("created_by").notNull(),
+        version: integer().notNull().default(1),
+    },
+    (t) => [
+        index("mira_calendar_owner_start").on(t.owner, t.startsAt, t.id),
+        check("mira_calendar_interval", sql`${t.endsAt} > ${t.startsAt}`),
+        check("mira_calendar_creator", sql`${t.createdBy} in ('operator','mira')`),
+    ]
+);
 export const miraConversations = pgTable(
     "mira_conversations",
     {
@@ -768,7 +788,7 @@ export const miraDaytonaJobs = pgTable(
         leaseToken: uuid("lease_token"),
         leaseExpiresAt: time("lease_expires_at"),
         retryAt: time("retry_at"),
-        sandboxId: uuid("sandbox_id"),
+        sandboxId: text("sandbox_id"),
         commandId: text("command_id"),
         uploadIndex: integer("upload_index").notNull().default(0),
         deleteAttempted: boolean("delete_attempted").notNull().default(false),

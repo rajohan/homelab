@@ -38,9 +38,14 @@ interface Step {
  * @returns Explicit runtime and Git settings.
  */
 export function sandboxEnvironment(directory: string): Record<string, string> {
+    const tools = path.join(path.dirname(directory), "tools");
+    const systemPath = "/usr/local/bin:/usr/bin:/bin";
     return {
         ...sandboxProxyEnvironment(),
-        PATH: "/usr/local/bin:/usr/bin:/bin",
+        PATH:
+            process.execPath === path.join(tools, "bun")
+                ? tools + ":" + systemPath
+                : systemPath,
         HOME: path.join(directory, "home"),
         TMPDIR: path.join(directory, "tmp"),
         LANG: "C.UTF-8",

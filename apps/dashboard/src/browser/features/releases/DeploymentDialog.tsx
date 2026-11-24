@@ -50,7 +50,11 @@ export function DeploymentDialog({
                     "The current release could not be prepared. Close this dialog and try again."
                 );
             return {
-                plan: { version: plan.version, revision: plan.revision },
+                plan: {
+                    version: plan.version,
+                    revision: plan.revision,
+                    repair: plan.repair,
+                },
                 publication: null,
             };
         },
@@ -65,25 +69,58 @@ export function DeploymentDialog({
     });
     const plan = query.data?.plan;
     const publication = query.data?.publication;
-    const disabled = query.isPending || query.isFetching || query.isError || !plan;
+    const disabled =
+        query.isPending ||
+        query.isFetching ||
+        query.isError ||
+        !plan ||
+        plan.repair?.canStop === false;
     const operation = useOperation(
         (input: { target: string; revision: string; requestId: string }, signal) =>
             api.releases.deployment.request.mutate(input, { signal })
     );
+    const repair = useOperation(
+        async (
+            input: { target: string; revision: string; requestId: string },
+            signal
+        ) => {
+            const { id } = await api.releases.deployment.stopMira.mutate(input, {
+                signal,
+            });
+            await waitForJob(id, signal);
+        }
+    );
+    const deployTitle = plan ? `Deploy ${plan.version}?` : "Deploy release";
+    const deployDescription = plan
+        ? `Update ${target.label} after active work finishes.`
+        : "Checking the release and current services before confirmation.";
     return (
         <ConfirmDialog
-            title={plan ? `Deploy ${plan.version}?` : "Deploy release"}
+            title={plan?.repair ? "Mira is unresponsive" : deployTitle}
             description={
-                plan
-                    ? `Update ${target.label} after active work finishes.`
-                    : "Checking the release and current services before confirmation."
+                plan?.repair
+                    ? `Restore the deployment workflow for ${target.label}.`
+                    : deployDescription
             }
-            confirmLabel="Deploy release"
+            confirmLabel={plan?.repair ? "Stop Mira and recheck" : "Deploy release"}
             confirmDisabled={disabled}
             onClose={onClose}
             onConfirm={async () => {
                 if (disabled || !plan)
                     throw new Error("The release checks are not complete.");
+                if (plan.repair) {
+                    try {
+                        await repair.mutateAsync({
+                            target: target.id,
+                            revision: plan.revision,
+                            requestId: preparationId.current,
+                        });
+                    } finally {
+                        preparationId.current = crypto.randomUUID();
+                        await query.refetch();
+                    }
+                    return;
+                }
                 await operation.mutateAsync({
                     target: target.id,
                     revision: plan.revision,
@@ -126,11 +163,19 @@ export function DeploymentDialog({
                 </a>
             )}
             {query.isError && <ErrorNotice error={query.error} />}
-            <p className="text-sm text-primary-300">
-                The dashboard and Mira will be briefly unavailable. Queued work is
-                preserved. A database backup is taken before migration, and the host
-                verifies the services before work resumes.
-            </p>
+            {plan?.repair ? (
+                <p className="text-sm text-primary-300">
+                    {plan.repair.canStop
+                        ? "The reviewed Mira container is running without a heartbeat. No active work was found. Stop Mira to recheck the host, then confirm the release."
+                        : "Active work or cleanup is still recorded. Resolve it before stopping Mira and prepare the release again."}
+                </p>
+            ) : (
+                <p className="text-sm text-primary-300">
+                    The dashboard and Mira will be briefly unavailable. Queued work is
+                    preserved. A database backup is taken before migration, and the host
+                    verifies the services before work resumes.
+                </p>
+            )}
         </ConfirmDialog>
     );
 }

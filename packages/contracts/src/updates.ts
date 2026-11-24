@@ -41,6 +41,7 @@ export const updateItemSchema = v.strictObject({
     availableImage: v.optional(text(300)),
     installedVersion: v.optional(text(100)),
     availableVersion: v.optional(text(100)),
+    digestOnly: v.optional(v.boolean()),
     candidateVerified: v.optional(v.boolean()),
     imageTag: v.optional(
         v.pipe(v.string(), v.regex(/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/))
@@ -146,6 +147,7 @@ export const updatePolicySchema = v.strictObject({
     target: text(64),
     version: v.pipe(v.number(), v.integer(), v.minValue(0)),
     enabled: v.boolean(),
+    allowDigest: v.optional(v.boolean()),
 });
 export const updatePolicyGroupSchema = v.strictObject({
     host: v.nullable(v.pipe(v.string(), v.regex(/^host:[a-f0-9]{64}$/))),
@@ -163,7 +165,7 @@ export const updatePolicyGroupSchema = v.strictObject({
     ),
 });
 export type UpdatePolicyGroupInput = v.InferOutput<typeof updatePolicyGroupSchema>;
-export type UpdateChange = "patch" | "minor" | "major" | "unknown";
+export type UpdateChange = "patch" | "minor" | "major" | "digest" | "unknown";
 export interface UpdateControl {
     readonly target: string;
     readonly revision: string;
@@ -181,6 +183,7 @@ export interface UpdatePolicy {
     readonly enabled: boolean;
     readonly version: number;
     readonly configurationChanged: boolean;
+    readonly allowDigest?: boolean;
 }
 
 /**
@@ -210,21 +213,35 @@ function imageVersion(reference: string | undefined): string | undefined {
     return tag?.replace(/-(?:alpine|bookworm|bullseye|trixie|slim)[\d.-]*$/, "");
 }
 
+function tzRelease(version: string) {
+    return /^(?:(\d+):)?(\d{4})(z*[a-z])(?:-[0-9][A-Za-z0-9.+]*)?$/.exec(version);
+}
+
 /**
  * Classify comparable stable versions without assuming an opaque tag is a safe update.
  * @param item - Installed and resolved candidate metadata; digests are never versions.
  * @returns Patch/minor/major, or unknown for downgrade, prerelease or unversioned channels.
  */
 export function updateChange(item: UpdateItem): UpdateChange {
+    if (item.kind === "os" && /^apt:tzdata(?::[a-z0-9]+)?$/.test(item.id)) {
+        const from = tzRelease(item.installed);
+        const to = tzRelease(item.available ?? "");
+        if (!from || !to || from[1] !== to[1]) return "unknown";
+        return to[2]! + to[3]! > from[2]! + from[3]! ? "patch" : "unknown";
+    }
+    if (item.kind === "container" && item.digestOnly && item.candidateVerified)
+        return "digest";
+    const installedLabel = item.installedVersion ?? imageVersion(item.image);
+    const availableLabel = item.availableVersion ?? imageVersion(item.availableImage);
     const installed = versionParts(
         item.kind === "container"
-            ? (item.installedVersion ?? imageVersion(item.image))
+            ? installedLabel?.replace(/-ls\d+$/, "")
             : item.installed,
         item.kind === "os"
     );
     const available = versionParts(
         item.kind === "container"
-            ? (item.availableVersion ?? imageVersion(item.availableImage))
+            ? availableLabel?.replace(/-ls\d+$/, "")
             : (item.available ?? undefined),
         item.kind === "os"
     );
@@ -237,6 +254,12 @@ export function updateChange(item: UpdateItem): UpdateChange {
             if (index === 0) return "major";
             return index === 1 ? "minor" : "patch";
         }
+    }
+    if (item.kind === "container") {
+        const from = /-ls(\d+)$/.exec(installedLabel ?? "");
+        const to = /-ls(\d+)$/.exec(availableLabel ?? "");
+        if ((from || to) && (!from || !to || BigInt(to[1]!) < BigInt(from[1]!)))
+            return "unknown";
     }
     return "patch";
 }

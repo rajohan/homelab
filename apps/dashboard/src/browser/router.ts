@@ -12,6 +12,7 @@ import { jobLocation } from "./features/jobs/jobLocation";
 import { Shell } from "./layout/Shell";
 import { Alerts } from "./pages/Alerts";
 import { Backups } from "./pages/Backups";
+import { Calendar } from "./pages/Calendar";
 import { Identity } from "./pages/Identity";
 import { Infrastructure } from "./pages/Infrastructure";
 import { Jobs } from "./pages/Jobs";
@@ -54,6 +55,11 @@ export function createDashboardRouter(history?: RouterHistory) {
         defaultErrorComponent: RouteError,
         routeTree: root.addChildren([
             createRoute({ getParentRoute: () => root, path: "/mira", component: Mira }),
+            createRoute({
+                getParentRoute: () => root,
+                path: "/calendar",
+                component: Calendar,
+            }),
             createRoute({ getParentRoute: () => root, path: "/tasks", component: Tasks }),
             createRoute({
                 getParentRoute: () => root,

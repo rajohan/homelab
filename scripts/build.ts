@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import tailwind from "bun-plugin-tailwind";
 
+import { daytonaPlatformBuild } from "./buildDaytonaPlatform";
 import { buildNativeSkills } from "./buildNativeSkills";
 import { buildSystemSkills } from "./buildSystemSkills";
 
@@ -22,6 +23,9 @@ export async function main(): Promise<void> {
         throw new Error("Usage: bun run build [auth|dashboard|mira]");
     }
 
+    const platform = apps.some((app) => app !== "auth")
+        ? await daytonaPlatformBuild(repositoryRoot)
+        : "";
     for (const app of apps) {
         const applicationRoot = path.resolve(applicationsRoot, app);
         const outputDirectory = path.resolve(applicationRoot, "dist");
@@ -57,7 +61,13 @@ export async function main(): Promise<void> {
                       ]),
                 ...additionalEntries,
                 ...(app === "mira"
-                    ? [path.resolve(applicationRoot, "src/server/browsing/hostCli.ts")]
+                    ? [
+                          path.resolve(applicationRoot, "src/server/browsing/hostCli.ts"),
+                          path.resolve(
+                              applicationRoot,
+                              "src/server/integrations/daytona/qualification.ts"
+                          ),
+                      ]
                     : []),
             ],
             outdir: outputDirectory,
@@ -76,7 +86,10 @@ export async function main(): Promise<void> {
             },
             sourcemap: "none",
             env: "disable",
-            define: { "process.env.NODE_ENV": JSON.stringify("production") },
+            define: {
+                "process.env.NODE_ENV": JSON.stringify("production"),
+                "import.meta.homelabDaytonaProgram": JSON.stringify(platform),
+            },
             plugins: [tailwind],
         });
         if (!result.success) {

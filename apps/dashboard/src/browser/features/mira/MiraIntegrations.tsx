@@ -79,6 +79,13 @@ export function MiraIntegrations() {
                     if (integration.configured && control?.enabled && !integration.ready)
                         label = "Offline";
                     if (
+                        integration.key === "integration:daytona" &&
+                        integration.configured &&
+                        !integration.ready &&
+                        integration.message
+                    )
+                        label = "Setup required";
+                    if (
                         integration.ready &&
                         control?.enabled &&
                         integration.lastSuccessAt
@@ -154,5 +161,7 @@ export function MiraIntegrations() {
 
 function integrationTone(label: string) {
     if (label === "Ready" || label === "Connected") return "positive";
-    return ["Offline", "Needs attention"].includes(label) ? "warning" : "neutral";
+    return ["Offline", "Needs attention", "Setup required"].includes(label)
+        ? "warning"
+        : "neutral";
 }

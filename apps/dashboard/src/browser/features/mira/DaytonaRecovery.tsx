@@ -78,8 +78,14 @@ export function DaytonaRecovery({
                             <dl className="grid gap-3 text-sm sm:grid-cols-2">
                                 {[
                                     ["Organization", recovery.organizationId],
+                                    ...(recovery.projectId
+                                        ? [["Project", recovery.projectId]]
+                                        : []),
                                     ["Region", recovery.target],
-                                    ["Snapshot", recovery.snapshotId],
+                                    [
+                                        recovery.projectId ? "Image" : "Snapshot",
+                                        recovery.snapshotId,
+                                    ],
                                     ["Sandbox ID", recovery.sandboxId ?? "Not received"],
                                     ["Sandbox name", recovery.sandboxName],
                                 ].map(([label, value]) => (

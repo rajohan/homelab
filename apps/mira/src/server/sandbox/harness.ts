@@ -12,8 +12,10 @@ import {
 } from "./profile";
 import { executeDaytonaChecks } from "./workflow";
 
-/** Verify the fixed image and non-root process before creating any attempt files. */
-export async function requireSandboxImage(): Promise<void> {
+/** Verify the fixed image and non-root process before creating any attempt files.
+ * @param attemptId - Attempt whose qualified platform tools may be used instead of the image tools.
+ */
+export async function requireSandboxImage(attemptId?: string): Promise<void> {
     if (
         process.platform !== "linux" ||
         process.getuid?.() === 0 ||
@@ -23,7 +25,19 @@ export async function requireSandboxImage(): Promise<void> {
         throw new Error(
             "This command requires the qualified non-root Homelab Daytona snapshot."
         );
-    const profile = await readFile("/opt/homelab/profile.json", "utf8");
+    let directory = "/opt/homelab";
+    if (attemptId) {
+        const tools = `/tmp/homelab-mira/${attemptId}/tools`;
+        if (process.execPath === path.join(tools, "bun")) {
+            if (
+                process.argv[1] !== path.join(tools, "daytona-check.js") ||
+                (await realpath(tools)) !== tools
+            )
+                throw new Error("Unexpected platform harness path.");
+            directory = tools;
+        }
+    }
+    const profile = await readFile(path.join(directory, "profile.json"), "utf8");
     if (profile.trim() !== JSON.stringify(daytonaCheckProfile))
         throw new Error("Sandbox profile does not match this harness.");
 }
@@ -41,7 +55,7 @@ export async function runDaytonaChecks(
     announce?: (message: string) => void
 ): Promise<number> {
     const input = v.parse(daytonaSandboxSchema, request);
-    await requireSandboxImage();
+    await requireSandboxImage(input.id);
     const root = "/tmp/homelab-mira";
     await mkdir(root, { recursive: true, mode: 0o700 });
     if ((await realpath(root)) !== root)

@@ -73,6 +73,7 @@ export async function resolveUpdates(
                 let availableImage: string | undefined;
                 let installedVersion: string | undefined;
                 let availableVersion: string | undefined;
+                let digestOnly: boolean | undefined;
                 let imageCurrent: boolean | undefined;
                 if (item.release) {
                     const key =
@@ -106,6 +107,7 @@ export async function resolveUpdates(
                     availableImage = candidate?.reference;
                     installedVersion = candidate?.installedVersion;
                     availableVersion = candidate?.availableVersion;
+                    digestOnly = candidate?.digestOnly;
                     imageCurrent = candidate?.current;
                 }
                 let status: UpdateItem["status"] = "unknown";
@@ -120,6 +122,7 @@ export async function resolveUpdates(
                     availableImage: _previous,
                     installedVersion: _installed,
                     availableVersion: _version,
+                    digestOnly: _digest,
                     ...observation
                 } = item;
                 items[position] = {
@@ -129,6 +132,7 @@ export async function resolveUpdates(
                     candidateVerified: available !== null,
                     ...(installedVersion ? { installedVersion } : {}),
                     ...(availableVersion ? { availableVersion } : {}),
+                    ...(digestOnly ? { digestOnly: true } : {}),
                     ...(item.kind === "container" && item.image?.includes("@")
                         ? {
                               pinned: true,
@@ -143,6 +147,7 @@ export async function resolveUpdates(
                     availableImage: _previous,
                     installedVersion: _installed,
                     availableVersion: _version,
+                    digestOnly: _digest,
                     ...observation
                 } = item;
                 items[position] = {

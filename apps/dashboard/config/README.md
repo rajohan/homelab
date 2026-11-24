@@ -15,9 +15,13 @@ mounted in the worker; target source publishers must also be configured.
 
 Jackett tracks LinuxServer's `latest` image channel instead of scanning its large
 version-tag catalog. Its source publisher must set
-`imageTrackingTags["stremio-jackett-1"]` to `"latest"` as well. This changes only
+`imageTrackingTags["homelab-services-jackett-1"]` to `"latest"` as well. A source
+that still discovers the former `stremio-jackett-1` uses the same channel. This changes only
 version discovery and the matching execution recipe, not the installed digest or
 automatic-update consent. Deployment still requires a reviewed release.
+When the worker installs a Jackett update, it prefers the numerically versioned tag
+if that tag resolves to the channel's exact digest. LinuxServer build labels remain
+available for comparing both the application version and package revision.
 
 Review changes through PR and deploy a released image. Do not edit production's
 container copy. See [update management](../../../docs/update-management.md) for

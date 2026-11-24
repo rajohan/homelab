@@ -21,8 +21,14 @@ export async function readUpdatePolicies(
     targets: readonly UpdateTarget[]
 ): Promise<UpdatePolicy[]> {
     const rows = await client<
-        { target: string; enabled: boolean; version: number; configuration: string }[]
-    >`SELECT target, enabled, version, configuration FROM update_policies`;
+        {
+            target: string;
+            enabled: boolean;
+            version: number;
+            configuration: string;
+            allowDigest: boolean;
+        }[]
+    >`SELECT target, enabled, version, configuration, allow_digest AS "allowDigest" FROM update_policies`;
     return targets.map((target) => {
         const row = rows.find((policy) => policy.target === target.id);
         const changed = Boolean(
@@ -42,6 +48,10 @@ export async function readUpdatePolicies(
             enabled: Boolean(row?.enabled && !changed),
             version: row?.version ?? 0,
             configurationChanged: changed,
+            ...(target.driver.kind === "docker" &&
+            (target.driver.trackingTag ?? "latest") === "latest"
+                ? { allowDigest: Boolean(row?.enabled && !changed && row.allowDigest) }
+                : {}),
         };
     });
 }
@@ -58,7 +68,7 @@ export async function writeUpdatePolicy(
     client: SQL,
     target: UpdateTarget,
     actor: string,
-    input: { enabled: boolean; version: number }
+    input: { enabled: boolean; version: number; allowDigest?: boolean | undefined }
 ): Promise<void> {
     await client.begin(async (transaction) => {
         await transaction`SELECT pg_advisory_xact_lock(hashtext('dashboard-update-policies'))`;
@@ -70,27 +80,40 @@ async function savePolicy(
     transaction: TransactionSQL,
     target: UpdateTarget,
     actor: string,
-    input: { enabled: boolean; version: number }
+    input: { enabled: boolean; version: number; allowDigest?: boolean | undefined }
 ) {
+    if (
+        input.allowDigest &&
+        (!input.enabled ||
+            target.driver.kind !== "docker" ||
+            (target.driver.trackingTag ?? "latest") !== "latest")
+    )
+        throw new OperationFailure(
+            "BAD_REQUEST",
+            "Digest-only updates require an enabled Docker service tracking latest."
+        );
+    const revision = updateTargetRevision(target);
     const rows = await transaction<
         { version: number }[]
-    >`INSERT INTO update_policies (target, enabled, version, configuration) SELECT ${target.id}, ${input.enabled}, 1, ${updateTargetRevision(target)} WHERE ${input.version} = 0 ON CONFLICT (target) DO NOTHING RETURNING version`;
+    >`INSERT INTO update_policies (target, enabled, version, configuration, allow_digest) SELECT ${target.id}, ${input.enabled}, 1, ${revision}, ${input.allowDigest ?? false} WHERE ${input.version} = 0 ON CONFLICT (target) DO NOTHING RETURNING version`;
     if (!rows[0]) {
         const updated = await transaction<
             { version: number }[]
-        >`UPDATE update_policies SET enabled=${input.enabled}, version=version+1, configuration=${updateTargetRevision(target)} WHERE target=${target.id} AND version=${input.version} RETURNING version`;
+        >`UPDATE update_policies SET enabled=${input.enabled}, version=version+1, configuration=${revision},
+            allow_digest=${input.enabled} AND COALESCE(${input.allowDigest ?? null}::boolean, enabled AND configuration=${revision} AND allow_digest)
+            WHERE target=${target.id} AND version=${input.version} RETURNING version`;
         if (!updated[0])
             throw new OperationFailure(
                 "CONFLICT",
                 "The automatic update policy changed. Refresh and try again."
             );
     }
-    await auditOperation(
-        transaction,
-        actor,
-        input.enabled ? "updates.automatic_enabled" : "updates.automatic_disabled",
-        target.id
-    );
+    let action = input.enabled
+        ? "updates.automatic_enabled"
+        : "updates.automatic_disabled";
+    if (input.allowDigest !== undefined)
+        action = input.allowDigest ? "updates.digest_enabled" : "updates.digest_disabled";
+    await auditOperation(transaction, actor, action, target.id);
 }
 
 /** Apply one confirmed host or fleet change atomically against the reviewed recipes and policy versions.

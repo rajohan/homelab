@@ -102,8 +102,11 @@ export function overviewPriorities(r: OverviewReadings): Priority[] {
     if (r.security > 0)
         problems.push({
             tone: "warning",
-            title: "Security updates available",
-            detail: `${r.security} security updates reported by current sources.`,
+            title:
+                r.security === 1
+                    ? "Security update available"
+                    : "Security updates available",
+            detail: `${r.security} security ${r.security === 1 ? "update" : "updates"} reported by current sources.`,
             to: "/updates",
             action: "Inspect updates",
         });

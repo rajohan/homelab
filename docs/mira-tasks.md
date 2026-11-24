@@ -9,6 +9,18 @@ Moving an already started task from
 **Blocked** to **In progress** continues its existing conversation. A finished run
 does not automatically mark the task complete.
 
+## Shared calendar
+
+Open **Calendar** to select a day, add an appointment, or edit an existing event.
+Timed appointments appear in the viewer's local time zone. All-day appointments
+keep their dates across time zones. For a multi-day event, **Last day** is inclusive
+in the editor. The API stores the following midnight as its exclusive end.
+
+Mira can list the signed-in operator's appointments, add an event, reschedule it or
+remove it from chat. Calendar writes follow the task board's existing action
+permissions and proposal review. An edit to an older revision requires reopening
+the appointment. Appointments and work items have separate lifecycles.
+
 ## Starting and continuing work
 
 Assign an unfinished task to Mira, open its details and select **Start work**.

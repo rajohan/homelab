@@ -9,10 +9,16 @@ import {
     miraTaskInputSchema,
     miraTaskUpdateSchema,
 } from "@homelab/contracts/mira";
+import {
+    calendarCreateSchema,
+    calendarUpdateSchema,
+} from "@homelab/contracts/miraCalendar";
 import { miraHostProposalSchema } from "@homelab/contracts/miraOperations";
+import { versionedIdSchema } from "@homelab/contracts/operations";
 import * as v from "valibot";
 
 import type { MiraToolDefinition } from "../executor/toolDefinition";
+import { deleteCalendarEvent, saveCalendarEvent } from "./calendar";
 import { sendMiraMessageInTransaction } from "./chatSteering";
 import { auditMira, lockMiraProposals, type MiraContext, MiraFailure } from "./context";
 import { saveMemory } from "./documents";
@@ -27,6 +33,15 @@ import { addTaskProgress, saveTask } from "./tasks";
  */
 export function parseMiraProposal(tool: string, input: unknown): Record<string, unknown> {
     switch (tool) {
+        case "mira_calendar_create": {
+            return v.parse(calendarCreateSchema, input);
+        }
+        case "mira_calendar_update": {
+            return v.parse(calendarUpdateSchema, input);
+        }
+        case "mira_calendar_delete": {
+            return v.parse(versionedIdSchema, input);
+        }
         case "mira_task_create": {
             return v.parse(v.omit(miraTaskInputSchema, ["autoStart"]), input);
         }
@@ -155,6 +170,28 @@ export async function decideMiraProposal(
         }
         if (input.approve) {
             switch (proposal.tool) {
+                case "mira_calendar_create": {
+                    await saveCalendarEvent(
+                        scoped,
+                        v.parse(calendarCreateSchema, proposal.input),
+                        true
+                    );
+                    break;
+                }
+                case "mira_calendar_update": {
+                    await saveCalendarEvent(
+                        scoped,
+                        v.parse(calendarUpdateSchema, proposal.input)
+                    );
+                    break;
+                }
+                case "mira_calendar_delete": {
+                    await deleteCalendarEvent(
+                        scoped,
+                        v.parse(versionedIdSchema, proposal.input)
+                    );
+                    break;
+                }
                 case "mira_task_create": {
                     await saveTask(
                         scoped,

@@ -56,7 +56,7 @@ export function PolicyGroupControl({
                     title={`${intent.enabled ? "Enable" : "Disable"} automatic updates for ${label}?`}
                     description={
                         intent.enabled
-                            ? "These targets may install verified patch and minor updates. Services may restart during installation."
+                            ? "These targets may install verified patch and minor updates. Unversioned images require separate consent for each service. Services may restart during installation."
                             : "New automatic installations will stop for these targets. Running installations may finish."
                     }
                     confirmLabel={intent.enabled ? "Enable updates" : "Disable updates"}

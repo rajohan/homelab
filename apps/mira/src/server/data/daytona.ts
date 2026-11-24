@@ -10,7 +10,9 @@ import * as v from "valibot";
 import {
     type DaytonaBinding,
     daytonaBindingHash,
+    daytonaBindingRecord,
 } from "../integrations/daytona/configuration";
+import { platformExecution } from "../integrations/daytona/platform";
 import {
     type CodeJobBinding,
     isLocalCodeBinding,
@@ -78,15 +80,19 @@ export async function daytonaIntegrationStatus(
         { matched: boolean; fresh: boolean; granted: boolean }[]
     >`SELECT integrations @> ${JSON.stringify([{ owner: context.owner, key: "daytona", bindingHash: hash, sendConfigured: true }])}::text::jsonb AS matched,heartbeat_at>clock_timestamp()-interval '45 seconds' AS fresh,NOT EXISTS(SELECT 1 FROM mira_switches WHERE owner=${context.owner} AND key='integration:daytona' AND enabled AND binding_hash IS DISTINCT FROM ${hash}) AS granted FROM mira_runtime_status WHERE id=1`;
     let message: string | null = null;
-    if (!row?.matched)
+    if (!binding.projectId)
         message =
-            "Daytona requires matching configuration and a qualified private snapshot before it can run jobs.";
+            "Daytona is configured for v0. Set the v2 project, region and image, then qualify the v2 binding to run cloud jobs.";
+    else if (!row?.fresh) message = "Waiting for a current executor heartbeat.";
+    else if (!row.matched)
+        message =
+            "The executor needs the matching v2 project, API key and qualified image.";
     else if (!row.granted)
         message = "Pause and enable Daytona to confirm the changed account or snapshot.";
     return {
         ...base,
-        configured: row?.matched === true,
-        ready: row?.matched === true && row.fresh && row.granted,
+        configured: true,
+        ready: Boolean(binding.projectId && row?.matched && row.fresh && row.granted),
         message,
     };
 }
@@ -100,6 +106,7 @@ export async function daytonaPermission(
     query: MiraQuery,
     binding: DaytonaBinding
 ): Promise<number | null> {
+    if (!binding.projectId) return null;
     const hash = daytonaBindingHash(binding);
     const [row] = await query<
         { version: number }[]
@@ -204,6 +211,8 @@ export async function saveMiraDaytona(
             "The selected code target is unavailable. No fallback was used."
         );
     if (local) localCodeRequest(input.id, content);
+    else if (account.platformImage)
+        platformExecution(input.id, content, account.platformImage.bootstrapSha256);
     return miraTransaction(context, async (query) => {
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:controls:${context.owner}`},0))`;
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:daytona:${input.id}`},0))`;
@@ -247,7 +256,7 @@ export async function saveMiraDaytona(
         await validateDaytonaInputs(query, context.owner, content);
         await (row
             ? query`UPDATE mira_daytona_jobs SET content=${JSON.stringify(content)}::text::jsonb,content_hash=${hash},conversation_id=${input.conversationId},task_id=${input.taskId},version=version+1,updated_at=now(),message=NULL WHERE id=${input.id}`
-            : query`INSERT INTO mira_daytona_jobs(id,owner,binding,binding_hash,content,content_hash,conversation_id,task_id,execution_target) VALUES(${input.id},${context.owner},${JSON.stringify(isLocalCodeBinding(account) ? v.parse(localCodeBindingSchema, account) : { owner: account.owner, organizationId: account.organizationId, snapshotId: account.snapshotId, target: account.target, trustBoundary: account.trustBoundary, networkAccess: account.networkAccess })}::text::jsonb,${targetHash},${JSON.stringify(content)}::text::jsonb,${hash},${input.conversationId},${input.taskId},${local ? "main" : "daytona"})`);
+            : query`INSERT INTO mira_daytona_jobs(id,owner,binding,binding_hash,content,content_hash,conversation_id,task_id,execution_target) VALUES(${input.id},${context.owner},${JSON.stringify(isLocalCodeBinding(account) ? v.parse(localCodeBindingSchema, account) : daytonaBindingRecord(account))}::text::jsonb,${targetHash},${JSON.stringify(content)}::text::jsonb,${hash},${input.conversationId},${input.taskId},${local ? "main" : "daytona"})`);
         await auditMira(query, context, "daytona.draft_saved", input.id);
         return readMiraDaytona(query, context.owner, input.id);
     });

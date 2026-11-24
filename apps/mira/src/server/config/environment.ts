@@ -2,7 +2,10 @@ import path from "node:path";
 
 import { computerChildEnvironment } from "../computer/process";
 import { agentMailReadConfiguration } from "../integrations/agentmail/configuration";
-import { daytonaExecutionConfiguration } from "../integrations/daytona/configuration";
+import {
+    daytonaBinding,
+    daytonaExecutionConfiguration,
+} from "../integrations/daytona/configuration";
 import { githubConfiguration } from "../integrations/github/configuration";
 import { hereNowReadConfiguration } from "../integrations/herenow/configuration";
 import { moltbookReadConfiguration } from "../integrations/moltbook/configuration";
@@ -54,6 +57,13 @@ export function miraEnvironment() {
  */
 export function sandboxProfileEnvironment(): string | undefined {
     return process.env.HOMELAB_MIRA_SANDBOX_PROFILE;
+}
+
+/** Read the nonsecret mapping for the operator's read-only qualification command.
+ * @returns The current release and image binding.
+ */
+export function daytonaQualificationEnvironment() {
+    return daytonaBinding(process.env);
 }
 
 /**

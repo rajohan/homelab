@@ -134,7 +134,7 @@ async function recordResult(
 export async function applyUpdate(
     target: UpdateTarget,
     item: UpdateItem,
-    automatic: boolean,
+    automatic: boolean | "digest",
     context: JobExecution,
     execute: UpdateExecutor,
     scope?: UpdateReceiptScope,

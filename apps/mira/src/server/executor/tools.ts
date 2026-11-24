@@ -66,6 +66,7 @@ import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { createMiraSkillTools } from "../skills/tools";
 import { directMiraActionTools } from "./actionTools";
 import { createMiraBrowserTools } from "./browserTools";
+import { calendarTools } from "./calendarTools";
 import { createMiraComputerTools } from "./computerTools";
 import { saveGeneratedMiraFile } from "./generatedFiles";
 import { createMiraRecallTools } from "./recallTools";
@@ -253,6 +254,7 @@ export function createMiraTools(
                 };
             },
         },
+        ...calendarTools(),
         {
             name: "mira_tasks_list",
             readOnly: true,
@@ -694,7 +696,7 @@ export function createMiraTools(
                             await connection`SELECT id FROM mira_runs WHERE id=${run.id} FOR UPDATE`;
                             const [count] = await connection<
                                 { total: number }[]
-                            >`SELECT count(*)::int AS total FROM mira_tool_receipts WHERE run_id=${run.id} AND tool IN ('mira_task_create','mira_task_update','mira_task_progress','mira_memory_create')`;
+                            >`SELECT count(*)::int AS total FROM mira_tool_receipts WHERE run_id=${run.id} AND tool IN ('mira_task_create','mira_task_update','mira_task_progress','mira_memory_create','mira_calendar_create','mira_calendar_update','mira_calendar_delete')`;
                             if ((count?.total ?? 0) > 20)
                                 throw new MiraFailure(
                                     "PRECONDITION_FAILED",

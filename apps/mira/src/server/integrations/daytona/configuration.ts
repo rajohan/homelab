@@ -1,6 +1,7 @@
 import * as v from "valibot";
 
 import { daytonaCheckProfile } from "../../sandbox/profile";
+import { daytonaPlatformUser, platformProgramHash } from "./platform";
 
 const id = v.pipe(v.string(), v.uuid());
 const bindingSchema = v.strictObject({
@@ -12,8 +13,20 @@ const bindingSchema = v.strictObject({
         v.maxLength(320),
         v.regex(/^[\u0021-\u007E]+$/)
     ),
-    organizationId: id,
-    snapshotId: id,
+    organizationId: v.pipe(v.string(), v.regex(/^[a-zA-Z0-9_-]{1,128}$/)),
+    snapshotId: v.pipe(v.string(), v.regex(/^[a-zA-Z0-9_-]{1,128}$/)),
+    projectId: v.optional(v.pipe(v.string(), v.regex(/^[a-zA-Z0-9_-]{1,128}$/))),
+    platformImage: v.optional(
+        v.strictObject({
+            source: v.pipe(
+                v.string(),
+                v.regex(
+                    /^docker\.io\/daytonaio\/[a-z0-9][a-z0-9._-]{0,126}@sha256:[a-f0-9]{64}$/
+                )
+            ),
+            bootstrapSha256: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
+        })
+    ),
     target: v.pipe(v.string(), v.regex(/^[a-z0-9][a-z0-9-]{0,62}$/)),
 });
 export type DaytonaBinding = v.InferOutput<typeof bindingSchema>;
@@ -51,7 +64,10 @@ export function daytonaBinding(
 ): DaytonaBinding | undefined {
     const owner = environment.HOMELAB_MIRA_DAYTONA_OWNER;
     const organizationId = environment.HOMELAB_MIRA_DAYTONA_ORGANIZATION_ID;
-    const snapshotId = environment.HOMELAB_MIRA_DAYTONA_SNAPSHOT_ID;
+    const projectId = environment.HOMELAB_MIRA_DAYTONA_PROJECT_ID;
+    const imageId = environment.HOMELAB_MIRA_DAYTONA_IMAGE_ID;
+    const platformSource = environment.HOMELAB_MIRA_DAYTONA_PLATFORM_SOURCE;
+    const snapshotId = imageId || environment.HOMELAB_MIRA_DAYTONA_SNAPSHOT_ID;
     const target = environment.HOMELAB_MIRA_DAYTONA_TARGET;
     const trustBoundary = environment.HOMELAB_MIRA_DAYTONA_TRUST_BOUNDARY;
     const networkAccess = environment.HOMELAB_MIRA_DAYTONA_NETWORK_ACCESS;
@@ -59,6 +75,8 @@ export function daytonaBinding(
         !owner &&
         !organizationId &&
         !snapshotId &&
+        !projectId &&
+        !platformSource &&
         !target &&
         !trustBoundary &&
         !networkAccess
@@ -71,10 +89,26 @@ export function daytonaBinding(
         organizationId,
         snapshotId,
         target,
+        ...(projectId ? { projectId } : {}),
+        ...(platformSource
+            ? {
+                  platformImage: {
+                      source: platformSource,
+                      bootstrapSha256: platformProgramHash(),
+                  },
+              }
+            : {}),
     });
-    if (!result.success)
+    if (
+        !result.success ||
+        Boolean(imageId) !== Boolean(projectId) ||
+        (platformSource && !imageId) ||
+        (projectId
+            ? !/^img_[A-Za-z0-9_-]+$/.test(snapshotId ?? "")
+            : !v.safeParse(id, snapshotId).success)
+    )
         throw new Error(
-            "Daytona requires an explicit dedicated-organization trust boundary, provider-default network access, owner, organization, snapshot ID and region."
+            "Daytona requires a dedicated organization, network policy, owner and region, plus a v2 project and immutable image ID or the original snapshot for legacy cleanup."
         );
     return result.output;
 }
@@ -96,21 +130,26 @@ export function daytonaConfiguration(
 }
 
 /**
- * Bind consent and resource ownership to the configured account and execution policy.
- * @param binding - Operator-owned mapping; credentials may rotate within this account.
- * @returns Stable nonsecret fingerprint, changed by region, snapshot or policy changes.
+ * Project a binding onto its durable nonsecret identity for storage and fingerprinting.
+ * @param binding - Operator-owned mapping, possibly including executor-only credential fields.
+ * @returns The exact snapshot or qualified v2 project and image mapping.
  */
-function bindingHash(binding: DaytonaBinding, policy: object): string {
-    const parsed = v.parse(bindingSchema, {
+export function daytonaBindingRecord(binding: DaytonaBinding): DaytonaBinding {
+    return v.parse(bindingSchema, {
         trustBoundary: binding.trustBoundary,
         networkAccess: binding.networkAccess,
         owner: binding.owner,
         organizationId: binding.organizationId,
         snapshotId: binding.snapshotId,
         target: binding.target,
+        ...(binding.projectId ? { projectId: binding.projectId } : {}),
+        ...(binding.platformImage ? { platformImage: binding.platformImage } : {}),
     });
+}
+
+function bindingHash(binding: DaytonaBinding, policy: object): string {
     return new Bun.CryptoHasher("sha256")
-        .update(JSON.stringify([parsed, policy]))
+        .update(JSON.stringify([daytonaBindingRecord(binding), policy]))
         .digest("hex");
 }
 
@@ -120,7 +159,19 @@ function bindingHash(binding: DaytonaBinding, policy: object): string {
  * @returns Current policy fingerprint for new admissions.
  */
 export function daytonaBindingHash(binding: DaytonaBinding): string {
-    return bindingHash(binding, daytonaPolicy);
+    if (binding.platformImage)
+        return bindingHash(binding, {
+            ...daytonaPolicy,
+            platform: 2,
+            launcherVersion: 1,
+            platformUser: daytonaPlatformUser,
+            cpuArchitecture: "amd64",
+            noNewPrivileges: true,
+        });
+    return bindingHash(
+        binding,
+        binding.projectId ? { ...daytonaPolicy, platform: 2 } : daytonaPolicy
+    );
 }
 
 /**
@@ -193,7 +244,8 @@ export function daytonaExecutionConfiguration(
     return {
         ...configuration,
         executionQualified:
+            Boolean(configuration.projectId) &&
             environment.HOMELAB_MIRA_DAYTONA_QUALIFIED_BINDING_HASH ===
-            daytonaBindingHash(configuration),
+                daytonaBindingHash(configuration),
     };
 }

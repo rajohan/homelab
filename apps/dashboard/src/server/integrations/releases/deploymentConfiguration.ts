@@ -83,6 +83,20 @@ export type ReleaseDeploymentHostTarget = v.InferOutput<typeof hostSchema>;
 export type ReleaseDeploymentTarget = v.InferOutput<typeof targetSchema>;
 
 /**
+ * Resolve the executor while allowing sidecars to use the same release image.
+ * @param target - Reviewed host recipe and its configured services.
+ * @returns The canonical Mira service, or its unique custom name.
+ */
+export function deploymentMiraService(
+    target: ReleaseDeploymentHostTarget
+): string | undefined {
+    if (!target.mira) return;
+    const services = target.services.filter((service) => service.app === "mira");
+    if (services.length === 1) return services[0]!.name;
+    return services.find((service) => service.name === "mira")?.name;
+}
+
+/**
  * Validate operator-owned self-deployment recipes without granting browser or model command selection.
  * @param value - Optional nonsecret deployment JSON; absence leaves self-deployment unavailable.
  * @param connections - Existing pinned SSH authorities used by ordinary updates.
@@ -123,7 +137,7 @@ export function parseReleaseDeploymentTargets(
                     target.browserProxyUnits.some(
                         (unit) => !target.units.includes(unit)
                     ))) ||
-            (target.mira && !target.services.some((service) => service.app === "mira")) ||
+            (target.mira && !deploymentMiraService(target)) ||
             (target.browserConfigFile &&
                 (!target.mira ||
                     !target.services.some(

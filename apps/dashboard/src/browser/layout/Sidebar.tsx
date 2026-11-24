@@ -3,6 +3,7 @@ import { Link, useLocation } from "@tanstack/react-router";
 import {
     Archive,
     BellRing,
+    CalendarDays,
     Clock,
     FileText,
     LayoutDashboard,
@@ -22,6 +23,7 @@ const navigationGroups = [
         ["/", "Overview", LayoutDashboard],
         ["/mira", "Chat", MessageSquare],
         ["/tasks", "Tasks", ListTodo],
+        ["/calendar", "Calendar", CalendarDays],
         ["/reports", "Reports", FileText],
         ["/mira-automations", "Automations", Clock],
     ],
