@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.1](https://github.com/rajohan/homelab/compare/v0.26.0...v0.26.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **updates:** reconcile deployed containers and refresh Impeccable ([#272](https://github.com/rajohan/homelab/issues/272)) ([7b477bd](https://github.com/rajohan/homelab/commit/7b477bd05fcc4152c69db91a7ab2c8687a1a2f3f))
+
 ## [0.26.0](https://github.com/rajohan/homelab/compare/v0.25.0...v0.26.0) (2026-11-24)
 
 
