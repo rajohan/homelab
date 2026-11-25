@@ -2,10 +2,24 @@ import * as v from "valibot";
 
 const text = (length: number) => v.pipe(v.string(), v.minLength(1), v.maxLength(length));
 
+/** Operator-facing progress for a restart verified by an independent Proxmox controller. */
+export const controllerRestartMessages = {
+    waiting: "Waiting for active work to finish.",
+    submitted: "Proxmox is verifying the restart.",
+    verified: "Recovery verified by Proxmox.",
+    refused: "Restart was not started.",
+    unverified: "Recovery could not be verified. Inspect the target before retrying.",
+} as const;
+
 /** A verified, code-owned maintenance result; no command output or credentials. */
 export const maintenanceResultSchema = v.strictObject({
     label: text(255),
-    operation: v.picklist(["update", "service-restart", "host-restart"]),
+    operation: v.picklist([
+        "update",
+        "service-restart",
+        "host-restart",
+        "restart-not-started",
+    ]),
     installed: v.nullable(text(300)),
     health: v.picklist(["passed", "not-checked", "preserved-stopped"]),
     rebootRequired: v.nullable(v.boolean()),

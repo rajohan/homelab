@@ -3,7 +3,11 @@ import * as v from "valibot";
 
 import type { UpdateTarget } from "../updates/configuration";
 import { maintenanceRevision, type MaintenanceTarget } from "./configuration";
-import { type MaintenanceObservation, observationSchema } from "./execution";
+import {
+    busRecoveryMessages,
+    type MaintenanceObservation,
+    observationSchema,
+} from "./execution";
 import { maintenanceHosts } from "./hosts";
 import { maintenancePlan, type MaintenanceReading } from "./jobs";
 import { discoveredMaintenanceTarget } from "./reportedTarget";
@@ -15,6 +19,36 @@ function observed(row: MaintenanceReading | undefined, configuration: string) {
     if (!row || row.value.configuration !== configuration) return null;
     const parsed = v.safeParse(observationSchema, row.value.observation);
     return parsed.success ? parsed.output : null;
+}
+
+function measuredFleet(
+    row: MaintenanceReading | undefined,
+    configuration: string,
+    current: MaintenanceObservation | null | undefined
+) {
+    if (!row || row.value.configuration !== configuration) return null;
+    if (current?.fleet?.evidence === "measured")
+        return {
+            observation: current,
+            fleet: current.fleet,
+            capturedAt: row.capturedAt,
+            fresh: row.fresh,
+        };
+    const previous = row.value.lastMeasured;
+    if (!previous || !Number.isFinite(Date.parse(previous.capturedAt))) return null;
+    const result = v.safeParse(observationSchema, previous.observation);
+    if (
+        !result.success ||
+        result.output.fleet?.evidence !== "measured" ||
+        (current && current.bootId !== result.output.bootId)
+    )
+        return null;
+    return {
+        observation: result.output,
+        fleet: result.output.fleet,
+        capturedAt: previous.capturedAt,
+        fresh: false,
+    };
 }
 
 function localReading(
@@ -42,13 +76,24 @@ function localReading(
     if (target.kind !== "service" || !owner) return { reading };
     const state = reading?.value.observation;
     const fleet = hostObservation?.fleet;
+    if (
+        reading?.fresh &&
+        state?.active === "inactive" &&
+        (!hostReading?.fresh ||
+            !hostObservation ||
+            (state.bootId === hostObservation.bootId &&
+                (fleet?.evidence !== "measured" ||
+                    Date.parse(reading.capturedAt) >=
+                        Date.parse(hostReading.capturedAt))))
+    ) {
+        state.serviceRestartRequired = false;
+        state.serviceEvidence = "stopped";
+        return { reading, required: false };
+    }
     if (!hostReading?.fresh || !hostObservation || fleet?.evidence !== "measured") {
         if (state && state.active !== "inactive") {
             state.serviceRestartRequired = null;
-            state.serviceEvidence =
-                hostReading?.fresh && fleet?.evidence === "not-installed"
-                    ? "not-installed"
-                    : "check-failed";
+            state.serviceEvidence = hostReading?.fresh ? (fleet?.evidence ?? null) : null;
         }
         return { reading, required: null };
     }
@@ -149,6 +194,16 @@ export async function fleetMaintenancePlans(
                     .map((unit) => JSON.stringify([hosts.get(t.id)!.id, unit]))
             )
     );
+    const reports = new Map(
+        [...owners.values()].map((owner) => [
+            owner.id,
+            measuredFleet(
+                byKey.get(owner.id),
+                maintenanceRevision(owner, connections),
+                samples.get(owner.id)
+            ),
+        ])
+    );
     const make = async (
         target: MaintenanceTarget,
         reading: MaintenanceReading | null,
@@ -157,7 +212,9 @@ export async function fleetMaintenancePlans(
         fleetEvidence: FleetReport["evidence"] | null,
         reportedRequired?: boolean | null,
         restartable = true,
-        canonicalUnit?: string
+        canonicalUnit?: string,
+        lastRequired: boolean | null = null,
+        lastAt: string | null = null
     ) => {
         const { configuration, observation, ...publicPlan } = await maintenancePlan(
             client,
@@ -166,13 +223,27 @@ export async function fleetMaintenancePlans(
             reading
         );
         const discovered = Boolean(target.reportedOn);
-        const allowed = publicPlan.allowed && restartable;
+        const unit =
+            canonicalUnit ?? observation?.canonicalUnit ?? target.service ?? null;
+        let busReason: string | null = null;
+        if (unit === "dbus.service") {
+            const status = reports
+                .get(inspectTarget)
+                ?.fleet.services.find((entry) => entry.unit === unit)?.busRecovery;
+            busReason = discovered
+                ? busRecoveryMessages[status ?? "unavailable"]
+                : "This configured service needs the host's qualified D-Bus recovery recipe.";
+        } else if (unit === "dbus-broker.service") {
+            busReason =
+                "This system bus implementation has no qualified online restart recipe.";
+        }
+        const allowed = publicPlan.allowed && restartable && !busReason;
         const required =
             target.kind === "host"
                 ? observation?.rebootRequired
                 : observation?.serviceRestartRequired;
         const external =
-            publicPlan.external || (discovered && !restartable && Boolean(observation));
+            publicPlan.external || (discovered && !restartable) || Boolean(busReason);
         return {
             target,
             configuration,
@@ -187,17 +258,19 @@ export async function fleetMaintenancePlans(
                 inspectTarget,
                 fleetEvidence,
                 discovered,
-                unit:
-                    canonicalUnit ?? observation?.canonicalUnit ?? target.service ?? null,
+                unit,
                 allowed,
                 external,
                 reason:
-                    !restartable && discovered && observation && !publicPlan.external
+                    busReason ??
+                    (!restartable && discovered && observation && !publicPlan.external
                         ? "Linux reports this service, but cannot confirm a restartable running instance."
-                        : publicPlan.reason,
+                        : publicPlan.reason),
                 serviceEvidence: observation?.serviceEvidence ?? null,
                 observed: Boolean(observation),
                 active: observation?.active ?? null,
+                lastReportedRequired: lastRequired,
+                lastReportedAt: lastAt,
                 required:
                     reportedRequired === undefined
                         ? (required ?? null)
@@ -212,6 +285,7 @@ export async function fleetMaintenancePlans(
         const hostReading = owner ? byKey.get(owner.id) : undefined;
         const full = owner ? samples.get(owner.id) : null;
         const fleet = full?.fleet;
+        const last = owner ? reports.get(owner.id) : null;
         const current = byKey.get(target.id);
         const { reading, required, canonicalUnit } = localReading(
             target,
@@ -222,6 +296,14 @@ export async function fleetMaintenancePlans(
             full,
             connections
         );
+        const unit =
+            canonicalUnit ?? samples.get(target.id)?.canonicalUnit ?? target.service;
+        const historical =
+            target.kind === "service" && unit && last
+                ? last.fleet.services.some(
+                      (entry) => entry.unit === unit || entry.aliases?.includes(unit)
+                  )
+                : null;
         rows.push(
             await make(
                 target,
@@ -233,12 +315,13 @@ export async function fleetMaintenancePlans(
                     : null,
                 required,
                 true,
-                canonicalUnit
+                canonicalUnit,
+                historical,
+                historical === null ? null : (last?.capturedAt ?? null)
             )
         );
-        if (target !== owner || !hostReading || !full || fleet?.evidence !== "measured")
-            continue;
-        for (const entry of fleet.services) {
+        if (target !== owner || !hostReading || !last) continue;
+        for (const entry of last.fleet.services) {
             if (
                 [entry.unit, ...(entry.aliases ?? [])].some((unit) =>
                     known.has(JSON.stringify([host.id, unit]))
@@ -247,10 +330,10 @@ export async function fleetMaintenancePlans(
                 continue;
             const recipe = discoveredMaintenanceTarget(target, entry.unit);
             const observation: MaintenanceObservation = {
-                bootId: full.bootId,
+                bootId: last.observation.bootId,
                 active: entry.restartable ? "active" : null,
                 invocationId: entry.invocationId,
-                rebootRequired: full.rebootRequired,
+                rebootRequired: last.observation.rebootRequired,
                 serviceEvidence: "measured",
                 serviceRestartRequired: true,
                 health: false,
@@ -260,6 +343,8 @@ export async function fleetMaintenancePlans(
                     recipe,
                     {
                         ...hostReading,
+                        fresh: last.fresh,
+                        capturedAt: last.capturedAt,
                         value: {
                             configuration: maintenanceRevision(recipe, connections),
                             observation,
@@ -268,8 +353,11 @@ export async function fleetMaintenancePlans(
                     host,
                     target.id,
                     null,
-                    hostReading.fresh ? true : undefined,
-                    entry.restartable
+                    last.fresh ? true : null,
+                    entry.restartable,
+                    entry.unit,
+                    true,
+                    last.capturedAt
                 )
             );
         }

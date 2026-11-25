@@ -10,6 +10,7 @@ const serviceName = /^(?:[A-Za-z0-9:_.@-]|\\x[0-9A-Fa-f]{2})+\.service$/;
 export function requiresNewSshConnection(unit: string | undefined): boolean {
     return (
         unit === "systemd-manager" ||
+        unit === "dbus.service" ||
         /^(?:ssh|sshd|networking|NetworkManager|systemd-networkd|systemd-resolved|dhcpcd|connman|tailscaled)\.service$/.test(
             unit ?? ""
         )
@@ -30,18 +31,33 @@ export function discoveredMaintenanceTarget(
     if (host.kind !== "host" || !unit || unit.length > 255)
         throw new Error("Invalid reported maintenance target.");
     const manager = unit === "systemd-manager";
+    const systemBus = unit === "dbus.service";
+    const broker = unit === "dbus-broker.service";
     const supported =
-        host.restartReportedServices === true && (manager || serviceName.test(unit));
+        host.restartReportedServices === true &&
+        !broker &&
+        (manager || serviceName.test(unit));
     const dependent = requiresNewSshConnection(unit);
-    const controller = supported && dependent ? host.proxmox : undefined;
+    // The classic bus uses its own detached systemd receipt on the target.
+    const controller = supported && dependent && !systemBus ? host.proxmox : undefined;
     let externalReason: string | undefined;
-    if (!supported) {
+    if (broker) {
+        externalReason =
+            "The system-bus recovery recipe supports the classic D-Bus daemon. Schedule host maintenance for this broker.";
+    } else if (!supported) {
         externalReason = host.restartReportedServices
             ? "This report entry requires manual maintenance."
             : "This host is configured for observation only.";
     } else if (controller) {
         externalReason = "Proxmox verifies the service outside this guest.";
     }
+    let impact = `Restart ${unit} and verify its recovery on ${host.label}.`;
+    if (manager)
+        impact =
+            "Reload the host service manager and verify that Linux clears its restart requirement.";
+    if (systemBus)
+        impact =
+            "Restart the system bus, reconnect verified clients and check a fresh SSH login.";
     const identity = new Bun.CryptoHasher("sha256")
         .update(JSON.stringify([host.id, unit]))
         .digest("hex");
@@ -52,9 +68,7 @@ export function discoveredMaintenanceTarget(
         reportedOn: host.id,
         service: unit,
         label: unit,
-        impact: manager
-            ? "Reload the host service manager and verify that Linux clears its restart requirement."
-            : `Restart ${unit} and verify its recovery on ${host.label}.`,
+        impact,
         workerIndependent: supported && !controller,
         ...(controller ? { proxmox: controller } : {}),
         externalReason,

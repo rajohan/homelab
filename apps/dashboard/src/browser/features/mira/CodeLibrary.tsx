@@ -76,9 +76,12 @@ export function CodeLibrary({
                     proposal by asking Mira in Chat.
                 </p>
             )}
-            <div ref={scrollRoot} className="max-h-128 space-y-3 overflow-y-auto pe-3">
+            <div
+                ref={scrollRoot}
+                className="max-h-128 scroll-frame divide-y divide-primary-700 bg-surface-card"
+            >
                 {rows.map((draft) => (
-                    <Card key={draft.id} className="space-y-3">
+                    <section key={draft.id} className="space-y-3 p-4 sm:p-5">
                         <SectionHeader
                             title={draft.content.title}
                             icon={GitPullRequest}
@@ -129,7 +132,7 @@ export function CodeLibrary({
                         >
                             {formatDateTime(draft.updatedAt)}
                         </time>
-                    </Card>
+                    </section>
                 ))}
                 <InfiniteScrollTrigger
                     rootRef={scrollRoot}

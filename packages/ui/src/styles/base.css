@@ -1,4 +1,5 @@
 @import "./surfaces.css";
+@import "overlayscrollbars/overlayscrollbars.css" layer(base);
 
 @theme {
     --spacing-form-control: 2.75rem;
@@ -42,6 +43,7 @@
         .bg-surface-card
         :where(.bg-surface-card, .bg-surface-empty) {
         --card-fill: color-mix(in srgb, var(--homelab-raised) 88%, var(--homelab-muted));
+        --scrollbar-thumb: var(--homelab-muted);
     }
 
     :where(.bg-surface-panel, .bg-surface-card)
@@ -52,6 +54,11 @@
     }
 
     :root {
+        --scrollbar-thumb: color-mix(
+            in srgb,
+            theme("colors.primary.500") 92%,
+            var(--homelab-muted)
+        );
         color-scheme: dark;
         font-family:
             Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
@@ -60,6 +67,18 @@
         color: theme("colors.primary.50");
         font-synthesis: none;
         text-rendering: optimizeLegibility;
+    }
+
+    .os-scrollbar.os-theme-homelab {
+        --os-size: 10px;
+        --os-padding-perpendicular: 1px;
+        --os-padding-axis: 1px;
+        --os-handle-border-radius: 4px;
+        --os-handle-bg: var(--scrollbar-thumb);
+        --os-handle-bg-hover: theme("colors.primary.200");
+        --os-handle-bg-active: theme("colors.primary.200");
+        /* Keep the thumb above sticky table headings and below popovers and dialogs. */
+        z-index: 20;
     }
 
     html,
@@ -78,27 +97,40 @@
         min-height: 100dvh;
     }
 
-    * {
-        scrollbar-color: theme("colors.primary.500") theme("colors.primary.900");
-        scrollbar-width: thin;
-    }
+    @media (forced-colors: none) {
+        /* Chromium's standard scrollbar properties override its scrollbar part styles. */
+        @supports not selector(::-webkit-scrollbar) {
+            * {
+                scrollbar-color: var(--scrollbar-thumb) transparent;
+                scrollbar-width: thin;
+            }
+        }
 
-    ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-    }
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+            background: transparent;
+        }
 
-    ::-webkit-scrollbar-track {
-        background: theme("colors.primary.900");
-    }
+        ::-webkit-scrollbar-track,
+        ::-webkit-scrollbar-corner {
+            background: transparent;
+        }
 
-    ::-webkit-scrollbar-thumb {
-        background: theme("colors.primary.500");
-        border-radius: 4px;
-    }
+        ::-webkit-scrollbar-button {
+            display: none;
+            width: 0;
+            height: 0;
+        }
 
-    ::-webkit-scrollbar-thumb:hover {
-        background: theme("colors.primary.400");
+        ::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: theme("colors.primary.200");
+        }
     }
 
     :where(
@@ -128,8 +160,14 @@
     }
 }
 
-@utility scrollbar-gutter-stable {
-    scrollbar-gutter: stable;
+@utility scroll-frame {
+    min-width: 0;
+    overflow: auto;
+    border: 1px solid var(--color-primary-700);
+    border-radius: var(--radius-lg);
+    &:empty {
+        border-width: 0;
+    }
 }
 
 @utility time-series-chart {

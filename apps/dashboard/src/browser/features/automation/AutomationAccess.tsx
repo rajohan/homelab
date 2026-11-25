@@ -73,6 +73,7 @@ export function AutomationAccess() {
             {inventory.isPending && <LoadingState label="Loading automation accounts…" />}
             <VirtualList
                 label="Automation accounts"
+                framed
                 rows={
                     inventory.data?.pages.flatMap((page) =>
                         page.accounts.map((account) => ({

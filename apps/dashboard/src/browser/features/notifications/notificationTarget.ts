@@ -8,7 +8,11 @@ import { linkOptions } from "@tanstack/react-router";
 export function notificationTarget(notice: NotificationRecord) {
     if (!notice.destination) return null;
     if (notice.source === "maintenance" && notice.destination === "jobs")
-        return linkOptions({ to: "/updates", hash: "maintenance" });
+        return linkOptions({
+            to: "/updates",
+            hash: "maintenance",
+            search: notice.restartBatchId ? { restartBatch: notice.restartBatchId } : {},
+        });
     if (notice.destination === "calendar" && notice.calendarEventId)
         return linkOptions({
             to: "/calendar",

@@ -59,6 +59,7 @@ export interface NotificationRecord {
     readonly severity: NotificationSeverity;
     readonly destination: NotificationDestination | null;
     readonly jobRunId?: string;
+    readonly restartBatchId?: string;
     readonly calendarEventId?: string;
     readonly createdAt: string;
     readonly readAt: string | null;

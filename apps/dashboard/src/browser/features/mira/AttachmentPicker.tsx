@@ -103,8 +103,8 @@ export function AttachmentPicker({
                 <ul
                     className={
                         open
-                            ? "max-h-[min(42dvh,24rem)] space-y-2 overflow-y-auto pe-3"
-                            : "grid max-h-36 grid-cols-1 gap-2 overflow-y-auto pe-3 sm:grid-cols-2"
+                            ? "max-h-[min(42dvh,24rem)] scroll-frame space-y-2 p-2"
+                            : "grid max-h-36 scroll-frame grid-cols-1 gap-2 p-2 sm:grid-cols-2"
                     }
                 >
                     {value.map((file) => (

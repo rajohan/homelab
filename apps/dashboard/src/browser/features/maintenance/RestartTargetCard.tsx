@@ -1,14 +1,48 @@
-import { Badge, Button, CatalogRow } from "@homelab/ui";
+import { Badge, Button, CatalogRow, formatDateTime } from "@homelab/ui";
 import { Cog, Server } from "lucide-react";
 
-import type { RestartPlan } from "./restartNavigation";
+import {
+    incompleteRestart,
+    reportedRestart,
+    type RestartPlan,
+} from "./restartNavigation";
 
 function statusLabel(plan: RestartPlan): string {
     if (plan.required === true)
         return plan.kind === "host" ? "Reboot required" : "Restart required";
+    if (plan.kind === "service" && plan.active === "inactive") return "Service stopped";
     if (plan.required === false)
         return plan.kind === "host" ? "No reboot required" : "Up to date";
-    return plan.active === "inactive" ? "Service stopped" : "No current reading";
+    if (plan.lastReportedRequired === true)
+        return plan.kind === "host"
+            ? "Reboot required at last check"
+            : "Restart required at last check";
+    if (plan.lastReportedRequired === false)
+        return plan.kind === "host"
+            ? "No reboot required at last check"
+            : "Up to date at last check";
+    return plan.kind === "host" ? "Reboot status unknown" : "Restart status unknown";
+}
+
+function incompleteNote(plan: RestartPlan) {
+    if (!incompleteRestart(plan)) return null;
+    const host = plan.kind === "host";
+    const evidence = host ? plan.fleetEvidence : plan.serviceEvidence;
+    if (evidence === "not-installed")
+        return `Install needrestart on ${plan.host.label} to report pending services.`;
+    if (evidence === "check-failed")
+        return "The service restart check failed. Refresh to try again.";
+    if (host && evidence === "measured")
+        return "The service check completed. The host did not report whether a reboot is required.";
+    if (plan.observed && host)
+        return "The current host reading does not include a service restart report.";
+    if (plan.observed && !evidence && plan.inspectTarget !== plan.target)
+        return "Waiting for a current host report to determine whether this service needs a restart.";
+    if (!plan.observed && plan.capturedAt && !plan.lastReportedAt)
+        return `Waiting for a fresh restart check. Last observation ${formatDateTime(plan.capturedAt)}.`;
+    return host
+        ? "Waiting for a current host restart check."
+        : "Waiting for a current service restart check.";
 }
 
 /** Show a single service or host reboot with its current reading, impact and permitted actions.
@@ -29,14 +63,11 @@ export function RestartTargetCard({
     readonly onRestart: (plan: RestartPlan) => void;
 }) {
     const host = plan.kind === "host";
-    const evidence = host ? plan.fleetEvidence : plan.serviceEvidence;
-    let hint: string | undefined;
-    if (evidence === "not-installed")
-        hint = "Install needrestart on this host to report pending services.";
-    else if (evidence === "check-failed")
-        hint = "The service restart check failed. Refresh the status to check again.";
-    else if (host && !evidence)
-        hint = "Service restart coverage is awaiting a fresh host check.";
+    const previous =
+        plan.required === null && typeof plan.lastReportedRequired === "boolean";
+    const tone = reportedRestart(plan) ? "warning" : "neutral";
+    const hint = incompleteNote(plan);
+    const reason = !plan.observed && hint && !plan.external ? null : plan.reason;
     return (
         <CatalogRow
             title={host ? "Host reboot" : plan.label}
@@ -48,13 +79,9 @@ export function RestartTargetCard({
             }
             status={
                 <>
-                    <Badge tone={plan.required ? "warning" : "neutral"}>
-                        {statusLabel(plan)}
-                    </Badge>
+                    <Badge tone={tone}>{statusLabel(plan)}</Badge>
                     {plan.external ? (
-                        <Badge tone={plan.required ? "warning" : "neutral"}>
-                            Manual only
-                        </Badge>
+                        <Badge tone={tone}>Manual only</Badge>
                     ) : (
                         plan.proxmox && <Badge tone="info">Via Proxmox</Badge>
                     )}
@@ -75,7 +102,7 @@ export function RestartTargetCard({
                         <Button
                             size="sm"
                             variant="secondary"
-                            disabled={!plan.allowed || stale}
+                            disabled={!plan.allowed || stale || previous}
                             aria-label={
                                 host
                                     ? `Reboot ${plan.host.label}`
@@ -89,9 +116,16 @@ export function RestartTargetCard({
                 </>
             }
         >
-            {hint && <p className="text-amber-300">{hint}</p>}
-            {plan.reason && plan.reason !== plan.impact && (
-                <p className="text-primary-400">{plan.reason}</p>
+            {hint && (
+                <p className="text-amber-300">
+                    {hint}
+                    {previous &&
+                        plan.lastReportedAt &&
+                        ` Last measured ${formatDateTime(plan.lastReportedAt)}.`}
+                </p>
+            )}
+            {reason && reason !== plan.impact && (
+                <p className="text-primary-400">{reason}</p>
             )}
         </CatalogRow>
     );

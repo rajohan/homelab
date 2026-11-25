@@ -2,6 +2,8 @@ import {
     maintenanceBatchRequestSchema,
     maintenanceRequestSchema,
 } from "@homelab/contracts/maintenance";
+import { idSchema } from "@homelab/contracts/operations";
+import * as v from "valibot";
 
 import { runOperation, trpc } from "../../api/trpc";
 import { requireCapability } from "../../automation/authentication";
@@ -30,17 +32,26 @@ async function restartOperator(ctx: OperationsContext) {
     return { operations, actor: `human:${current.id}` };
 }
 
+const statusRequest = v.optional(v.strictObject({ id: idSchema }));
 export const maintenanceRouter = trpc.router({
-    controllerStatus: trpc.procedure.query(({ ctx }) =>
+    controllerStatus: trpc.procedure.input(statusRequest).query(({ ctx, input }) =>
         runOperation(async () => {
-            const { operations } = authorizedOperations(ctx, "updates:read");
-            return latestProxmoxRestart(operations.client);
+            const { operations, principal } = authorizedOperations(ctx, "updates:read");
+            return latestProxmoxRestart(
+                operations.client,
+                input?.id,
+                `${principal.kind}:${principal.id}`
+            );
         })
     ),
-    batchStatus: trpc.procedure.query(({ ctx }) =>
+    batchStatus: trpc.procedure.input(statusRequest).query(({ ctx, input }) =>
         runOperation(async () => {
-            const { operations } = authorizedOperations(ctx, "updates:read");
-            return restartBatchStatus(operations.client);
+            const { operations, principal } = authorizedOperations(ctx, "updates:read");
+            return restartBatchStatus(
+                operations.client,
+                input?.id,
+                `${principal.kind}:${principal.id}`
+            );
         })
     ),
     plans: trpc.procedure.query(({ ctx }) =>

@@ -15,11 +15,17 @@ import { ArrowRight, Cog } from "lucide-react";
 import { type Ref, useState } from "react";
 
 import { api } from "../../api/client";
+import { RestartActivityDialog } from "../maintenance/RestartActivityDialog";
 import { JobActivityItem } from "./JobActivityItem";
 import { RunDetailDialog } from "./RunDetailDialog";
 import { useJobCompletionRefresh } from "./useJobCompletionRefresh";
 
 const dismissalKey = "homelab:job-activity:dismissed";
+type ActivitySelection = {
+    kind: "job" | "batch" | "controller";
+    id: string;
+    label: string;
+};
 
 function readDismissed(): ReadonlySet<string> {
     try {
@@ -31,7 +37,9 @@ function readDismissed(): ReadonlySet<string> {
                 ? stored
                       .slice(-1000)
                       .filter(
-                          (id): id is string => typeof id === "string" && id.length === 36
+                          (id): id is string =>
+                              typeof id === "string" &&
+                              /^(?:(?:batch|controller):)?[a-f\d-]{36}$/i.test(id)
                       )
                 : []
         );
@@ -49,7 +57,7 @@ export function JobActivity({
 }: {
     readonly controlRef?: Ref<PopoverControl>;
 }) {
-    const [selected, setSelected] = useState<string>();
+    const [selected, setSelected] = useState<ActivitySelection>();
     const [dismissed, setDismissed] = useState(readDismissed);
     function dismiss(id: string) {
         const next = new Set([...readDismissed(), ...dismissed, id].slice(-1000));
@@ -67,9 +75,8 @@ export function JobActivity({
         ...queryRefresh("fast"),
         refetchInterval: (current) =>
             queryRefresh(
-                current.state.data?.runs.some(
-                    (run) => run.state === "queued" || run.state === "running"
-                )
+                current.state.data?.runs.some((run) => !run.finishedAt) ||
+                    current.state.data?.restarts?.some((run) => !run.finishedAt)
                     ? "progress"
                     : "fast"
             ).refetchInterval,
@@ -77,15 +84,33 @@ export function JobActivity({
     });
     useJobCompletionRefresh(query.data?.runs);
     const runs = [
-        ...new Map((query.data?.runs ?? []).map((run) => [run.id, run])).values(),
-    ].filter(
-        (run) =>
-            run.state === "queued" || run.state === "running" || !dismissed.has(run.id)
-    );
+        ...(query.data?.runs ?? []).map((run) => ({
+            ...run,
+            kind: "job" as const,
+            key: run.id,
+        })),
+        ...(query.data?.restarts ?? []).map((run) => ({
+            ...run,
+            key: `${run.kind}:${run.id}`,
+        })),
+    ]
+        .filter(
+            (run) =>
+                run.state === "queued" ||
+                run.state === "running" ||
+                !dismissed.has(run.key)
+        )
+        .toSorted(
+            (left, right) =>
+                Number(Boolean(left.finishedAt)) - Number(Boolean(right.finishedAt)) ||
+                Date.parse(right.finishedAt ?? right.createdAt) -
+                    Date.parse(left.finishedAt ?? left.createdAt) ||
+                right.key.localeCompare(left.key)
+        );
     const running = runs.filter((run) => run.state === "running").length;
     const queued = runs.filter((run) => run.state === "queued").length;
     const active = running + queued;
-    const summary = query.isPending ? "Checking queue…" : "Your jobs";
+    const summary = query.isPending ? "Checking queue…" : undefined;
     const label = query.isPending
         ? "Worker activity, loading"
         : `Worker activity, ${running} running, ${queued} queued`;
@@ -164,50 +189,62 @@ export function JobActivity({
                                 <VirtualList
                                     label="Your job activity"
                                     rows={runs}
-                                    getKey={(run) => run.id}
-                                    className="max-h-[min(26rem,60dvh)] scrollbar-gutter-stable rounded-none"
+                                    getKey={(run) => run.key}
+                                    className="max-h-[min(26rem,60dvh)] rounded-none"
                                     itemClassName="pb-0"
-                                    scrollbarGap={false}
                                     renderItem={(run) => (
                                         <JobActivityItem
                                             run={run}
                                             unavailable={query.isError}
                                             onSelect={() => {
                                                 close();
-                                                setSelected(run.id);
+                                                setSelected({
+                                                    kind: run.kind,
+                                                    id: run.id,
+                                                    label: run.label,
+                                                });
                                             }}
-                                            onDismiss={() => dismiss(run.id)}
+                                            onDismiss={() => dismiss(run.key)}
                                         />
                                     )}
                                 />
                             )}
-                            <div className="scrollbar-gutter-stable overflow-hidden">
-                                <div className="flex flex-wrap gap-x-4 border-t border-primary-700 pt-1">
-                                    {(
-                                        [
-                                            { hash: "queue", label: "Open queue" },
-                                            { hash: "history", label: "Job history" },
-                                        ] as const
-                                    ).map((item) => (
-                                        <Link
-                                            key={item.hash}
-                                            to="/jobs"
-                                            hash={item.hash}
-                                            onClick={() => close()}
-                                            className="inline-flex min-h-11 items-center gap-1.5 rounded text-sm font-medium text-accent-300 hover:underline"
-                                        >
-                                            {item.label}
-                                            <ArrowRight size={14} aria-hidden="true" />
-                                        </Link>
-                                    ))}
-                                </div>
+                            <div className="flex flex-wrap gap-x-4 border-t border-primary-700 pt-1">
+                                {(
+                                    [
+                                        { hash: "queue", label: "Open queue" },
+                                        { hash: "history", label: "Job history" },
+                                    ] as const
+                                ).map((item) => (
+                                    <Link
+                                        key={item.hash}
+                                        to="/jobs"
+                                        hash={item.hash}
+                                        onClick={() => close()}
+                                        className="inline-flex min-h-11 items-center gap-1.5 rounded text-sm font-medium text-accent-300 hover:underline"
+                                    >
+                                        {item.label}
+                                        <ArrowRight size={14} aria-hidden="true" />
+                                    </Link>
+                                ))}
                             </div>
                         </div>
                     </ActivityPanel>
                 )}
             </Popover>
-            {selected && (
-                <RunDetailDialog id={selected} onClose={() => setSelected(undefined)} />
+            {selected?.kind === "job" && (
+                <RunDetailDialog
+                    id={selected.id}
+                    onClose={() => setSelected(undefined)}
+                />
+            )}
+            {selected && selected.kind !== "job" && (
+                <RestartActivityDialog
+                    kind={selected.kind}
+                    id={selected.id}
+                    title={selected.label}
+                    onClose={() => setSelected(undefined)}
+                />
             )}
         </>
     );

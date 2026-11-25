@@ -73,7 +73,8 @@ export function ServiceInventory({
                     label="Service check results"
                     rows={ordered}
                     getKey={(row) => row.id}
-                    itemClassName="border-b border-primary-700/70 py-2.5"
+                    framed
+                    itemClassName="px-3 py-2.5 sm:px-4"
                     renderItem={(row) => (
                         <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1">
                             <div className="min-w-0">

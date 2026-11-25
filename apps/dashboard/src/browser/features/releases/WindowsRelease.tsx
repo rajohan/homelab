@@ -58,11 +58,11 @@ export function WindowsRelease({
             {computers.length === 0 ? (
                 <p className="text-primary-400">No Windows computers paired yet.</p>
             ) : (
-                <dl className="max-h-80 space-y-3 overflow-y-auto overscroll-contain pe-3">
+                <dl className="max-h-80 scroll-frame divide-y divide-primary-700 overscroll-contain bg-surface-card">
                     {computers.map((computer) => (
                         <div
                             key={computer.id}
-                            className="flex flex-wrap items-center justify-between gap-2 border-t border-primary-700 pt-3"
+                            className="flex flex-wrap items-center justify-between gap-2 p-3"
                         >
                             <dt className="min-w-0 wrap-anywhere">{computer.label}</dt>
                             <dd className="flex flex-wrap items-center gap-2">

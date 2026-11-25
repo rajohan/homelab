@@ -52,6 +52,7 @@ export { DataTable, type DataColumn } from "./components/DataTable/DataTable";
 export type { TableSort } from "./components/DataTable/tableSorting";
 export { Virtualizer } from "./components/Virtualizer/Virtualizer";
 export { VirtualList } from "./components/Virtualizer/VirtualList";
+export { useOverlayScrollbars } from "./hooks/useOverlayScrollbars";
 export {
     InfiniteScrollTrigger,
     type InfiniteScrollContinuation,

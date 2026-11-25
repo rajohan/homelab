@@ -1,6 +1,6 @@
 import { formatDateTime } from "@homelab/ui";
 
-import { incompleteRestart, restartWorkload } from "../maintenance/restartNavigation";
+import { restartWorkload } from "../maintenance/restartNavigation";
 import type { OverviewReadings } from "./useOverviewReadings";
 
 type Priority = {
@@ -120,7 +120,7 @@ export function overviewPriorities(r: OverviewReadings): Priority[] {
     const work = restartWorkload(plans);
     for (const plan of work.reboots)
         hostNames.set(plan.source.toLowerCase(), plan.host.label);
-    const services = [...work.eligible, ...work.manual, ...work.unavailable];
+    const services = [...work.dashboard, ...work.manual];
     if (hostNames.size > 0 || services.length > 0) {
         const affectedHosts = [
             ...new Set([
@@ -141,13 +141,18 @@ export function overviewPriorities(r: OverviewReadings): Priority[] {
         }).format(affectedHosts);
         problems.push({
             tone: "warning",
-            title: `${counts.join(" and ")} ${hostNames.size + services.length === 1 ? "needs" : "need"} a restart`,
+            title: [...services, ...work.reboots].some((plan) => plan.required === null)
+                ? `${counts.join(" and ")} reported for restart`
+                : `${counts.join(" and ")} ${hostNames.size + services.length === 1 ? "needs" : "need"} a restart`,
             detail: [
                 names,
                 work.eligible.length > 0 && `${work.eligible.length} in dashboard`,
+                work.awaiting.length > 0 &&
+                    `${work.awaiting.length} awaiting a fresh check`,
                 work.manual.length > 0 &&
                     `${work.manual.length} manual ${work.manual.length === 1 ? "service" : "services"}`,
-                work.incompleteHosts > 0 && "Some restart checks are incomplete",
+                work.incompleteHosts.length > 0 &&
+                    `Incomplete checks on ${work.incompleteHosts.join(", ")}`,
             ]
                 .filter(Boolean)
                 .join(" · "),
@@ -216,7 +221,7 @@ export function overviewPriorities(r: OverviewReadings): Priority[] {
         ];
     if (
         !r.restartPlans?.length ||
-        r.restartPlans.some(incompleteRestart) ||
+        work.incompleteHosts.length > 0 ||
         r.sources?.some(
             (source) =>
                 source.restart &&
@@ -227,7 +232,10 @@ export function overviewPriorities(r: OverviewReadings): Priority[] {
             {
                 tone: "unknown",
                 title: "Restart status is incomplete",
-                detail: "Some hosts or services have no current restart observation.",
+                detail:
+                    work.incompleteHosts.length > 0
+                        ? `Incomplete checks on ${work.incompleteHosts.join(", ")}.`
+                        : "Some hosts or services have no current restart observation.",
                 to: "/updates",
                 hash: "maintenance",
                 action: "Review restarts",

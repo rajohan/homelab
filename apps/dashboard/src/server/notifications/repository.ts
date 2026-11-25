@@ -8,7 +8,13 @@ import { idSchema } from "@homelab/contracts/operations";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
+import {
+    readRestartProgress,
+    type RestartBatch,
+} from "../integrations/maintenance/batch";
 import { OperationFailure } from "../operations/errors";
+
+const restartBatchKey = "restart-batch:";
 
 function notificationJobRunId(source: string, key: string) {
     if (source === "jobs" && v.is(idSchema, key)) return key;
@@ -46,6 +52,18 @@ export async function listNotifications(
                 notifications: notifications.map(
                     ({ cursor: _cursor, sourceKey, ...notification }) => {
                         if (
+                            notification.source === "maintenance" &&
+                            notification.destination === "jobs" &&
+                            notification.severity === "warning" &&
+                            sourceKey.startsWith(restartBatchKey)
+                        ) {
+                            const restartBatchId = sourceKey.slice(
+                                restartBatchKey.length
+                            );
+                            if (v.is(idSchema, restartBatchId))
+                                return { ...notification, restartBatchId };
+                        }
+                        if (
                             notification.destination === "calendar" &&
                             notification.source === "calendar"
                         ) {
@@ -70,6 +88,24 @@ export async function listNotifications(
             };
         }
     );
+}
+
+/**
+ * Read restart progress for an immutable maintenance warning visible to this recipient.
+ * @param client - Dashboard notification and maintenance database.
+ * @param actor - Authenticated notification reader with access to maintenance.
+ * @param id - Validated batch UUID selected in the notification link.
+ * @returns The selected batch's public progress or null when the warning or journal is absent.
+ */
+export async function notifiedRestartBatch(client: SQL, actor: string, id: string) {
+    const [row] = await client<
+        { value: RestartBatch }[]
+    >`SELECT s.value FROM operation_snapshots s
+        WHERE s.key = ${"maintenance.batch:" + id} AND EXISTS (
+            SELECT 1 FROM dashboard_notifications n WHERE n.source = 'maintenance'
+            AND n.source_key = ${restartBatchKey + id} AND n.severity = 'warning' AND n.destination = 'jobs'
+            AND (n.recipient IS NULL OR n.recipient = ${actor}))`;
+    return row ? readRestartProgress(client, row.value) : null;
 }
 
 /**

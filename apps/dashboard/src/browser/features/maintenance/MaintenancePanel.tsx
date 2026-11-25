@@ -1,3 +1,4 @@
+import { controllerRestartMessages } from "@homelab/contracts/maintenance";
 import {
     Button,
     EmptyState,
@@ -17,7 +18,6 @@ import { useState } from "react";
 import { api } from "../../api/client";
 import { useJobOperation } from "../jobs/useJobOperation";
 import { RestartBatchDialog } from "./RestartBatchDialog";
-import { RestartBatchProgress } from "./RestartBatchProgress";
 import { RestartDialog } from "./RestartDialog";
 import { RestartHostGroup } from "./RestartHostGroup";
 import {
@@ -29,29 +29,31 @@ import {
 } from "./restartNavigation";
 import { restartPlansQuery } from "./restartPlansQuery";
 
-const controllerLabels = {
-    waiting: "Waiting for active work to finish",
-    submitted: "Proxmox is verifying the restart",
-    verified: "Recovery verified by Proxmox",
-    refused: "Restart was not started",
-    unverified: "Recovery could not be verified. Inspect the guest before retrying.",
-};
-
 /** Review pending service and host restarts across the fleet.
  * @returns Per-host requirements, inspection controls and individually confirmed or grouped service restarts.
  */
 export function MaintenancePanel() {
     const query = useQuery(restartPlansQuery);
+    const plans = query.data ?? [];
+    const workload = restartWorkload(plans);
     const controller = useQuery({
         queryKey: ["operations", "proxmox-restart"],
         queryFn: ({ signal }) =>
             api.maintenance.controllerStatus.query(undefined, { signal }),
         ...queryRefresh("fast"),
+        refetchInterval: ({ state }) =>
+            queryRefresh(
+                state.data?.phase === "waiting" || state.data?.phase === "submitted"
+                    ? "progress"
+                    : "fast"
+            ).refetchInterval,
         retry: false,
     });
     const batch = useQuery({
         queryKey: ["operations", "restart-batch"],
         queryFn: ({ signal }) => api.maintenance.batchStatus.query(undefined, { signal }),
+        enabled: workload.eligible.length > 0,
+        select: (status) => status?.phase === "waiting" || status?.phase === "running",
         ...queryRefresh("fast"),
         retry: false,
     });
@@ -60,10 +62,8 @@ export function MaintenancePanel() {
     const [search, setSearch] = useState("");
     const [requirement, setRequirement] = useState<RequirementFilter>("attention");
     const [location, setLocation] = useState<RestartLocationFilter>("all");
-    const plans = query.data ?? [];
-    const workload = restartWorkload(plans);
+    const incomplete = workload.incompleteHosts;
     const groups = restartGroups(plans, search, requirement, location);
-    const busy = batch.data?.phase === "running" || batch.data?.phase === "waiting";
     const refresh = useJobOperation(
         (input: { action: string; requestId: string }, signal) =>
             api.jobs.run.mutate(input, { signal })
@@ -85,12 +85,17 @@ export function MaintenancePanel() {
                     <Button
                         variant="secondary"
                         disabled={
-                            query.isError || busy || batch.isPending || batch.isError
+                            query.isError ||
+                            batch.data ||
+                            batch.isPending ||
+                            batch.isError
                         }
                         onClick={() => setBulk(workload)}
                     >
                         <RotateCw className="size-4" aria-hidden="true" />
-                        Restart all services
+                        {workload.eligible.length === workload.dashboard.length
+                            ? "Restart all services"
+                            : `Restart available (${workload.eligible.length})`}
                     </Button>
                 )
             }
@@ -105,10 +110,10 @@ export function MaintenancePanel() {
                         items={[
                             {
                                 label:
-                                    workload.eligible.length === 1
+                                    workload.dashboard.length === 1
                                         ? "Service restart in dashboard"
                                         : "Service restarts in dashboard",
-                                value: workload.eligible.length,
+                                value: workload.dashboard.length,
                             },
                             {
                                 label:
@@ -128,24 +133,12 @@ export function MaintenancePanel() {
                             },
                             {
                                 label:
-                                    workload.incompleteHosts === 1
+                                    incomplete.length === 1
                                         ? "Host with incomplete checks"
                                         : "Hosts with incomplete checks",
-                                value: workload.incompleteHosts,
-                                attention: workload.incompleteHosts > 0,
+                                value: incomplete.length,
+                                attention: incomplete.length > 0,
                             },
-                            ...(workload.unavailable.length > 0
-                                ? [
-                                      {
-                                          label:
-                                              workload.unavailable.length === 1
-                                                  ? "Unavailable service restart"
-                                                  : "Unavailable service restarts",
-                                          value: workload.unavailable.length,
-                                          attention: true,
-                                      },
-                                  ]
-                                : []),
                         ]}
                     />
                     <div className="grid gap-3 @min-[21rem]/restarts:grid-cols-[minmax(0,1.12fr)_minmax(0,0.88fr)] @min-[52rem]/restarts:grid-cols-[minmax(0,1fr)_12rem_12rem]">
@@ -182,13 +175,14 @@ export function MaintenancePanel() {
                     </div>
                 </>
             )}
-            {batch.isError && <ErrorNotice error={batch.error} />}
-            {batch.data && <RestartBatchProgress batch={batch.data} />}
+            {workload.eligible.length > 0 && batch.isError && (
+                <ErrorNotice error={batch.error} />
+            )}
             {controller.isError && <ErrorNotice error={controller.error} />}
             {controller.data && (
                 <output className="rounded-lg border border-primary-700 bg-surface-card p-3 text-sm">
                     <strong>{controller.data.label}</strong> ·{" "}
-                    {controllerLabels[controller.data.phase]}
+                    {controllerRestartMessages[controller.data.phase]}
                 </output>
             )}
             {query.data && !query.isError && plans.length === 0 && (
@@ -213,7 +207,7 @@ export function MaintenancePanel() {
                     label="Restart targets"
                     rows={groups}
                     getKey={(group) => group.host.id}
-                    scrollbarGap
+                    framed
                     renderItem={(group) => (
                         <RestartHostGroup
                             group={group}

@@ -99,7 +99,8 @@ export function RulesPanel() {
                     rows={ordered}
                     getKey={(row) => row.id}
                     className="@container/entries"
-                    itemClassName="border-b border-primary-700/70 py-3"
+                    framed
+                    itemClassName="p-3 sm:px-4"
                     renderItem={(row) => (
                         <DetailEntry
                             wideName

@@ -15,6 +15,7 @@ import {
     acknowledgeNotification,
     acknowledgeNotificationBatch,
     listNotifications,
+    notifiedRestartBatch,
 } from "./repository";
 
 function humanInbox(context: OperationsContext) {
@@ -28,6 +29,22 @@ function humanInbox(context: OperationsContext) {
 }
 
 export const notificationsRouter = trpc.router({
+    restartBatch: trpc.procedure
+        .input(v.strictObject({ id: idSchema }))
+        .query(({ ctx, input }) =>
+            runOperation(async () => {
+                const { operations, principal } = authorizedOperations(
+                    ctx,
+                    "notifications:read"
+                );
+                authorizedOperations(ctx, "updates:read");
+                return notifiedRestartBatch(
+                    operations.client,
+                    `${principal.kind}:${principal.id}`,
+                    input.id
+                );
+            })
+        ),
     list: trpc.procedure.input(notificationPageSchema).query(({ ctx, input }) =>
         runOperation(async () => {
             const { operations, principal } = authorizedOperations(

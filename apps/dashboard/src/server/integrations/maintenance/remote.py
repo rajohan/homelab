@@ -10,6 +10,10 @@ import time
 from pathlib import Path
 
 
+class MaintenanceRefused(Exception):
+    """Definitive pre-mutation rejection, distinct from a missing acknowledgement."""
+
+
 def run(argv, timeout=30):
     """Bound subprocess output and lifetime without a shell or inherited credentials."""
     child = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -59,7 +63,7 @@ def owns_kernel():
     return None
 
 
-def observe(target, full=True):
+def observe(target, full=True, include_fleet=False):
     """Read the boot identity and selected service; never return raw command output."""
     boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
     active, invocation = None, None
@@ -86,6 +90,9 @@ def observe(target, full=True):
         evidence = "stopped"
     elif full:
         fleet = read_service_report(run)
+        for item in fleet["services"]:
+            if item["unit"] == "dbus.service" and item["restartable"]:
+                item["busRecovery"] = bus_eligibility()
         if fleet.pop("kernelOrMicrocodePending", False) and not required:
             required = owns_kernel()
         if target["kind"] == "service":
@@ -97,7 +104,7 @@ def observe(target, full=True):
     result = {"serviceEvidence": evidence, "bootId": boot, "active": active, "invocationId": invocation, "rebootRequired": required, "serviceRestartRequired": service_required, "health": False}
     if canonical:
         result["canonicalUnit"] = canonical
-    if target["kind"] == "host" and fleet is not None:
+    if (target["kind"] == "host" or include_fleet) and fleet is not None:
         result["fleet"] = fleet
     return result, actionable
 
@@ -118,38 +125,65 @@ def main():
     request = json.loads(raw)
     target = request["target"]
     mode = request["mode"]
-    before, _ = observe(target, mode == "inspect")
+    bus_request = target.get("reportedOn") and target.get("service") == BUS_UNIT and request.get("operationId")
+    # A delayed duplicate may refer to a helper that already sent the restart.
+    # Reconcile that receipt even if the original service identity has since changed.
+    if mode == "restart" and bus_request and bus_directory(request["operationId"]).exists():
+        mode = "verify"
+    try:
+        before, _ = observe(target, mode == "inspect")
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+        if mode == "restart":
+            raise MaintenanceRefused("preflight") from error
+        raise
+    system_bus = before.get("canonicalUnit") in ("dbus.service", "dbus-broker.service")
     if mode == "preflight":
         preflight(target)
         return before
     if mode == "restart":
         if not target.get("workerIndependent", True):
-            raise RuntimeError("This target requires an external restart")
+            raise MaintenanceRefused("authority")
         expected = request["expected"]
         if (before["bootId"], before["active"], before["invocationId"]) != (expected["bootId"], expected["active"], expected["invocationId"]):
-            raise RuntimeError("Restart target changed")
-        preflight(target)
-        require_report = target["kind"] == "service" and (target.get("reportedOn") or request.get("requiredOnly"))
-        current, actionable = observe(target, bool(require_report))
-        last, _ = observe(target, False) if require_report else (current, False)
+            raise MaintenanceRefused("identity")
+        if system_bus:
+            if not (target.get("reportedOn") and target["service"] == before["canonicalUnit"] == "dbus.service" and request.get("operationId") and request.get("busProgram")):
+                raise MaintenanceRefused("implementation")
+            # The independent helper checks prerequisites and the current needrestart identity before sending once.
+            bus_submit(request)
+            return before
+        try:
+            preflight(target)
+            require_report = target["kind"] == "service" and (target.get("reportedOn") or request.get("requiredOnly"))
+            current, actionable = observe(target, bool(require_report))
+            last, _ = observe(target, False) if require_report else (current, False)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+            raise MaintenanceRefused("preflight") from error
         if (last["bootId"], last["active"], last["invocationId"]) != (expected["bootId"], expected["active"], expected["invocationId"]):
-            raise RuntimeError("Restart target changed during preflight")
+            raise MaintenanceRefused("identity")
         if target["kind"] == "host":
             if request.get("requiredOnly") and not last["rebootRequired"]:
-                raise RuntimeError("Host restart is no longer required")
+                raise MaintenanceRefused("requirement")
             run(["/usr/bin/systemctl", "--no-block", "reboot"])
             return before
         if last["active"] != "active":
-            raise RuntimeError("A stopped service must not be started by restart")
+            raise MaintenanceRefused("identity")
         if target.get("reportedOn") and not actionable:
-            raise RuntimeError("Reported service is no longer restartable")
+            raise MaintenanceRefused("prerequisites")
         if request.get("requiredOnly") and current["serviceRestartRequired"] is not True:
-            raise RuntimeError("Service restart is no longer required")
+            raise MaintenanceRefused("requirement")
         if target.get("reportedOn") and target["service"] == "systemd-manager":
             run(["/usr/bin/systemctl", "daemon-reexec"], timeout=120)
         else:
             run(["/usr/bin/systemctl", "try-restart", "--", target["service"]], timeout=120)
     if mode in ("verify", "restart"):
+        if system_bus or bus_request:
+            state = bus_status(request["operationId"], request["expected"])
+            if state == "refused":
+                reason = json.loads((bus_directory(request["operationId"]) / "refusal").read_text())
+                raise MaintenanceRefused(reason)
+            if state != "verified":
+                raise RuntimeError("System bus client recovery is unverified")
         deadline = time.monotonic() + (45 if mode == "restart" else 10)
         while True:
             try:
@@ -159,7 +193,12 @@ def main():
                 if time.monotonic() >= deadline:
                     raise
                 time.sleep(1)
-        after, _ = observe(target)
+        after, _ = observe(target, include_fleet=True)
+        if system_bus or bus_request:
+            confirmed = json.loads((bus_directory(request["operationId"]) / "confirmed").read_text())
+            if (after["bootId"] != request["expected"]["bootId"] or after["invocationId"] != confirmed["invocation"]
+                    or bus_id() != confirmed["bus"]):
+                raise RuntimeError("System bus identity changed during verification")
         if target["kind"] == "service" and after["active"] != "active":
             raise RuntimeError("Service did not recover")
         after["health"] = True
@@ -176,5 +215,8 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, interrupted)
     try:
         print(json.dumps(main()), flush=True)
+    except MaintenanceRefused as error:
+        print(json.dumps({"restart":"not-started", "reason":str(error)}), flush=True)
+        sys.exit(3)
     except Exception:
         sys.exit(1)

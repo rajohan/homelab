@@ -4,7 +4,7 @@ import type { SQL } from "bun";
 import type { Transaction } from "../database/connection";
 import { notifyJobOutcome } from "../notifications/jobOutcome";
 import { auditOperation } from "../operations/audit";
-import { controlWorkClasses, controlWorkTimeoutMs } from "./capacity";
+import { fitsControlSlot } from "./capacity";
 import { lockQueue } from "./queue";
 import type { ClaimedJob } from "./types";
 
@@ -41,10 +41,11 @@ export async function claimJob(
 ): Promise<ClaimedJob | undefined> {
     return client.begin(async (transaction) => {
         await lockQueue(transaction);
-        const registration = await transaction<
-            { id: string }[]
-        >`SELECT id FROM workers WHERE id = ${workerId} AND NOT draining AND heartbeat_at > now() - interval '30 seconds' FOR UPDATE`;
-        if (registration.length !== 1)
+        const [worker] = await transaction<
+            { capacity: number; generalSlots: number }[]
+        >`SELECT capacity, capacity - reserved_capacity AS "generalSlots" FROM workers
+            WHERE id = ${workerId} AND NOT draining AND heartbeat_at > now() - interval '30 seconds' FOR UPDATE`;
+        if (!worker)
             throw new Error(
                 "Worker registration is not live; restart before claiming work"
             );
@@ -83,11 +84,30 @@ export async function claimJob(
         if (control?.paused) return;
         const deployment = await activeMaintenanceWindow(transaction);
         if (deployment) return;
-        const candidates = await transaction<
-            ClaimedJob[]
-        >`SELECT id, action, payload, attempt, attempt_limit, retry_safe, timeout_ms, resource_keys FROM job_runs WHERE state = 'queued' AND available_at <= now() AND action = ANY(${transaction.array([...actionKeys], "TEXT")}) AND (${controlOnly} = false OR (resource_class = ANY(${transaction.array([...controlWorkClasses], "TEXT")}) AND timeout_ms <= ${controlWorkTimeoutMs})) AND (SELECT count(*) FROM job_runs busy WHERE busy.state = 'running' AND busy.worker_id = ${workerId}) < (SELECT capacity FROM workers WHERE id = ${workerId}) AND ((resource_class = ANY(${transaction.array([...controlWorkClasses], "TEXT")}) AND timeout_ms <= ${controlWorkTimeoutMs}) OR (SELECT count(*) FROM job_runs busy WHERE busy.state = 'running' AND busy.worker_id = ${workerId} AND NOT (busy.resource_class = ANY(${transaction.array([...controlWorkClasses], "TEXT")}) AND busy.timeout_ms <= ${controlWorkTimeoutMs})) < (SELECT capacity - reserved_capacity FROM workers WHERE id = ${workerId})) AND NOT EXISTS (SELECT 1 FROM resource_leases WHERE key = ANY(job_runs.resource_keys)) AND NOT EXISTS (SELECT 1 FROM job_runs active WHERE active.state = 'running' AND (active.resource_class = 'exclusive' OR job_runs.resource_class = 'exclusive' OR (active.resource_class = 'host-heavy' AND job_runs.resource_class = 'host-heavy'))) ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED`;
-        const run = candidates[0];
-        if (!run) return;
+        const [run] = await transaction<(ClaimedJob & { fitsReserved: boolean })[]>`
+            WITH occupancy AS (
+                SELECT count(*) AS busy, count(*) FILTER (WHERE NOT ${fitsControlSlot(transaction)}) AS general
+                FROM job_runs WHERE state='running' AND worker_id=${workerId}
+            )
+            SELECT id, action, payload, attempt, attempt_limit, retry_safe, timeout_ms, resource_keys,
+                ${fitsControlSlot(transaction)} AS "fitsReserved"
+            FROM job_runs, occupancy
+            WHERE state='queued' AND available_at<=now() AND action=ANY(${transaction.array([...actionKeys], "TEXT")})
+              AND busy<${worker.capacity}
+              AND (${fitsControlSlot(transaction)} OR general<${worker.generalSlots})
+              AND (NOT ${controlOnly} OR ${fitsControlSlot(transaction)} OR busy<${worker.generalSlots})
+              AND NOT EXISTS (SELECT 1 FROM resource_leases WHERE key=ANY(job_runs.resource_keys))
+              AND NOT EXISTS (SELECT 1 FROM job_runs active WHERE active.state='running' AND (
+                    active.resource_class='exclusive' OR job_runs.resource_class='exclusive'
+                    OR (active.resource_class='host-heavy' AND job_runs.resource_class='host-heavy')))
+            ORDER BY priority DESC, CASE WHEN available_at<=now()-interval '2 minutes' THEN 2
+                WHEN starts_with(requested_by,'human:') OR
+                     (requested_by='system:updates' AND resource_class='interactive' AND starts_with(action,'maintenance.'))
+                    THEN 1 ELSE 0 END DESC,id
+            LIMIT 1 FOR UPDATE OF job_runs SKIP LOCKED`;
+        // When a general lane is free, let it take the winning request before the reserved
+        // lane can reacquire its host for another inspection. Running work keeps its lease.
+        if (!run || (controlOnly && !run.fitsReserved)) return;
         const token = Bun.randomUUIDv7();
         await transaction`UPDATE job_runs SET state = 'running', attempt = attempt + 1, started_at = now(), worker_id = ${workerId}, lease_token = ${token}, lease_expires_at = now() + ${claimLeaseSeconds} * interval '1 second', message = NULL WHERE id = ${run.id}`;
         for (const key of run.resource_keys)

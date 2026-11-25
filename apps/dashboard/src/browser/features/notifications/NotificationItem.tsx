@@ -30,7 +30,9 @@ export function NotificationItem({
 }) {
     const unread = notification.readAt === null;
     const target = notificationTarget(notification);
-    const destination = notification.jobRunId ? "job details" : notification.destination;
+    let destination: string | null = notification.destination;
+    if (notification.restartBatchId) destination = "restart details";
+    else if (notification.jobRunId) destination = "job details";
     const display = describeNotification(notification);
     const source = notification.source.startsWith("automation:")
         ? "Automation"

@@ -15,28 +15,20 @@ import { auditOperation } from "../operations/audit";
 import { authorizedOperations } from "../operations/authorization";
 import { OperationFailure } from "../operations/errors";
 import { sortedPage } from "../operations/sortedPage";
+import { workerActivity } from "./activity";
 import { enqueueJob, jobSummaryQuery, listJobs, lockQueue } from "./queue";
+import { queueMessage } from "./queueMessage";
 
 export const jobsRouter = trpc.router({
     activity: trpc.procedure.query(({ ctx }) =>
         runOperation(async () => {
             const { operations, principal } = authorizedOperations(ctx, "jobs:read");
             const requestedBy = `${principal.kind}:${principal.id}`;
-            // The queue has at most 1,000 active runs; recent completion history is separate.
-            const [active, recent] = await Promise.all([
-                listJobs(operations.client, 1000, undefined, {
-                    view: "active",
-                    requestedBy,
-                }),
-                listJobs(operations.client, 5, undefined, {
-                    view: "recent",
-                    requestedBy,
-                    completedWithinSeconds: 15 * 60,
-                }),
-            ]);
-            return {
-                runs: [...active, ...recent],
-            };
+            return workerActivity(
+                operations.client,
+                requestedBy,
+                principal.capabilities.includes("updates:read")
+            );
         })
     ),
     list: trpc.procedure.input(runFilterSchema).query(({ ctx, input }) =>
@@ -92,7 +84,7 @@ export const jobsRouter = trpc.router({
                         lastProgressAt: string | null;
                         responding: boolean;
                     })[]
-                >`SELECT id, action, label, resource_class AS "resourceClass", state, attempt, attempt_limit AS "attemptLimit", requested_by AS "requestedBy", created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt", message, cancel_requested AS "cancelRequested", resource_keys AS "resourceKeys", timeout_ms AS "timeoutMs", retry_safe AS "retrySafe", results, (SELECT max(created_at)::text FROM operation_audit WHERE target = job_runs.id::text AND action = 'jobs.progress' AND created_at >= job_runs.started_at) AS "lastProgressAt", COALESCE(lease_expires_at > now() AND EXISTS (SELECT 1 FROM workers WHERE workers.id = job_runs.worker_id AND heartbeat_at > now() - interval '30 seconds'), false) AS responding FROM job_runs WHERE id = ${input.id}`;
+                >`SELECT id, action, label, resource_class AS "resourceClass", state, attempt, attempt_limit AS "attemptLimit", requested_by AS "requestedBy", created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt", ${queueMessage(operations.client)} AS message, cancel_requested AS "cancelRequested", resource_keys AS "resourceKeys", timeout_ms AS "timeoutMs", retry_safe AS "retrySafe", results, (SELECT max(created_at)::text FROM operation_audit WHERE target = job_runs.id::text AND action = 'jobs.progress' AND created_at >= job_runs.started_at) AS "lastProgressAt", COALESCE(lease_expires_at > now() AND EXISTS (SELECT 1 FROM workers WHERE workers.id = job_runs.worker_id AND heartbeat_at > now() - interval '30 seconds'), false) AS responding FROM job_runs WHERE id = ${input.id}`;
                 if (!run)
                     throw new OperationFailure(
                         "NOT_FOUND",

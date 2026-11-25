@@ -5,6 +5,42 @@ import { updateSshArguments } from "../updates/execution";
 import type { MaintenanceTarget } from "./configuration";
 import program from "./remote.py" with { type: "text" };
 import serviceReport from "./service_report.py" with { type: "text" };
+import systemBus from "./system_bus.py" with { type: "text" };
+
+export const busRecoveryMessages = {
+    qualified: null,
+    implementation:
+        "This system bus implementation has no qualified online restart recipe.",
+    "unit-policy":
+        "Restarting the bus would affect other systemd units or violate their restart policy.",
+    clients:
+        "Other connected clients need a recovery plan before the system bus can restart.",
+    login: "The login manager's bus ownership and session interface could not be confirmed.",
+    inhibitors:
+        "The login manager has active system inhibitors. Wait for their owners to release them.",
+    sessions: "Other login sessions are active. Wait until the host is unattended.",
+    unavailable:
+        "The system-bus recovery preflight could not be verified. Refresh the host or schedule manual maintenance.",
+} as const;
+const busRecoverySchema = v.picklist(
+    Object.keys(busRecoveryMessages) as (keyof typeof busRecoveryMessages)[]
+);
+
+/** The remote check explicitly refused before sending a restart. */
+export class MaintenanceRefused extends Error {}
+
+const refusalMessages = {
+    ...busRecoveryMessages,
+    authority: "This service requires a different restart method.",
+    identity: "The host or service identity changed before the restart.",
+    requirement: "Linux no longer reports this instance as needing a restart.",
+    preflight: "The host's restart prerequisites could not be verified.",
+    prerequisites: "The service does not meet its restart prerequisites.",
+} as const;
+const refusalSchema = v.strictObject({
+    restart: v.literal("not-started"),
+    reason: v.picklist(Object.keys(refusalMessages) as (keyof typeof refusalMessages)[]),
+});
 
 const invocationSchema = v.nullable(v.pipe(v.string(), v.regex(/^[a-f0-9]{32}$/)));
 const unitSchema = v.pipe(v.string(), v.minLength(1), v.maxLength(255));
@@ -13,6 +49,7 @@ const reportedUnitSchema = v.strictObject({
     aliases: v.optional(v.pipe(v.array(unitSchema), v.maxLength(64))),
     invocationId: invocationSchema,
     restartable: v.boolean(),
+    busRecovery: v.optional(busRecoverySchema),
 });
 
 export const fleetReportSchema = v.strictObject({
@@ -40,7 +77,8 @@ export type MaintenanceProbe = (
     mode: "inspect" | "state" | "restart" | "verify" | "preflight",
     signal: AbortSignal,
     expected?: MaintenanceObservation,
-    requiredOnly?: boolean
+    requiredOnly?: boolean,
+    operationId?: string
 ) => Promise<MaintenanceObservation>;
 
 /**
@@ -51,6 +89,7 @@ export type MaintenanceProbe = (
  * @param signal - Job ownership and deadline.
  * @param expected - Boot/service identity captured by the approved plan.
  * @param requiredOnly - Recheck the pending requirement immediately before mutation.
+ * @param operationId - Stable queue identity for an independent D-Bus recovery receipt.
  * @returns A bounded, validated observation; command failures remain unverified outcomes.
  */
 export const probeMaintenance: MaintenanceProbe = async (
@@ -59,14 +98,24 @@ export const probeMaintenance: MaintenanceProbe = async (
     mode,
     signal,
     expected,
-    requiredOnly = false
+    requiredOnly = false,
+    operationId
 ) => {
     signal.throwIfAborted();
     const child = Bun.spawn(
-        updateSshArguments(connection, serviceReport + "\n" + program),
+        updateSshArguments(connection, serviceReport + "\n" + systemBus + "\n" + program),
         {
             stdin: new TextEncoder().encode(
-                JSON.stringify({ target, mode, expected, requiredOnly })
+                JSON.stringify({
+                    target,
+                    mode,
+                    expected,
+                    requiredOnly,
+                    operationId,
+                    ...(mode === "restart" && target.service === "dbus.service"
+                        ? { busProgram: serviceReport + "\n" + systemBus }
+                        : {}),
+                })
             ),
             stdout: "pipe",
             stderr: "ignore",
@@ -81,8 +130,13 @@ export const probeMaintenance: MaintenanceProbe = async (
                 throw new Error("Maintenance response exceeded its budget");
             result += new TextDecoder().decode(chunk);
         }
-        if ((await child.exited) !== 0)
-            throw new Error("Maintenance outcome could not be verified");
+        const status = await child.exited;
+        if (status === 3 && result.length <= 200 && result.trimStart().startsWith("{")) {
+            const outcome = v.safeParse(refusalSchema, JSON.parse(result) as unknown);
+            if (outcome.success && outcome.output.reason !== "qualified")
+                throw new MaintenanceRefused(refusalMessages[outcome.output.reason]);
+        }
+        if (status !== 0) throw new Error("Maintenance outcome could not be verified");
         return v.parse(observationSchema, JSON.parse(result) as unknown);
     } finally {
         if (child.exitCode === null) child.kill();

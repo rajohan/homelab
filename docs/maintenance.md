@@ -8,6 +8,10 @@ release scans and update preparation with longer budgets use the general slots,
 so a slow inventory lookup cannot occupy the reserved lane for several minutes.
 Installation and restart jobs keep their physical-host leases. The reservation does
 not bypass a pause, a shared resource lock, or deliberately exclusive work.
+Among eligible jobs at the same priority, operator requests and post-update service
+restarts go before routine checks. Jobs waiting at least two minutes take precedence
+in arrival order so background checks continue to run. Queued jobs identify a conflicting host job,
+a maintenance pause, an unavailable worker, or the slot they are waiting for.
 
 Run details distinguish elapsed time, last progress and worker responsiveness.
 Quiet package managers are not classified as stuck. Update jobs retain bounded,
@@ -123,6 +127,22 @@ instances once the update job has left the queue. It uses the same host permissi
 identity checks, health probes and independent controllers. A cleared requirement is
 skipped. A failed verification stops further work on that host for the batch and
 generates an operator notification. An unavailable Linux measurement remains unknown.
+Independent hosts can progress concurrently within general worker capacity. A batch
+admits one service per host and respects shared resource locks. Controller and
+connectivity restarts run alone within the batch. After a successful service restart,
+the worker publishes its verified host report before admitting further work.
+
+The classic Debian 13 system bus has a separate recovery path for systemd 257 and
+dbus-daemon 1.16. When Linux reports a pending restart, the host checks active
+clients, login sessions, inhibitors and systemd's stop dependencies. A headless host
+with only PID 1, logind and the dashboard SSH account's systemd user manager can
+qualify. Other clients or dependencies are shown with the reason manual maintenance
+is required. The host repeats these checks immediately before the restart.
+A transient systemd service journals the operation and reconnects the original
+managers if needed. The worker opens a fresh SSH connection and verifies the new
+bus ID, service invocation, original user manager and working login interface.
+Individual restarts, batches and post-update follow-ups use the same checks.
+
 Automation tokens are refused even if assigned that capability. Each restart has
 one attempt, an audit history and ordinary job notifications. A host request may
 disconnect SSH; the worker only polls afterward and never resends the reboot.
@@ -140,6 +160,13 @@ Hosts with matching required work lead the list, and required targets lead each
 host. Unknown observations remain distinct from a confirmed no-restart result.
 Changing search or filters returns the bounded list to the top; polling preserves
 navigation choices.
+
+Worker activity groups restarts by batch and shows the current service and queue
+reason. Its detail distinguishes completed services, failed attempts and work
+that never started. A follow-up notification opens the affected batch directly.
+When a host check expires or fails, Restarts keeps its last measured service count
+and shows how many services await verification. Only fresh measurements authorize
+batch actions. A new successful check replaces the previous count, including zero.
 
 ## Homelab release overview
 

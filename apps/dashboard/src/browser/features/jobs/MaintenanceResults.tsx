@@ -14,11 +14,13 @@ export function MaintenanceResults({
 }) {
     if (results.length === 0) return null;
     return (
-        <DetailSection icon={BadgeCheck} title="Verified results">
-            <p className="text-sm text-primary-400">
-                These entries completed verification. A failed or cancelled run may have
-                additional, unverified changes; inspect its last progress before retrying.
-            </p>
+        <DetailSection icon={BadgeCheck} title="Recorded results">
+            {results.some((item) => item.operation !== "restart-not-started") && (
+                <p className="text-sm text-primary-400">
+                    A failed or cancelled run can leave other changes unverified. Check
+                    its last progress before retrying.
+                </p>
+            )}
             {results.map((result, index) => (
                 <div
                     key={`${index}:${result.label}`}
@@ -28,8 +30,14 @@ export function MaintenanceResults({
                     {result.installed && (
                         <p className="wrap-anywhere">Installed: {result.installed}</p>
                     )}
-                    <p>Health: {healthLabels[result.health]}</p>
-                    <p>Host restart: {restartLabel(result.rebootRequired)}</p>
+                    {result.operation === "restart-not-started" ? (
+                        <p>Restart did not start.</p>
+                    ) : (
+                        <>
+                            <p>Health: {healthLabels[result.health]}</p>
+                            <p>Host restart: {restartLabel(result.rebootRequired)}</p>
+                        </>
+                    )}
                     {result.warnings.map((warning) => (
                         <p key={warning} className="text-primary-300">
                             {warning}
