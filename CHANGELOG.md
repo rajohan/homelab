@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/rajohan/homelab/compare/v0.27.1...v0.28.0) (2026-11-25)
+
+
+### Features
+
+* **dashboard:** show uptime history and continue host maintenance ([#278](https://github.com/rajohan/homelab/issues/278)) ([a7483bb](https://github.com/rajohan/homelab/commit/a7483bb11a8252dbfb69f7b9bc016c2f192b3016))
+
 ## [0.27.1](https://github.com/rajohan/homelab/compare/v0.27.0...v0.27.1) (2026-11-25)
 
 
