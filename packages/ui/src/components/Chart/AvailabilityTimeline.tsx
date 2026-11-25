@@ -191,7 +191,7 @@ export function AvailabilityTimeline({
                                 );
                             }}
                             onPointerLeave={() => setHovered(null)}
-                            className="absolute inset-0 m-0 size-full cursor-crosshair opacity-0"
+                            className="absolute inset-0 m-0 size-full cursor-pointer opacity-0"
                         />
                     </div>
                     <div className="flex justify-between text-xs text-primary-400 tabular-nums">
