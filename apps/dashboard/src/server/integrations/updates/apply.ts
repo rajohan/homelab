@@ -3,6 +3,7 @@ import type { UpdateItem, UpdateReport } from "@homelab/contracts/updates";
 import { enqueueJob } from "../../jobs/queue";
 import type { JobDefinition, JobExecution } from "../../jobs/types";
 import { publishNotification } from "../../notifications/publish";
+import { queueUpdateRestarts } from "../maintenance/batch";
 import type { UpdateTarget } from "./configuration";
 import type { UpdateExecutor, UpdateReceipt } from "./execution";
 import { remapPendingUpdateBatches, type UpdateReceiptScope } from "./receipts";
@@ -88,13 +89,36 @@ async function recordResult(
                     // installation must not restore the old version when it arrives late.
                     await transaction`UPDATE operation_snapshots SET value=${JSON.stringify({ ...row.value, items, ...(source === target.source ? { rebootRequired: receipt.rebootRequired, rebootObservedAt: observedAt } : {}) })}::text::jsonb, captured_at=GREATEST(captured_at, now()) WHERE key=${key}`;
                 }
+            const warnings = [...(receipt.warnings ?? [])];
+            if (receipt.restartChanges === null) {
+                const sourceKey = new Bun.CryptoHasher("sha256")
+                    .update(target.source)
+                    .digest("hex");
+                const message =
+                    "The update was installed, but its service restart requirements could not be measured. Check Restarts for this host.";
+                if (warnings.length < 10) warnings.push(message);
+                await publishNotification(transaction, "updates", {
+                    key: `observation-failed:${context.runId}:service-restarts:${sourceKey}`,
+                    title: `${target.source}: check service restarts`,
+                    message,
+                    severity: "warning",
+                    destination: "jobs",
+                });
+            } else if (receipt.restartChanges?.services.length) {
+                await queueUpdateRestarts(transaction, {
+                    runId: context.runId,
+                    connection: target.id,
+                    host: target.host,
+                    ...receipt.restartChanges,
+                });
+            }
             const result = {
                 label: item.name,
                 operation: "update",
                 installed: receipt.installed,
                 health: receipt.health ?? "not-checked",
                 rebootRequired: receipt.rebootRequired,
-                warnings: receipt.warnings ?? [],
+                warnings,
             };
             await transaction`UPDATE job_runs SET results = results || ${JSON.stringify([result])}::text::jsonb WHERE id = ${context.runId} AND jsonb_array_length(results) < 400`;
             await recordRestartObservation(
@@ -188,5 +212,10 @@ export async function applyUpdate(
         context,
         scope ?? { sources: [target.source], targets: [target] }
     );
-    await context.reportProgress("The installed version has been verified.");
+    const count = receipt.restartChanges?.services.length ?? 0;
+    await context.reportProgress(
+        count
+            ? `The installed version has been verified. Restart follow-up recorded for ${count} ${count === 1 ? "service" : "services"}.`
+            : "The installed version has been verified."
+    );
 }

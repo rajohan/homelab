@@ -4,15 +4,32 @@ import type { UpdateTarget } from "../updates/configuration";
 import { updateSshArguments } from "../updates/execution";
 import type { MaintenanceTarget } from "./configuration";
 import program from "./remote.py" with { type: "text" };
+import serviceReport from "./service_report.py" with { type: "text" };
+
+const invocationSchema = v.nullable(v.pipe(v.string(), v.regex(/^[a-f0-9]{32}$/)));
+const unitSchema = v.pipe(v.string(), v.minLength(1), v.maxLength(255));
+const reportedUnitSchema = v.strictObject({
+    unit: unitSchema,
+    aliases: v.optional(v.pipe(v.array(unitSchema), v.maxLength(64))),
+    invocationId: invocationSchema,
+    restartable: v.boolean(),
+});
+
+export const fleetReportSchema = v.strictObject({
+    evidence: v.picklist(["measured", "not-installed", "check-failed"]),
+    services: v.pipe(v.array(reportedUnitSchema), v.maxLength(1024)),
+});
 
 export const observationSchema = v.strictObject({
+    fleet: v.optional(fleetReportSchema),
+    canonicalUnit: v.optional(unitSchema),
     serviceEvidence: v.optional(
         v.nullable(v.picklist(["stopped", "not-installed", "check-failed", "measured"]))
     ),
     bootId: v.pipe(v.string(), v.uuid()),
     active: v.nullable(v.picklist(["active", "inactive"])),
-    invocationId: v.nullable(v.pipe(v.string(), v.regex(/^[a-f0-9]{32}$/))),
-    rebootRequired: v.boolean(),
+    invocationId: invocationSchema,
+    rebootRequired: v.nullable(v.boolean()),
     serviceRestartRequired: v.nullable(v.boolean()),
     health: v.boolean(),
 });
@@ -20,9 +37,10 @@ export type MaintenanceObservation = v.InferOutput<typeof observationSchema>;
 export type MaintenanceProbe = (
     connection: UpdateTarget,
     target: MaintenanceTarget,
-    mode: "inspect" | "restart" | "verify" | "preflight",
+    mode: "inspect" | "state" | "restart" | "verify" | "preflight",
     signal: AbortSignal,
-    expected?: MaintenanceObservation
+    expected?: MaintenanceObservation,
+    requiredOnly?: boolean
 ) => Promise<MaintenanceObservation>;
 
 /**
@@ -32,6 +50,7 @@ export type MaintenanceProbe = (
  * @param mode - Read-only inspection/verification or a single confirmed mutation.
  * @param signal - Job ownership and deadline.
  * @param expected - Boot/service identity captured by the approved plan.
+ * @param requiredOnly - Recheck the pending requirement immediately before mutation.
  * @returns A bounded, validated observation; command failures remain unverified outcomes.
  */
 export const probeMaintenance: MaintenanceProbe = async (
@@ -39,20 +58,26 @@ export const probeMaintenance: MaintenanceProbe = async (
     target,
     mode,
     signal,
-    expected
+    expected,
+    requiredOnly = false
 ) => {
     signal.throwIfAborted();
-    const child = Bun.spawn(updateSshArguments(connection, program), {
-        stdin: new TextEncoder().encode(JSON.stringify({ target, mode, expected })),
-        stdout: "pipe",
-        stderr: "ignore",
-        signal,
-        env: { PATH: "/usr/bin:/bin", LANG: "C", HOME: "/nonexistent" },
-    });
+    const child = Bun.spawn(
+        updateSshArguments(connection, serviceReport + "\n" + program),
+        {
+            stdin: new TextEncoder().encode(
+                JSON.stringify({ target, mode, expected, requiredOnly })
+            ),
+            stdout: "pipe",
+            stderr: "ignore",
+            signal,
+            env: { PATH: "/usr/bin:/bin", LANG: "C", HOME: "/nonexistent" },
+        }
+    );
     try {
         let result = "";
         for await (const chunk of child.stdout) {
-            if (result.length + chunk.length > 4096)
+            if (result.length + chunk.length > 512 * 1024)
                 throw new Error("Maintenance response exceeded its budget");
             result += new TextDecoder().decode(chunk);
         }

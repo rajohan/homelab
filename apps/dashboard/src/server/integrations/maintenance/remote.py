@@ -43,15 +43,35 @@ def run(argv, timeout=30):
         child.stdout.close()
 
 
-def observe(target):
+def owns_kernel():
+    """A container can see an obsolete parent kernel. Only an independent kernel can be rebooted here."""
+    try:
+        detection = subprocess.run(["/usr/bin/systemd-detect-virt", "--container"], timeout=3,
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                   env={"LC_ALL": "C", "PATH": "/usr/bin:/bin"}, text=True)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    kind = detection.stdout.strip()
+    if detection.returncode == 1 and kind == "none":
+        return True
+    if detection.returncode == 0 and kind and kind != "none":
+        return False
+    return None
+
+
+def observe(target, full=True):
     """Read the boot identity and selected service; never return raw command output."""
     boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
     active, invocation = None, None
-    if target["kind"] == "service":
+    canonical = target.get("service")
+    if target.get("reportedOn") and target.get("service") == "systemd-manager":
+        active, invocation = "active", boot.replace("-", "")
+    elif target["kind"] == "service":
         properties = dict(line.split("=", 1) for line in run([
-            "/usr/bin/systemctl", "show", "--property=ActiveState", "--property=InvocationID", target["service"]
+            "/usr/bin/systemctl", "show", "--property=Id,ActiveState,InvocationID", "--", target["service"]
         ]).splitlines() if "=" in line)
         active = properties.get("ActiveState")
+        canonical = properties.get("Id") or canonical
         invocation = properties.get("InvocationID") or None
         if (invocation is not None and not re.fullmatch(r"[a-f0-9]{32}", invocation)) or (active == "active" and not invocation):
             raise RuntimeError("Service invocation identity is unavailable")
@@ -60,20 +80,34 @@ def observe(target):
     required = Path("/var/run/reboot-required").exists()
     service_required = None
     evidence = None
+    fleet = None
+    actionable = False
     if target["kind"] == "service" and active == "inactive":
         evidence = "stopped"
-    elif target["kind"] == "service" and Path("/usr/sbin/needrestart").is_file():
-        try:
-            output = run(["/usr/sbin/needrestart", "-b", "-r", "l"])
-            if not re.search(r"(?m)^NEEDRESTART-VER:", output):
-                raise RuntimeError("Service restart report is unavailable")
-            evidence = "measured"
-            service_required = target["service"] in re.findall(r"(?m)^NEEDRESTART-SVC:\s*(\S+)\s*$", output)
-        except RuntimeError:
-            evidence = "check-failed"
-    elif target["kind"] == "service":
-        evidence = "not-installed"
-    return {"serviceEvidence": evidence, "bootId": boot, "active": active, "invocationId": invocation, "rebootRequired": required, "serviceRestartRequired": service_required, "health": False}
+    elif full:
+        fleet = read_service_report(run)
+        if fleet.pop("kernelOrMicrocodePending", False) and not required:
+            required = owns_kernel()
+        if target["kind"] == "service":
+            evidence = fleet["evidence"]
+            if evidence == "measured":
+                entry = next((s for s in fleet["services"] if s["unit"] == canonical), None)
+                service_required = entry is not None
+                actionable = bool(entry and entry["restartable"] and entry["invocationId"] == invocation)
+    result = {"serviceEvidence": evidence, "bootId": boot, "active": active, "invocationId": invocation, "rebootRequired": required, "serviceRestartRequired": service_required, "health": False}
+    if canonical:
+        result["canonicalUnit"] = canonical
+    if target["kind"] == "host" and fleet is not None:
+        result["fleet"] = fleet
+    return result, actionable
+
+
+def preflight(target):
+    if target.get("preflight"):
+        run(target["preflight"], timeout=10)
+    ssh_check = ["/usr/sbin/sshd", "-t"]
+    if target.get("reportedOn") and target.get("service") in ("ssh.service", "sshd.service") and target.get("preflight") != ssh_check:
+        run(ssh_check, timeout=10)
 
 
 def main():
@@ -83,11 +117,10 @@ def main():
         raise RuntimeError("Maintenance input exceeded its budget")
     request = json.loads(raw)
     target = request["target"]
-    before = observe(target)
     mode = request["mode"]
+    before, _ = observe(target, mode == "inspect")
     if mode == "preflight":
-        if target.get("preflight"):
-            run(target["preflight"], timeout=10)
+        preflight(target)
         return before
     if mode == "restart":
         if not target.get("workerIndependent", True):
@@ -95,14 +128,27 @@ def main():
         expected = request["expected"]
         if (before["bootId"], before["active"], before["invocationId"]) != (expected["bootId"], expected["active"], expected["invocationId"]):
             raise RuntimeError("Restart target changed")
-        if target.get("preflight"):
-            run(target["preflight"], timeout=10)
+        preflight(target)
+        require_report = target["kind"] == "service" and (target.get("reportedOn") or request.get("requiredOnly"))
+        current, actionable = observe(target, bool(require_report))
+        last, _ = observe(target, False) if require_report else (current, False)
+        if (last["bootId"], last["active"], last["invocationId"]) != (expected["bootId"], expected["active"], expected["invocationId"]):
+            raise RuntimeError("Restart target changed during preflight")
         if target["kind"] == "host":
+            if request.get("requiredOnly") and not last["rebootRequired"]:
+                raise RuntimeError("Host restart is no longer required")
             run(["/usr/bin/systemctl", "--no-block", "reboot"])
             return before
-        if before["active"] != "active":
+        if last["active"] != "active":
             raise RuntimeError("A stopped service must not be started by restart")
-        run(["/usr/bin/systemctl", "restart", target["service"]], timeout=120)
+        if target.get("reportedOn") and not actionable:
+            raise RuntimeError("Reported service is no longer restartable")
+        if request.get("requiredOnly") and current["serviceRestartRequired"] is not True:
+            raise RuntimeError("Service restart is no longer required")
+        if target.get("reportedOn") and target["service"] == "systemd-manager":
+            run(["/usr/bin/systemctl", "daemon-reexec"], timeout=120)
+        else:
+            run(["/usr/bin/systemctl", "try-restart", "--", target["service"]], timeout=120)
     if mode in ("verify", "restart"):
         deadline = time.monotonic() + (45 if mode == "restart" else 10)
         while True:
@@ -113,19 +159,19 @@ def main():
                 if time.monotonic() >= deadline:
                     raise
                 time.sleep(1)
-        after = observe(target)
+        after, _ = observe(target)
         if target["kind"] == "service" and after["active"] != "active":
             raise RuntimeError("Service did not recover")
         after["health"] = True
         return after
-    if mode != "inspect":
+    if mode not in ("inspect", "state"):
         raise RuntimeError("Unsupported maintenance operation")
     return before
 
 
 if __name__ == "__main__":
     def interrupted(_number, _frame):
-        raise RuntimeError("Maintenance interrupted")
+        raise SystemExit(1)
     signal.signal(signal.SIGHUP, interrupted)
     signal.signal(signal.SIGTERM, interrupted)
     try:

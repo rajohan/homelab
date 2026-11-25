@@ -25,7 +25,7 @@ export function Updates() {
                     { id: "software", label: "Software", content: <UpdatesPanel /> },
                     {
                         id: "maintenance",
-                        label: "Maintenance",
+                        label: "Restarts",
                         content: <MaintenancePanel />,
                     },
                     { id: "releases", label: "Releases", content: <ReleasesPanel /> },

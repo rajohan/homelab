@@ -1,7 +1,12 @@
 import type { api } from "../../api/client";
 
 export type RestartPlan = Awaited<ReturnType<typeof api.maintenance.plans.query>>[number];
-export type RequirementFilter = "all" | "required" | "unknown" | "not-required";
+export type RequirementFilter =
+    | "attention"
+    | "all"
+    | "required"
+    | "unknown"
+    | "not-required";
 export type RestartLocationFilter = "all" | "dashboard" | "external";
 export interface RestartGroup {
     readonly host: RestartPlan["host"];
@@ -9,22 +14,41 @@ export interface RestartGroup {
     readonly required: number;
 }
 
-/**
- * Resolve the requirement shown by badges and filters from the same usable evidence.
- * @param plan - Current public restart observation and availability.
- * @returns Known restart need, or null when this plan cannot establish it.
+/** Check whether a host-wide service report or a specific requirement is incomplete.
+ * @param plan - Latest target reading returned by the server.
+ * @returns Whether the operator cannot see all restart requirements for this target.
  */
-export function restartRequirement(plan: RestartPlan): boolean | null {
-    return plan.required;
+export function incompleteRestart(plan: RestartPlan): boolean {
+    return (
+        (plan.kind === "host" && plan.fleetEvidence !== "measured") ||
+        (plan.required === null && plan.active !== "inactive")
+    );
 }
 
-/**
- * Search and filter restart targets, keeping each host together with required work first.
- * @param plans - Current safe server plans; never mutated by navigation.
- * @param search - Case-insensitive literal words matched against host and target labels.
- * @param requirement - Requirement filter, consistent with each target's badge.
- * @param location - Whether the restart happens here or through an external operator.
- * @returns Required hosts first, then alphabetical hosts; required targets lead each group.
+/** Describe pending fleet work independently of the operator's current list filters.
+ * @param plans - Current plans from the configured hosts and their service reports.
+ * @returns Eligible services, outstanding manual items and whole-host reboots.
+ */
+export function restartWorkload(plans: readonly RestartPlan[]) {
+    const required = plans.filter((plan) => plan.required === true);
+    const services = required.filter((plan) => plan.kind === "service");
+    return {
+        eligible: services.filter((plan) => plan.allowed && !plan.external),
+        manual: services.filter((plan) => plan.external),
+        unavailable: services.filter((plan) => !plan.external && !plan.allowed),
+        reboots: required.filter((plan) => plan.kind === "host"),
+        incompleteHosts: new Set(
+            plans.filter((plan) => incompleteRestart(plan)).map((plan) => plan.host.id)
+        ).size,
+    };
+}
+
+/** Group visible restart targets by host, preserving host actions and prioritising outstanding work.
+ * @param plans - Fleet observations.
+ * @param search - Case-insensitive terms matched against host, service label and unit name.
+ * @param requirement - Current requirement filter.
+ * @param location - Current restart location filter.
+ * @returns Host groups with pending work first and host actions separated from service actions.
  */
 export function restartGroups(
     plans: readonly RestartPlan[],
@@ -38,13 +62,14 @@ export function restartGroups(
         { host: RestartPlan["host"]; plans: RestartPlan[]; required: number }
     >();
     for (const plan of plans) {
-        const required = restartRequirement(plan);
-        const text = `${plan.host.label} ${plan.label}`.toLowerCase();
+        const text = [plan.host.label, plan.label, plan.unit].join(" ").toLowerCase();
+        const unknown = incompleteRestart(plan);
         if (
             !words.every((word) => text.includes(word)) ||
-            (requirement === "required" && required !== true) ||
-            (requirement === "unknown" && required !== null) ||
-            (requirement === "not-required" && required !== false) ||
+            (requirement === "attention" && !plan.required && !unknown) ||
+            (requirement === "required" && plan.required !== true) ||
+            (requirement === "unknown" && !unknown) ||
+            (requirement === "not-required" && (plan.required !== false || unknown)) ||
             (location === "external" && !plan.external) ||
             (location === "dashboard" && plan.external)
         )
@@ -55,7 +80,7 @@ export function restartGroups(
             required: 0,
         };
         group.plans.push(plan);
-        if (required) group.required += 1;
+        if (plan.required) group.required++;
         groups.set(plan.host.id, group);
     }
     return [...groups.values()]
@@ -63,8 +88,8 @@ export function restartGroups(
             ...group,
             plans: group.plans.toSorted(
                 (a, b) =>
-                    Number(restartRequirement(b) === true) -
-                        Number(restartRequirement(a) === true) ||
+                    Number(b.kind === "host") - Number(a.kind === "host") ||
+                    Number(b.required === true) - Number(a.required === true) ||
                     a.label.localeCompare(b.label) ||
                     a.target.localeCompare(b.target)
             ),

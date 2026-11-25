@@ -1,13 +1,34 @@
-import { maintenanceRequestSchema } from "@homelab/contracts/maintenance";
+import {
+    maintenanceBatchRequestSchema,
+    maintenanceRequestSchema,
+} from "@homelab/contracts/maintenance";
 
 import { runOperation, trpc } from "../../api/trpc";
 import { requireCapability } from "../../automation/authentication";
-import { enqueueJob, lockQueue } from "../../jobs/queue";
+import { lockQueue } from "../../jobs/queue";
 import { authorizedOperations } from "../../operations/authorization";
+import type { OperationsContext } from "../../operations/context";
 import { OperationFailure } from "../../operations/errors";
-import { maintenanceHosts } from "./hosts";
-import { maintenancePlan, type MaintenanceReading } from "./jobs";
-import { admitProxmoxRestart, latestProxmoxRestart } from "./proxmox";
+import { admitRestartBatch, restartBatchStatus } from "./batch";
+import { dispatchRestart } from "./dispatch";
+import { fleetMaintenancePlans } from "./fleetPlans";
+import { latestProxmoxRestart } from "./proxmox";
+
+async function restartOperator(ctx: OperationsContext) {
+    const { operations, principal } = authorizedOperations(ctx, "maintenance:restart");
+    requireCapability(principal, "jobs:run");
+    if (principal.kind !== "human" || !ctx.verifyHuman)
+        throw new OperationFailure(
+            "FORBIDDEN",
+            "A recently verified human operator must confirm restarts."
+        );
+    const current = await ctx.verifyHuman();
+    if (current.kind !== "human" || current.id !== principal.id)
+        throw new OperationFailure("UNAUTHORIZED", "The signed-in account changed.");
+    requireCapability(current, "maintenance:restart");
+    requireCapability(current, "jobs:run");
+    return { operations, actor: `human:${current.id}` };
+}
 
 export const maintenanceRouter = trpc.router({
     controllerStatus: trpc.procedure.query(({ ctx }) =>
@@ -16,145 +37,92 @@ export const maintenanceRouter = trpc.router({
             return latestProxmoxRestart(operations.client);
         })
     ),
+    batchStatus: trpc.procedure.query(({ ctx }) =>
+        runOperation(async () => {
+            const { operations } = authorizedOperations(ctx, "updates:read");
+            return restartBatchStatus(operations.client);
+        })
+    ),
     plans: trpc.procedure.query(({ ctx }) =>
         runOperation(async () => {
             const { operations } = authorizedOperations(ctx, "updates:read");
-            const hosts = maintenanceHosts(
+            const rows = await fleetMaintenancePlans(
+                operations.client,
                 operations.maintenanceTargets ?? [],
                 operations.updateTargets ?? []
             );
-            const readings = await operations.client<
-                (MaintenanceReading & { key: string })[]
-            >`SELECT key,value,captured_at::text AS "capturedAt",captured_at > now()-interval '2 minutes' AS fresh FROM operation_snapshots WHERE key LIKE 'maintenance:%'`;
-            const byKey = new Map(readings.map((row) => [row.key, row]));
-            return Promise.all(
-                (operations.maintenanceTargets ?? []).map(async (target) => {
-                    const {
-                        observation,
-                        configuration: _configuration,
-                        ...plan
-                    } = await maintenancePlan(
-                        operations.client,
-                        target,
-                        operations.updateTargets ?? [],
-                        byKey.get(`maintenance:${target.id}`) ?? null
-                    );
-                    return {
-                        ...plan,
-                        host: hosts.get(target.id)!,
-                        serviceEvidence: observation?.serviceEvidence ?? null,
-                        observed: Boolean(observation),
-                        active: observation?.active ?? null,
-                        required:
-                            target.kind === "host"
-                                ? (observation?.rebootRequired ?? null)
-                                : (observation?.serviceRestartRequired ?? null),
-                    };
-                })
-            );
+            return rows.map((row) => row.plan);
         })
     ),
+    restartAll: trpc.procedure
+        .input(maintenanceBatchRequestSchema)
+        .mutation(({ ctx, input }) =>
+            runOperation(async () => {
+                const { operations, actor } = await restartOperator(ctx);
+                return operations.client.begin(async (tx) => {
+                    await lockQueue(tx);
+                    const connections = operations.updateTargets ?? [];
+                    const rows = await fleetMaintenancePlans(
+                        tx,
+                        operations.maintenanceTargets ?? [],
+                        connections
+                    );
+                    return admitRestartBatch(
+                        tx,
+                        actor,
+                        input,
+                        rows,
+                        new Map(connections.map((c) => [c.id, c.host]))
+                    );
+                });
+            })
+        ),
     request: trpc.procedure.input(maintenanceRequestSchema).mutation(({ ctx, input }) =>
         runOperation(async () => {
-            const { operations, principal } = authorizedOperations(
-                ctx,
-                "maintenance:restart"
-            );
-            requireCapability(principal, "jobs:run");
-            if (principal.kind !== "human" || !ctx.verifyHuman)
-                throw new OperationFailure(
-                    "FORBIDDEN",
-                    "A recently verified human operator must confirm restarts."
-                );
-            const current = await ctx.verifyHuman();
-            if (current.kind !== "human" || current.id !== principal.id)
-                throw new OperationFailure(
-                    "UNAUTHORIZED",
-                    "The signed-in account changed."
-                );
-            requireCapability(current, "maintenance:restart");
-            requireCapability(current, "jobs:run");
-            const target = operations.maintenanceTargets?.find(
-                (entry) => entry.id === input.target
-            );
-            const connection =
-                target &&
-                operations.updateTargets?.find((entry) => entry.id === target.connection);
-            const handler = operations.registry.get(
-                `maintenance.restart.${input.target}`
-            );
-            if (!target || !connection || (!handler && !target.proxmox))
-                throw new OperationFailure(
-                    "NOT_FOUND",
-                    "This restart target is not configured."
-                );
-            return operations.client.begin(async (transaction) => {
-                await lockQueue(transaction);
-                const actor = `human:${current.id}`;
+            const { operations, actor } = await restartOperator(ctx);
+            return operations.client.begin(async (tx) => {
+                await lockQueue(tx);
                 const key = `${actor}:maintenance:${input.requestId}`;
-                const [existing] = await transaction<
-                    { id: string; payload: { target: string; revision: string } }[]
-                >`SELECT id, payload FROM job_runs WHERE idempotency_key = ${key}`;
-                if (existing) {
+                const [prior] = await tx<
+                    { id: string; actor: string; target: string; revision: string }[]
+                >`SELECT id::text,requested_by AS actor,payload->>'target' AS target,payload->>'revision' AS revision FROM job_runs WHERE idempotency_key=${key}
+                UNION ALL SELECT value->>'id',value->>'actor',value->>'target',value->>'revision' FROM operation_snapshots WHERE key=${"maintenance.proxmox.run:" + input.requestId} LIMIT 1`;
+                if (prior) {
                     if (
-                        existing.payload.target !== input.target ||
-                        existing.payload.revision !== input.revision
+                        prior.actor !== actor ||
+                        prior.target !== input.target ||
+                        prior.revision !== input.revision
                     )
                         throw new OperationFailure(
                             "CONFLICT",
                             "This request ID belongs to another restart."
                         );
-                    return { id: existing.id };
+                    return { id: prior.id };
                 }
-                if (target.proxmox) {
-                    const [previous] = await transaction<
-                        { value: { actor: string; target: string; revision: string } }[]
-                    >`SELECT value FROM operation_snapshots WHERE key=${`maintenance.proxmox.run:${input.requestId}`}`;
-                    if (previous) {
-                        if (
-                            previous.value.actor !== actor ||
-                            previous.value.target !== target.id ||
-                            previous.value.revision !== input.revision
-                        )
-                            throw new OperationFailure(
-                                "CONFLICT",
-                                "This confirmation belongs to another operation."
-                            );
-                        return { id: input.requestId };
-                    }
-                }
-                const plan = await maintenancePlan(
-                    transaction,
-                    target,
+                const rows = await fleetMaintenancePlans(
+                    tx,
+                    operations.maintenanceTargets ?? [],
                     operations.updateTargets ?? []
                 );
+                const entry = rows.find((row) => row.target.id === input.target);
                 if (
-                    !plan.allowed ||
-                    !plan.observation ||
-                    plan.revision !== input.revision
+                    !entry ||
+                    !entry.plan.allowed ||
+                    entry.plan.revision !== input.revision
                 )
                     throw new OperationFailure(
                         "CONFLICT",
                         "Restart status changed. Refresh and confirm again."
                     );
-                if (target.proxmox)
-                    return admitProxmoxRestart(transaction, {
-                        id: input.requestId,
-                        actor,
-                        target: target.id,
-                        label: target.label,
-                        revision: input.revision,
-                        configuration: plan.configuration,
-                        expected: plan.observation,
-                    });
-                return {
-                    id: await enqueueJob(transaction, handler!.definition, actor, key, {
-                        target: target.id,
-                        configuration: plan.configuration,
-                        revision: input.revision,
-                        expected: plan.observation,
-                    }),
-                };
+                const { id } = await dispatchRestart(
+                    tx,
+                    operations.registry,
+                    entry,
+                    actor,
+                    input.requestId,
+                    Boolean(entry.target.reportedOn)
+                );
+                return { id };
             });
         })
     ),

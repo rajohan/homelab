@@ -15,12 +15,16 @@ import {
     observationSchema,
     probeMaintenance,
 } from "./execution";
+import { maintenanceHosts } from "./hosts";
+import { discoveredMaintenanceTarget, requiresNewSshConnection } from "./reportedTarget";
 
 const payloadSchema = v.strictObject({
     target: maintenanceRequestSchema.entries.target,
     configuration: maintenanceRequestSchema.entries.revision,
     revision: maintenanceRequestSchema.entries.revision,
     expected: observationSchema,
+    unit: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(255))),
+    requiredOnly: v.optional(v.boolean()),
 });
 
 export interface MaintenanceReading {
@@ -56,12 +60,10 @@ export async function maintenancePlan(
             ? parsed.output
             : null;
     const revision = new Bun.CryptoHasher("sha256")
-        .update(
-            JSON.stringify({ configuration, observation, capturedAt: row?.capturedAt })
-        )
+        .update(JSON.stringify({ configuration, observation }))
         .digest("hex");
     const allowed = Boolean(
-        (target.workerIndependent || target.proxmox) &&
+        (target.workerIndependent || target.proxmox || target.physicalNode) &&
         row?.fresh &&
         observation &&
         (target.kind === "host" ||
@@ -80,10 +82,10 @@ export async function maintenancePlan(
         observation,
         capturedAt: row?.capturedAt ?? null,
         allowed,
-        proxmox: Boolean(target.proxmox),
-        external: !target.workerIndependent && !target.proxmox,
+        proxmox: Boolean(target.proxmox || target.physicalNode),
+        external: !target.workerIndependent && !target.proxmox && !target.physicalNode,
         reason:
-            target.workerIndependent || target.proxmox
+            target.workerIndependent || target.proxmox || target.physicalNode
                 ? unavailableReason
                 : target.externalReason!,
     };
@@ -119,209 +121,246 @@ export function maintenanceJobs(
     connections: readonly UpdateTarget[],
     probe: MaintenanceProbe = probeMaintenance
 ): JobHandler[] {
+    const hosts = maintenanceHosts(targets, connections);
+    const inspectedHosts = new Set(
+        targets
+            .filter((target) => target.kind === "host")
+            .map((target) => hosts.get(target.id)!.id)
+    );
     return targets.flatMap((target): JobHandler[] => {
+        const hostId = hosts.get(target.id)!.id;
         const connection = connections.find((entry) => entry.id === target.connection)!;
         const configuration = maintenanceRevision(target, connections);
-        const handlers: JobHandler[] = [
-            {
-                definition: {
-                    key: `maintenance.inspect.${target.id}`,
-                    label: `Check restart status: ${target.label}`,
-                    description:
-                        "Read restart requirements and service state without changing the host.",
-                    resourceClass: "network",
-                    capability: "updates:refresh",
-                    resourceKeys: [
-                        `snapshot:maintenance:${target.id}`,
-                        ...updateResourceKeys(connection),
-                    ],
-                    timeoutMs: 45_000,
-                    attemptLimit: 1,
-                    retrySafe: true,
-                    intervalSeconds: 60,
-                    validate: (input) => v.parse(v.strictObject({}), input),
-                },
-                execute: async (_payload, context) => {
-                    await context.reportProgress(
-                        "Checking the configured service and restart requirements."
-                    );
-                    let observation: MaintenanceObservation | null = null;
-                    try {
-                        observation = await probe(
-                            connection,
-                            target,
-                            "inspect",
-                            context.signal
-                        );
-                    } catch {
-                        context.signal.throwIfAborted();
-                    }
-                    if (
-                        !(await context.commit(async (transaction) => {
-                            await transaction`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`maintenance:${target.id}`}, ${JSON.stringify({ configuration, observation })}::text::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at`;
-                        }))
-                    )
-                        throw new Error("Maintenance status ownership changed");
-                    if (!observation)
-                        throw new Error("Maintenance status is unavailable");
-                },
+        const inspect: JobHandler = {
+            definition: {
+                key: `maintenance.inspect.${target.id}`,
+                label: `Check restart status: ${target.label}`,
+                description:
+                    "Read restart requirements and service state without changing the host.",
+                resourceClass: "network",
+                capability: "updates:refresh",
+                resourceKeys: [
+                    `snapshot:maintenance:${target.id}`,
+                    ...updateResourceKeys(connection),
+                ],
+                timeoutMs: 45_000,
+                attemptLimit: 1,
+                retrySafe: true,
+                intervalSeconds: 60,
+                validate: (input) => v.parse(v.strictObject({}), input),
             },
-            {
-                definition: {
-                    key: `maintenance.restart.${target.id}`,
-                    label: `Restart ${target.label}`,
-                    description: target.impact,
-                    resourceClass: "interactive",
-                    capability: "maintenance:restart",
-                    resourceKeys: [
-                        ...new Set(
-                            [
-                                connection,
-                                ...connections.filter((entry) =>
-                                    target.lockConnections?.includes(entry.id)
-                                ),
-                            ].flatMap((entry) => updateResourceKeys(entry))
-                        ),
-                    ],
-                    timeoutMs: target.kind === "host" ? 600_000 : 360_000,
-                    attemptLimit: 1,
-                    retrySafe: false,
-                    intervalSeconds: null,
-                    admission: "integration",
-                    validate: (input) => v.parse(payloadSchema, input),
-                },
-                execute: async (value, context) => {
-                    if (!target.workerIndependent)
-                        throw new Error("This target requires an external restart");
-                    const input = v.parse(payloadSchema, value);
-                    if (
-                        input.target !== target.id ||
-                        input.configuration !== configuration
-                    )
-                        throw new Error("Restart confirmation expired or changed");
-                    const authorize = async () => {
-                        if (
-                            !(await context.commit(async (transaction) => {
-                                const [request] = await transaction<
-                                    { fresh: boolean }[]
-                                >`SELECT created_at >= clock_timestamp() - interval '5 minutes' AS fresh FROM job_runs WHERE id = ${context.runId}`;
-                                if (!request?.fresh)
-                                    throw new Error("Restart confirmation expired");
-                            }))
-                        )
-                            throw new Error("Restart ownership changed");
-                    };
-                    await authorize();
-                    const before = await probe(
+            execute: async (_payload, context) => {
+                await context.reportProgress(
+                    "Checking the configured service and restart requirements."
+                );
+                let observation: MaintenanceObservation | null = null;
+                try {
+                    observation = await probe(
                         connection,
                         target,
-                        "inspect",
+                        target.kind === "service" && inspectedHosts.has(hostId)
+                            ? "state"
+                            : "inspect",
                         context.signal
                     );
-                    if (
-                        before.bootId !== input.expected.bootId ||
-                        before.active !== input.expected.active ||
-                        before.invocationId !== input.expected.invocationId ||
-                        (target.kind === "service" && before.invocationId === null)
-                    )
-                        throw new Error("Restart target changed since confirmation");
+                } catch {
                     context.signal.throwIfAborted();
-                    await authorize();
-                    if (target.preflight) {
-                        await context.reportProgress("Checking restart prerequisites.");
-                        await probe(connection, target, "preflight", context.signal);
-                        await authorize();
-                    }
-                    await context.reportProgress(
-                        target.kind === "host"
-                            ? "Requesting the confirmed host restart. This request cannot be undone once accepted."
-                            : "Restarting the confirmed service."
-                    );
-                    let after: MaintenanceObservation | undefined;
-                    try {
-                        after = await probe(
+                }
+                if (
+                    !(await context.commit(async (transaction) => {
+                        await transaction`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`maintenance:${target.id}`}, ${JSON.stringify({ configuration, observation })}::text::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at`;
+                    }))
+                )
+                    throw new Error("Maintenance status ownership changed");
+                if (!observation) throw new Error("Maintenance status is unavailable");
+            },
+        };
+        const configuredServices = new Set(
+            targets
+                .filter((entry) => hosts.get(entry.id)!.id === hostId)
+                .map((entry) => entry.service)
+        );
+        const restart = (reported: boolean): JobHandler => ({
+            definition: {
+                key: reported
+                    ? `maintenance.reported.${target.id}`
+                    : `maintenance.restart.${target.id}`,
+                label: reported
+                    ? `Restart a reported service on ${target.label}`
+                    : `Restart ${target.label}`,
+                description: target.impact,
+                resourceClass: "interactive",
+                capability: "maintenance:restart",
+                resourceKeys: [
+                    ...new Set(
+                        [
                             connection,
-                            target,
-                            "restart",
-                            context.signal,
-                            input.expected
-                        );
-                    } catch {
-                        context.signal.throwIfAborted();
-                        if (target.kind === "service")
-                            throw new Error(
-                                "Service restart could not be verified; inspect before retrying"
-                            );
-                    }
-                    if (target.kind === "host") {
-                        await context.reportProgress(
-                            "Waiting for the host to return with a new boot identity and pass its health check."
-                        );
-                        after = undefined;
-                        while (!after) {
-                            await wait(context.signal);
-                            try {
-                                const current = await probe(
-                                    connection,
-                                    target,
-                                    "verify",
-                                    AbortSignal.any([
-                                        context.signal,
-                                        AbortSignal.timeout(40_000),
-                                    ])
-                                );
-                                if (current.bootId !== before.bootId && current.health)
-                                    after = current;
-                            } catch {
-                                context.signal.throwIfAborted();
-                            }
-                        }
-                    }
-                    if (!after?.health)
-                        throw new Error("Restart health verification failed");
-                    const result = {
-                        label: target.label,
-                        operation:
-                            target.kind === "host" ? "host-restart" : "service-restart",
-                        installed: null,
-                        health: "passed",
-                        rebootRequired: after.rebootRequired,
-                        warnings: after.serviceRestartRequired
-                            ? [
-                                  "The service is still reported as requiring a restart; inspect its dependencies.",
-                              ]
-                            : [],
-                    };
+                            ...connections.filter((entry) =>
+                                target.lockConnections?.includes(entry.id)
+                            ),
+                        ].flatMap((entry) => updateResourceKeys(entry))
+                    ),
+                ],
+                timeoutMs: target.kind === "host" ? 600_000 : 360_000,
+                attemptLimit: 1,
+                retrySafe: false,
+                intervalSeconds: null,
+                admission: "integration",
+                validate: (input) => v.parse(payloadSchema, input),
+            },
+            execute: async (value, context) => {
+                const input = v.parse(payloadSchema, value);
+                if (
+                    reported !== Boolean(input.unit) ||
+                    (input.unit && configuredServices.has(input.unit))
+                )
+                    throw new Error(
+                        "This service requires its configured restart recipe."
+                    );
+                const recipe = reported
+                    ? discoveredMaintenanceTarget(target, input.unit!)
+                    : target;
+                const requiredOnly = Boolean(input.requiredOnly || reported);
+                if (!recipe.workerIndependent)
+                    throw new Error("This target requires an external restart");
+                if (
+                    input.target !== recipe.id ||
+                    input.configuration !== maintenanceRevision(recipe, connections)
+                )
+                    throw new Error("Restart confirmation expired or changed");
+                const authorize = async () => {
                     if (
                         !(await context.commit(async (transaction) => {
-                            await transaction`UPDATE job_runs SET results = ${JSON.stringify([result])}::text::jsonb WHERE id = ${context.runId}`;
-                            await recordRestartObservation(
-                                transaction,
-                                connection.source,
-                                connections.some(
-                                    (other) =>
-                                        other.source === connection.source &&
-                                        other.host.toLowerCase() !==
-                                            connection.host.toLowerCase()
-                                )
-                                    ? null
-                                    : after.rebootRequired,
-                                await restartObservationTime(transaction)
-                            );
-                            await transaction`DELETE FROM operation_snapshots WHERE key = ${`maintenance:${target.id}`}`;
+                            const [request] = await transaction<
+                                { fresh: boolean }[]
+                            >`SELECT created_at >= clock_timestamp() - interval '5 minutes' AS fresh FROM job_runs WHERE id = ${context.runId}`;
+                            if (!request?.fresh)
+                                throw new Error("Restart confirmation expired");
                         }))
                     )
-                        throw new Error("Restart result ownership changed");
-                    await context.reportProgress(
-                        "Restart completed and health verified."
+                        throw new Error("Restart ownership changed");
+                };
+                await authorize();
+                const before = await probe(connection, recipe, "inspect", context.signal);
+                if (
+                    before.bootId !== input.expected.bootId ||
+                    before.active !== input.expected.active ||
+                    before.invocationId !== input.expected.invocationId ||
+                    (recipe.kind === "service" && before.invocationId === null)
+                )
+                    throw new Error("Restart target changed since confirmation");
+                context.signal.throwIfAborted();
+                await authorize();
+                if (
+                    requiredOnly &&
+                    (recipe.kind === "host"
+                        ? !before.rebootRequired
+                        : before.serviceRestartRequired !== true)
+                )
+                    throw new Error("The restart requirement is no longer confirmed.");
+                if (recipe.preflight) {
+                    await context.reportProgress("Checking restart prerequisites.");
+                    await probe(connection, recipe, "preflight", context.signal);
+                    await authorize();
+                }
+                await context.reportProgress(
+                    recipe.kind === "host"
+                        ? "Requesting the confirmed host restart. This request cannot be undone once accepted."
+                        : "Restarting the confirmed service."
+                );
+                let after: MaintenanceObservation | undefined;
+                try {
+                    after = await probe(
+                        connection,
+                        recipe,
+                        "restart",
+                        context.signal,
+                        input.expected,
+                        requiredOnly
                     );
-                },
+                } catch {
+                    context.signal.throwIfAborted();
+                }
+                const recovered = (current: MaintenanceObservation) =>
+                    current.health &&
+                    (recipe.kind === "host"
+                        ? current.bootId !== before.bootId
+                        : current.bootId === before.bootId &&
+                          current.active === "active" &&
+                          Boolean(current.invocationId) &&
+                          (recipe.service === "systemd-manager"
+                              ? current.serviceRestartRequired === false
+                              : current.invocationId !== before.invocationId));
+                if (
+                    !after ||
+                    !recovered(after) ||
+                    requiresNewSshConnection(recipe.service)
+                ) {
+                    await context.reportProgress(
+                        "Verifying recovery through a fresh host connection."
+                    );
+                    after = undefined;
+                    const until =
+                        Date.now() + (recipe.kind === "host" ? 520_000 : 80_000);
+                    while (!after && Date.now() < until) {
+                        await wait(context.signal);
+                        try {
+                            const current = await probe(
+                                connection,
+                                recipe,
+                                "verify",
+                                AbortSignal.any([
+                                    context.signal,
+                                    AbortSignal.timeout(40_000),
+                                ])
+                            );
+                            if (recovered(current)) after = current;
+                        } catch {
+                            context.signal.throwIfAborted();
+                        }
+                    }
+                }
+                if (!after?.health) throw new Error("Restart health verification failed");
+                const result = {
+                    label: recipe.label,
+                    operation:
+                        recipe.kind === "host" ? "host-restart" : "service-restart",
+                    installed: null,
+                    health: "passed",
+                    rebootRequired: after.rebootRequired,
+                    warnings: after.serviceRestartRequired
+                        ? [
+                              "The service is still reported as requiring a restart; inspect its dependencies.",
+                          ]
+                        : [],
+                };
+                if (
+                    !(await context.commit(async (transaction) => {
+                        await transaction`UPDATE job_runs SET results = ${JSON.stringify([result])}::text::jsonb WHERE id = ${context.runId}`;
+                        await recordRestartObservation(
+                            transaction,
+                            connection.source,
+                            connections.some(
+                                (other) =>
+                                    other.source === connection.source &&
+                                    other.host.toLowerCase() !==
+                                        connection.host.toLowerCase()
+                            )
+                                ? null
+                                : after.rebootRequired,
+                            await restartObservationTime(transaction)
+                        );
+                        await transaction`DELETE FROM operation_snapshots WHERE key = ${`maintenance:${recipe.reportedOn ?? recipe.id}`}`;
+                    }))
+                )
+                    throw new Error("Restart result ownership changed");
+                await context.reportProgress("Restart completed and health verified.");
             },
-        ];
-        return handlers.filter(
-            (handler) =>
-                target.workerIndependent ||
-                handler.definition.key.startsWith("maintenance.inspect.")
-        );
+        });
+        const handlers = [inspect];
+        if (target.workerIndependent) handlers.push(restart(false));
+        if (target.kind === "host" && target.restartReportedServices)
+            handlers.push(restart(true));
+        return handlers;
     });
 }

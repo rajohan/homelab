@@ -20,8 +20,11 @@ advisories are not cleared by these receipts.
 `HOMELAB_DASHBOARD_MAINTENANCE_TARGETS` is deployment-owned JSON, supplied identically
 to dashboard and worker. It defaults to `[]`; existing update consent never grants
 restart authority. The reviewed `apps/dashboard/config/maintenance-targets.homelab.json`
-catalog supplies this installation's hosts and native services; activate its exact JSON
-identically in both services through the deployment configuration. Each target refers to an existing update connection by ID. No SSH
+catalog supplies this installation's hosts and native services. Set
+`HOMELAB_DASHBOARD_MAINTENANCE_PROFILE=homelab` on both dashboard and worker to
+adopt its controller mappings and reported-service authority for matching recipes.
+The profile keeps local additions and health checks, and corrects the old PgBouncer
+probe to use its own port. Each target refers to an existing update connection by ID. No SSH
 key, new login, shell command from the browser, daemon, persistent helper or network
 route is provisioned by this feature.
 
@@ -69,7 +72,11 @@ or local code jobs must finish in either configuration.
 A transient unit on PVE performs one restart and records a receipt in
 `/var/lib/homelab-dashboard/restarts`. Success requires a changed identity and a
 passing health check. Lost acknowledgements are reconciled from that receipt.
-The hypervisor itself uses its external physical-console procedure.
+The physical PVE host has its own manually confirmed reboot. Its on-node receipt
+records which guests were running before submission. The controller checks for active
+PVE tasks, guest locks and persistent guest startup. After reconnecting, it verifies
+the new boot, PVE services, expected running guests and configured health before
+reporting success. A lost acknowledgement is reconciled without sending a second reboot.
 
 `lockConnections` optionally names additional existing update connections. A restart
 holds their source and host leases along with its own, so maintenance of redundant
@@ -79,15 +86,21 @@ the remote host immediately before mutation. Failure never requests the restart.
 The Homelab DNS recipes check the other node's real DNS response. Sentinel host
 restart also requires UPS mains power; PBS host/API restarts require no active tasks.
 
-The catalog covers 11 hosts and 58 services. Eight worker/database dependencies
-remain externally managed: Main/PVE/DB hosts, the Main worker/Docker/containerd,
-and PostgreSQL/PgBouncer. Their reason is visible in Restarts instead of silently
-omitting them. Mira executor, browser host, both browser network slots and mail tunnel have explicit service recipes. Docker applications keep their existing confirmed controls in
+The catalog covers 11 hosts plus explicitly configured service recipes. Main and DB,
+their critical services and the physical PVE node have independently verified restart
+paths. A host measurement also lists every service reported by Linux. Setting
+`restartReportedServices` on the host allows the worker to restart reported, active
+services with a verifiable identity. An existing service recipe retains its specific
+health check and execution path. Entries that require manual attention remain visible.
+Mira executor, browser host, both browser network slots and mail tunnel have explicit service recipes. Docker applications keep their existing confirmed controls in
 Applications. CLI tools, one-shot backup binaries and package managers have no
 long-running service to restart. Shared runtimes are covered by their consumers.
 
 Read-only checks observe the OS reboot flag, selected service state and, when
-available, the distribution's `needrestart -b -r l` service list. Missing inspection
+available, the distribution's `needrestart -b -r l` service list. On physical hosts
+and VMs, a reported kernel ABI or version change or obsolete microcode also marks
+the host as needing a reboot. Containers use their own reboot flag because they
+share the parent kernel. Missing inspection
 remains unknown. Plans expire after two minutes; an accepted queue request has a
 five-minute admission budget. Before mutation, the worker rechecks configuration,
 boot identity, service state and the systemd invocation ID. Each service activation
@@ -101,7 +114,15 @@ Status probes share the host lock with restarts and updates. A source spanning m
 than one host retains an unknown source-level restart requirement; each receipt
 still reports the individually verified host.
 
-Only a human with `maintenance:restart`, `jobs:run` and recent MFA may confirm.
+Only a human with `maintenance:restart`, `jobs:run` and recent MFA may confirm an
+individual restart or a batch. **Restart all services** takes a snapshot of required,
+dashboard-actionable services. Each service is rechecked and executed individually.
+Whole hosts always require their own manual confirmation. After a verified APT or
+native installation, a separate system-owned follow-up processes newly affected service
+instances once the update job has left the queue. It uses the same host permissions,
+identity checks, health probes and independent controllers. A cleared requirement is
+skipped. A failed verification stops further work on that host for the batch and
+generates an operator notification. An unavailable Linux measurement remains unknown.
 Automation tokens are refused even if assigned that capability. Each restart has
 one attempt, an audit history and ordinary job notifications. A host request may
 disconnect SSH; the worker only polls afterward and never resends the reboot.
@@ -111,7 +132,7 @@ worker loss can leave an unknown external outcome requiring inspection.
 
 ## Restart navigation
 
-Restart targets can be searched by host and service, with independent requirement
+Overview links to Restarts when a host or service needs attention. Restart targets can be searched by host and service, with independent requirement
 and restart-location filters. Host groups use the same canonical host identity as
 execution leases, with the reviewed host label (or inventory source if no host
 recipe exists). SSH addresses and trust-file paths are not sent to the browser.

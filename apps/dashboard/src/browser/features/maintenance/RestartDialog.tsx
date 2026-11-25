@@ -33,9 +33,9 @@ export function RestartDialog({
     );
     return (
         <ConfirmDialog
-            title={`Restart ${plan.label}?`}
+            title={`${plan.kind === "host" ? "Reboot" : "Restart"} ${plan.label}?`}
             description={plan.impact}
-            confirmLabel="Restart"
+            confirmLabel={plan.kind === "host" ? "Reboot host" : "Restart service"}
             variant="danger"
             onClose={onClose}
             onConfirm={async () => {
@@ -52,7 +52,7 @@ export function RestartDialog({
                     ? "The entire host will be unavailable until it boots again. Once the restart request is accepted, cancelling the job cannot undo it."
                     : "The selected service will be unavailable briefly. A stopped service will not be started by this action."}{" "}
                 {plan.proxmox
-                    ? "Active work drains first. Proxmox checks the guest identity and verifies recovery independently."
+                    ? "Active work drains first. Proxmox verifies the target and checks recovery independently."
                     : "The job verifies recovery before reporting success."}
             </p>
         </ConfirmDialog>

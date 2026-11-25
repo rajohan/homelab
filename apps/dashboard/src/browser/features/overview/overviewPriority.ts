@@ -1,5 +1,6 @@
 import { formatDateTime } from "@homelab/ui";
 
+import { incompleteRestart, restartWorkload } from "../maintenance/restartNavigation";
 import type { OverviewReadings } from "./useOverviewReadings";
 
 type Priority = {
@@ -115,13 +116,11 @@ export function overviewPriorities(r: OverviewReadings): Priority[] {
         if (source.restart?.required && !source.restart.stale)
             hostNames.set(source.id.toLowerCase(), source.label);
     }
-    const services = [];
-    for (const plan of r.restartPlans ?? []) {
-        if (plan.required !== true) continue;
-        if (plan.kind === "host")
-            hostNames.set(plan.host.label.toLowerCase(), plan.host.label);
-        else services.push(plan);
-    }
+    const plans = r.restartPlans ?? [];
+    const work = restartWorkload(plans);
+    for (const plan of work.reboots)
+        hostNames.set(plan.source.toLowerCase(), plan.host.label);
+    const services = [...work.eligible, ...work.manual, ...work.unavailable];
     if (hostNames.size > 0 || services.length > 0) {
         const affectedHosts = [
             ...new Set([
@@ -143,7 +142,15 @@ export function overviewPriorities(r: OverviewReadings): Priority[] {
         problems.push({
             tone: "warning",
             title: `${counts.join(" and ")} ${hostNames.size + services.length === 1 ? "needs" : "need"} a restart`,
-            detail: `Affected ${affectedHosts.length === 1 ? "host" : "hosts"}: ${names}.`,
+            detail: [
+                names,
+                work.eligible.length > 0 && `${work.eligible.length} in dashboard`,
+                work.manual.length > 0 &&
+                    `${work.manual.length} manual ${work.manual.length === 1 ? "service" : "services"}`,
+                work.incompleteHosts > 0 && "Some restart checks are incomplete",
+            ]
+                .filter(Boolean)
+                .join(" · "),
             to: "/updates",
             hash: "maintenance",
             action: "Review restarts",
@@ -208,10 +215,8 @@ export function overviewPriorities(r: OverviewReadings): Priority[] {
             },
         ];
     if (
-        !r.restartPlans ||
-        r.restartPlans.some(
-            (plan) => plan.active !== "inactive" && plan.required === null
-        ) ||
+        !r.restartPlans?.length ||
+        r.restartPlans.some(incompleteRestart) ||
         r.sources?.some(
             (source) =>
                 source.restart &&

@@ -55,6 +55,12 @@ export function maintenanceJob(retentionDays: number): JobHandler {
                         const audit = await transaction<
                             { id: string }[]
                         >`DELETE FROM operation_audit WHERE id IN (SELECT id FROM operation_audit WHERE created_at < now() - ${retentionDays} * interval '1 day' LIMIT 5000) RETURNING id`;
+                        const batches = await transaction<
+                            { key: string }[]
+                        >`DELETE FROM operation_snapshots WHERE key IN (
+                            SELECT key FROM operation_snapshots WHERE key LIKE 'maintenance.batch:%'
+                            AND value->>'phase' IN ('complete','attention')
+                            AND captured_at < now() - ${retentionDays} * interval '1 day' LIMIT 1000) RETURNING key`;
                         const incidents = await transaction<
                             { id: string }[]
                         >`DELETE FROM operational_incidents WHERE id IN (SELECT id FROM operational_incidents WHERE state = 'resolved' AND resolved_at < now() - ${retentionDays} * interval '1 day' ORDER BY id LIMIT 1000) RETURNING id`;
@@ -63,6 +69,7 @@ export function maintenanceJob(retentionDays: number): JobHandler {
                         >`DELETE FROM dashboard_notifications WHERE id IN (SELECT id FROM dashboard_notifications WHERE created_at < now() - ${retentionDays} * interval '1 day' ORDER BY id LIMIT 1000) RETURNING id`;
                         more =
                             jobs.length === 1000 ||
+                            batches.length === 1000 ||
                             audit.length === 5000 ||
                             incidents.length === 1000 ||
                             rows.length === 1000;

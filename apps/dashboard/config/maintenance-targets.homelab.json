@@ -5,6 +5,7 @@
         "label": "Main",
         "impact": "Dashboard, worker, media applications, Mira and local web tools will be unavailable until Main returns.",
         "kind": "host",
+        "restartReportedServices": true,
         "health": [
             "/usr/bin/curl",
             "--fail",
@@ -22,10 +23,12 @@
     },
     {
         "id": "pve-host",
+        "physicalNode": true,
         "connection": "pve-apt",
         "label": "PVE",
         "impact": "All hosted virtual machines and containers will be unavailable, including Main, the database, Auth, monitoring and application hosts.",
         "kind": "host",
+        "restartReportedServices": true,
         "health": ["/usr/bin/systemctl", "is-active", "pve-cluster.service"],
         "workerIndependent": false,
         "externalReason": "Restart from the physical or Proxmox console after an orderly guest shutdown. This hypervisor runs the worker and database VMs."
@@ -36,6 +39,7 @@
         "label": "DB",
         "impact": "PostgreSQL, connection pooling and pgAdmin will be unavailable. Applications using the database, including Auth and dashboard jobs, will be interrupted.",
         "kind": "host",
+        "restartReportedServices": true,
         "health": ["/usr/bin/pg_isready", "-h", "127.0.0.1", "-p", "5432"],
         "proxmox": { "connection": "pve-apt", "vmid": 106 },
         "workerIndependent": false,
@@ -47,6 +51,7 @@
         "label": "Adguard",
         "impact": "The primary DNS node and configuration sync will be unavailable. Sentinel must answer DNS before this restart; DNS maintenance is serialized across both nodes.",
         "kind": "host",
+        "restartReportedServices": true,
         "health": [
             "/usr/bin/python3",
             "-c",
@@ -66,6 +71,7 @@
         "label": "Sentinel",
         "impact": "Backup DNS, UPS status and Sentinel remote access will be unavailable. Adguard must answer DNS and the UPS must be on mains power before restart.",
         "kind": "host",
+        "restartReportedServices": true,
         "health": [
             "/usr/bin/python3",
             "-c",
@@ -85,6 +91,7 @@
         "label": "PBS",
         "impact": "Backup APIs and scheduled backups will be unavailable. Restart is refused while PBS reports active tasks.",
         "kind": "host",
+        "restartReportedServices": true,
         "health": [
             "/usr/bin/curl",
             "--fail",
@@ -111,6 +118,7 @@
         "label": "Mesh",
         "impact": "Meshnet and VPN access through this host will disconnect until it returns. The dashboard worker uses a separate LAN connection.",
         "kind": "host",
+        "restartReportedServices": true,
         "health": ["/usr/bin/systemctl", "is-active", "nordvpnd.service"],
         "workerIndependent": true
     },
@@ -120,6 +128,7 @@
         "label": "Monitor",
         "impact": "Metrics, logs, Grafana and alert delivery will be unavailable. Dashboard monitoring panels may show temporary collection failures.",
         "kind": "host",
+        "restartReportedServices": true,
         "health": [
             "/usr/bin/python3",
             "-c",
@@ -133,6 +142,7 @@
         "label": "Edge",
         "impact": "Auth, public application routing and new sign-ins will be unavailable until Edge returns. The worker and database remain running.",
         "kind": "host",
+        "restartReportedServices": true,
         "health": [
             "/usr/bin/python3",
             "-c",
@@ -146,6 +156,7 @@
         "label": "NAS",
         "impact": "SMB shares and active file transfers will disconnect. Finish file writes before confirming this restart.",
         "kind": "host",
+        "restartReportedServices": true,
         "health": ["/usr/bin/smbcontrol", "smbd", "ping"],
         "workerIndependent": true
     },
@@ -155,6 +166,7 @@
         "label": "Nextcloud",
         "impact": "Nextcloud, PHP, web serving and its cache will be unavailable. Active uploads and synchronization may be interrupted.",
         "kind": "host",
+        "restartReportedServices": true,
         "health": [
             "/usr/bin/python3",
             "-c",
@@ -1182,7 +1194,7 @@
         "label": "Database connection pool",
         "impact": "Clients using the database connection pool will briefly disconnect.",
         "kind": "service",
-        "health": ["/usr/bin/pg_isready", "-h", "127.0.0.1", "-p", "5432"],
+        "health": ["/usr/bin/pg_isready", "-h", "10.77.60.2", "-p", "6432"],
         "proxmox": { "connection": "pve-apt", "vmid": 106 },
         "workerIndependent": false,
         "service": "homelab-pgbouncer.service",

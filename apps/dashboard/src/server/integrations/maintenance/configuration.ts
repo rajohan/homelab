@@ -8,6 +8,8 @@ const targetSchema = v.strictObject({
     label: v.pipe(v.string(), v.minLength(1), v.maxLength(100)),
     impact: v.pipe(v.string(), v.minLength(1), v.maxLength(500)),
     kind: v.picklist(["service", "host"]),
+    restartReportedServices: v.optional(v.boolean()),
+    physicalNode: v.optional(v.literal(true)),
     service: v.optional(
         v.pipe(v.string(), v.regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]{0,150}\.service$/))
     ),
@@ -38,7 +40,10 @@ const targetSchema = v.strictObject({
         )
     ),
 });
-export type MaintenanceTarget = v.InferOutput<typeof targetSchema>;
+export type MaintenanceTarget = v.InferOutput<typeof targetSchema> & {
+    /** Host recipe authorizing this observed service. Never supplied by a browser. */
+    reportedOn?: string;
+};
 
 /**
  * Validate explicitly reviewed restart authority; no existing update target gains it implicitly.
@@ -60,6 +65,9 @@ export function parseMaintenanceTargets(
         if (
             !connections.some((connection) => connection.id === target.connection) ||
             (target.kind === "service") !== Boolean(target.service) ||
+            (target.restartReportedServices !== undefined && target.kind !== "host") ||
+            (target.physicalNode &&
+                (target.kind !== "host" || target.workerIndependent || target.proxmox)) ||
             !target.health[0]?.startsWith("/") ||
             target.health.some((argument) => argument.includes("\0")) ||
             (target.proxmox &&

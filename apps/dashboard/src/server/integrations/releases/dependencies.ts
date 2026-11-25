@@ -7,6 +7,9 @@ import type { SQL } from "bun";
 import * as v from "valibot";
 
 import information from "../../../../../../package.json";
+import { enqueueJob, lockQueue } from "../../jobs/queue";
+import type { JobDefinition } from "../../jobs/types";
+import { OperationFailure } from "../../operations/errors";
 import { readBoundedJson } from "../http/readJson";
 import { githubReleaseRequest } from "../updates/github";
 
@@ -78,6 +81,22 @@ function sourceUrl(source: Dependency["source"]): string {
         return `https://www.nuget.org/packages/${source.package}`;
     return "https://www.npmjs.com/package/bun?activeTab=versions";
 }
+
+function pinnedRow(dependency: Dependency) {
+    return {
+        id: dependency.id,
+        name: dependency.name,
+        pinned: dependency.version,
+        url: sourceUrl(dependency.source),
+    };
+}
+
+/** Show the deployed pins while their first compatible observation is pending. */
+export const pendingBuildDependencies = dependencies.map((dependency) => ({
+    ...pinnedRow(dependency),
+    available: null,
+    status: "unknown" as const,
+}));
 
 async function latest(
     dependency: Dependency,
@@ -171,12 +190,7 @@ export async function readBuildDependencies(
 ) {
     const items = await Promise.all(
         dependencies.map(async (dependency) => {
-            const row = {
-                id: dependency.id,
-                name: dependency.name,
-                pinned: dependency.version,
-                url: sourceUrl(dependency.source),
-            };
+            const row = pinnedRow(dependency);
             try {
                 const available = await latest(
                     dependency,
@@ -217,4 +231,63 @@ export async function buildDependencySnapshot(client: SQL) {
         ORDER BY id DESC LIMIT 1`;
     if (snapshot && lastCheck && lastCheck.state !== "succeeded") snapshot.fresh = false;
     return snapshot?.value.fingerprint === fingerprint ? snapshot : null;
+}
+
+/**
+ * Admit a normal source check when this worker has no usable manifest observation.
+ * @param client - The worker's operations database.
+ * @param definition - The registered source dependency job.
+ * @param startup - Refresh an already complete but aged snapshot when the worker starts.
+ * @returns Whether startup reconciliation can yield to the operator's configured cadence.
+ */
+export async function queuePendingBuildDependencyCheck(
+    client: SQL,
+    definition: JobDefinition,
+    startup: boolean
+): Promise<boolean> {
+    return client.begin(async (transaction) => {
+        await lockQueue(transaction);
+        const [schedule] = await transaction<
+            { id: string }[]
+        >`SELECT id FROM job_schedules
+            WHERE action = ${definition.key} AND enabled
+            AND NOT EXISTS (SELECT 1 FROM worker_control WHERE id = 1 AND paused)
+            AND NOT EXISTS (SELECT 1 FROM job_runs WHERE action = ${definition.key} AND state IN ('queued', 'running'))`;
+        if (!schedule) return false;
+        const [snapshot] = await transaction<
+            { fresh: boolean; partial: boolean }[]
+        >`SELECT
+            captured_at > now() - interval '2 hours' AS fresh,
+            value->'items' @> '[{"status":"unknown"}]'::jsonb AS partial
+            FROM operation_snapshots WHERE key = ${definition.key} AND value->>'fingerprint' = ${fingerprint}`;
+        const [last] = await transaction<
+            { id: string; state: string; key: string; recent: boolean }[]
+        >`SELECT
+            id, state, idempotency_key AS key, finished_at > now() - interval '5 minutes' AS recent
+            FROM job_runs WHERE action = ${definition.key} ORDER BY id DESC LIMIT 1`;
+        if (
+            snapshot &&
+            (!startup || snapshot.fresh) &&
+            !snapshot.partial &&
+            (!last || last.state === "succeeded")
+        )
+            return true;
+        const prefix = `dependency-refresh:${fingerprint}:`;
+        if (last?.recent && (snapshot || last.key.startsWith(prefix))) return false;
+        try {
+            await enqueueJob(
+                transaction,
+                definition,
+                "system:scheduler",
+                prefix + (last?.id ?? "initial")
+            );
+            return true;
+        } catch (error) {
+            if (
+                !(error instanceof OperationFailure && error.code === "TOO_MANY_REQUESTS")
+            )
+                throw error;
+            return false;
+        }
+    });
 }

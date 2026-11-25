@@ -36,10 +36,8 @@ import {
 } from "../integrations/applications/configuration";
 import type { BackupCatalogConfiguration } from "../integrations/backups/catalog";
 import type { LogsConfiguration } from "../integrations/logs/transport";
-import {
-    type MaintenanceTarget,
-    parseMaintenanceTargets,
-} from "../integrations/maintenance/configuration";
+import { type MaintenanceTarget } from "../integrations/maintenance/configuration";
+import { deploymentMaintenanceTargets } from "../integrations/maintenance/profile";
 import {
     parseReleaseDeploymentTargets,
     type ReleaseDeploymentTarget,
@@ -295,9 +293,10 @@ export function parseOperationsConfiguration(
         githubBinding: githubBinding(environment),
         daytonaBinding: daytonaBinding(environment),
         localCodeBinding: localCodeEnvironment(environment),
-        maintenanceTargets: parseMaintenanceTargets(
+        maintenanceTargets: deploymentMaintenanceTargets(
             environment.HOMELAB_DASHBOARD_MAINTENANCE_TARGETS,
-            updateTargets
+            updateTargets,
+            environment.HOMELAB_DASHBOARD_MAINTENANCE_PROFILE
         ),
         releaseRepository: releaseRepository(
             environment.HOMELAB_DASHBOARD_RELEASE_REPOSITORY
