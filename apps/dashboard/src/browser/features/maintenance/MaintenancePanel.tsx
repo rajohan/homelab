@@ -63,8 +63,6 @@ export function MaintenancePanel() {
     const [requirement, setRequirement] = useState<RequirementFilter>("attention");
     const [location, setLocation] = useState<RestartLocationFilter>("all");
     const incomplete = workload.incompleteHosts;
-    const showingIncomplete =
-        requirement === "unknown" && !search.trim() && location === "all";
     const groups = restartGroups(plans, search, requirement, location);
     const refresh = useJobOperation(
         (input: { action: string; requestId: string }, signal) =>
@@ -116,18 +114,6 @@ export function MaintenancePanel() {
                                         ? "Service restart in dashboard"
                                         : "Service restarts in dashboard",
                                 value: workload.dashboard.length,
-                                detail:
-                                    workload.dashboard.length === workload.eligible.length
-                                        ? ""
-                                        : [
-                                              `${workload.eligible.length} ready`,
-                                              workload.awaiting.length > 0 &&
-                                                  `${workload.awaiting.length} awaiting a fresh check`,
-                                              workload.unavailable.length > 0 &&
-                                                  `${workload.unavailable.length} unavailable`,
-                                          ]
-                                              .filter(Boolean)
-                                              .join(" · "),
                             },
                             {
                                 label:
@@ -152,28 +138,6 @@ export function MaintenancePanel() {
                                         : "Hosts with incomplete checks",
                                 value: incomplete.length,
                                 attention: incomplete.length > 0,
-                                detail:
-                                    incomplete.slice(0, 3).join(", ") +
-                                    (incomplete.length > 3
-                                        ? ` +${incomplete.length - 3} more`
-                                        : ""),
-                                ...(incomplete.length > 0 || showingIncomplete
-                                    ? {
-                                          toggle: {
-                                              label: "Show hosts with incomplete restart checks",
-                                              pressed: showingIncomplete,
-                                              onClick: () => {
-                                                  setSearch("");
-                                                  setLocation("all");
-                                                  setRequirement(
-                                                      showingIncomplete
-                                                          ? "attention"
-                                                          : "unknown"
-                                                  );
-                                              },
-                                          },
-                                      }
-                                    : {}),
                             },
                         ]}
                     />

@@ -42,6 +42,7 @@
         .bg-surface-card
         :where(.bg-surface-card, .bg-surface-empty) {
         --card-fill: color-mix(in srgb, var(--homelab-raised) 88%, var(--homelab-muted));
+        --scrollbar-thumb: var(--homelab-muted);
     }
 
     :where(.bg-surface-panel, .bg-surface-card)
@@ -52,6 +53,11 @@
     }
 
     :root {
+        --scrollbar-thumb: color-mix(
+            in srgb,
+            theme("colors.primary.500") 92%,
+            var(--homelab-muted)
+        );
         color-scheme: dark;
         font-family:
             Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
@@ -78,27 +84,40 @@
         min-height: 100dvh;
     }
 
-    * {
-        scrollbar-color: theme("colors.primary.500") theme("colors.primary.900");
-        scrollbar-width: thin;
-    }
+    @media (forced-colors: none) {
+        /* Chromium's standard scrollbar properties override its scrollbar part styles. */
+        @supports not selector(::-webkit-scrollbar) {
+            * {
+                scrollbar-color: var(--scrollbar-thumb) transparent;
+                scrollbar-width: thin;
+            }
+        }
 
-    ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-    }
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+            background: transparent;
+        }
 
-    ::-webkit-scrollbar-track {
-        background: theme("colors.primary.900");
-    }
+        ::-webkit-scrollbar-track,
+        ::-webkit-scrollbar-corner {
+            background: transparent;
+        }
 
-    ::-webkit-scrollbar-thumb {
-        background: theme("colors.primary.500");
-        border-radius: 4px;
-    }
+        ::-webkit-scrollbar-button {
+            display: none;
+            width: 0;
+            height: 0;
+        }
 
-    ::-webkit-scrollbar-thumb:hover {
-        background: theme("colors.primary.400");
+        ::-webkit-scrollbar-thumb {
+            background: var(--scrollbar-thumb);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: theme("colors.primary.200");
+        }
     }
 
     :where(
