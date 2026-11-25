@@ -623,8 +623,7 @@ the paired companion reconnects before accepting a new request and local selecti
 The new connection invalidates the old grant even if its best-effort stop message
 was lost; it never resumes old consent or replays the failed read.
 Unconfirmed cleanup and interrupted input remain terminal. A later manual Chat
-request can wait for fresh consent after an older retained grant stopped; an
-explicit Stop during the current run still stops that run's computer access.
+request can ask for fresh consent after an earlier run's grant ends. A decline or Stop in the current run suppresses another automatic invitation for that run. Accepted follow-up messages update the preferred computer for a new invitation. Existing retained consent keeps its original device and scope.
 For applications that launch a separate game window, select the new window or
 explicitly share all displays. Continuous coaching also requires **Live
 computer assistance** in Chat settings; retaining a grant alone does not enable it.

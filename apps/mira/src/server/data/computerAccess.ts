@@ -17,6 +17,7 @@ import {
     requireComputerDevice as device,
 } from "./computerAuthority";
 import { retireComputerCommands } from "./computerCommands";
+import { runComputerGrant } from "./computerWait";
 import { auditMira, type MiraContext, MiraFailure } from "./context";
 
 function human(context: MiraContext) {
@@ -74,18 +75,22 @@ export async function inviteMiraComputer(context: MiraContext, mode: "view" | "c
         throw new MiraFailure("FORBIDDEN", "Computer invitations require a manual run.");
     return context.client.begin(async (query) => {
         await lockOwner(query, context.owner);
-        const [origin] = await query<{ chat: string; device: string | null }[]>`
-            SELECT conversation_id AS chat, source_computer AS device FROM mira_runs
+        const [origin] = await query<{ device: string | null }[]>`
+            SELECT source_computer AS device FROM mira_runs
             WHERE id=${run.id} AND owner=${context.owner} AND manual AND automation_id IS NULL AND state='running'
-            AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() FOR SHARE`;
+            AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() FOR UPDATE`;
         if (!origin)
             throw new MiraFailure("CONFLICT", "This computer request has ended.");
-        // A previous request (including a refusal, timeout or stop) must never
-        // prompt again from retries, a second tool call or another reply in this chat.
-        const [past] = await query<{ id: string }[]>`
-            SELECT g.id FROM mira_computer_access g JOIN mira_runs r ON r.id=g.run_id
-            WHERE g.owner=${context.owner} AND r.conversation_id=${origin.chat} LIMIT 1`;
-        if (past) return "existing" as const;
+        if (await runComputerGrant(query, context.owner, run)) return "existing" as const;
+        // A tool call can arrive before the provider has acknowledged its new message.
+        const [routing] = await query<{ id: string }[]>`SELECT id FROM mira_chat_inputs
+            WHERE run_id=${run.id} AND owner=${context.owner} AND state=\'sending\' AND lease_token=${run.leaseToken}
+            AND source_computer IS DISTINCT FROM ${origin.device}::text LIMIT 1`;
+        if (routing)
+            throw new MiraFailure(
+                "CONFLICT",
+                "The latest message is still being delivered. Retry the computer request after delivery."
+            );
         const pcs = await query<{ id: string; version: number; compatible: boolean }[]>`
             SELECT id,version,(platform='win32' AND companion_version=${version}) AS compatible FROM mira_computers
             WHERE owner=${context.owner} AND state='paired' AND expires_at>clock_timestamp() AND connection_expires_at>clock_timestamp()

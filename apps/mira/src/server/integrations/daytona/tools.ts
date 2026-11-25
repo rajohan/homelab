@@ -10,6 +10,7 @@ import * as v from "valibot";
 import { type MiraContext, MiraFailure } from "../../data/context";
 import { listMiraDaytona, readMiraDaytona, saveMiraDaytona } from "../../data/daytona";
 import type { MiraClaim } from "../../data/queue";
+import { isMiraReportRun } from "../../data/reportAccess";
 import type { RuntimeTool } from "../../runtime/protocol";
 import type { CodeJobBinding } from "../../sandbox/localBinding";
 import {
@@ -52,6 +53,7 @@ export function createDaytonaTools(
         {
             name: "mira_code_executions",
             automatic: true,
+            readOnly: isMiraReportRun(run),
             description:
                 "List recorded code jobs for this conversation. Pass nextCursor as before to read older jobs. No provider call or execution. A completed command and confirmed sandbox cleanup are separate; never claim both unless recorded.",
             inputSchema: {
@@ -90,6 +92,7 @@ export function createDaytonaTools(
         {
             name: "mira_code_result",
             automatic: true,
+            readOnly: isMiraReportRun(run),
             description:
                 "Read the exact saved code operation and its outcome in this conversation, including bounded logs and attached result IDs. This does not rerun code. A completed command and confirmed cleanup are separate facts; report both only when recorded.",
             inputSchema: {

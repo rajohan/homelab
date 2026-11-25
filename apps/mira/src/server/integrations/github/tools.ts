@@ -6,6 +6,7 @@ import * as v from "valibot";
 import { listMiraCode, saveMiraCode } from "../../data/code";
 import { type MiraContext, MiraFailure } from "../../data/context";
 import type { MiraClaim } from "../../data/queue";
+import { isMiraReportRun } from "../../data/reportAccess";
 import type { RuntimeTool } from "../../runtime/protocol";
 import type { GitHubBinding } from "./configuration";
 
@@ -33,6 +34,7 @@ export function createGitHubTools(
         {
             name: "mira_github_publications",
             automatic: true,
+            readOnly: isMiraReportRun(run),
             description:
                 "Read GitHub publication outcomes for this conversation. Pass nextCursor as before for older entries. A confirmed PR is not merged or deployed. An uncertain result is never permission to resubmit.",
             inputSchema: {

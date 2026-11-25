@@ -154,12 +154,23 @@ export async function acknowledgeChatSteering(
     accepted: boolean
 ) {
     return client.begin(async (query) => {
-        const rows = await query<
+        const [live] = await query<
             { id: string }[]
-        >`UPDATE mira_chat_inputs i SET state=${accepted ? "delivered" : "pending"},lease_token=NULL WHERE i.id=${id} AND i.owner=${run.owner} AND i.run_id=${run.id} AND i.state='sending' AND i.lease_token=${run.leaseToken} AND EXISTS(SELECT 1 FROM mira_runs r WHERE r.id=i.run_id AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=${run.leaseToken} AND r.lease_expires_at>clock_timestamp()) RETURNING i.id`;
-        if (rows.length === 0) return false;
-        if (accepted)
+        >`SELECT id FROM mira_runs WHERE id=${run.id} AND owner=${run.owner}
+            AND state='running' AND NOT cancel_requested AND lease_token=${run.leaseToken}
+            AND lease_expires_at>clock_timestamp() FOR UPDATE`;
+        if (!live) return false;
+        const [input] = await query<
+            { sourceComputer: string | null }[]
+        >`UPDATE mira_chat_inputs
+            SET state=${accepted ? "delivered" : "pending"},lease_token=NULL
+            WHERE id=${id} AND owner=${run.owner} AND run_id=${run.id} AND state='sending' AND lease_token=${run.leaseToken}
+            RETURNING source_computer AS "sourceComputer"`;
+        if (!input) return false;
+        if (accepted) {
+            await query`UPDATE mira_runs SET source_computer=${input.sourceComputer} WHERE id=${run.id}`;
             await query`UPDATE mira_messages SET state='completed' WHERE id=${id} AND conversation_id=${run.conversationId}`;
+        }
         return true;
     });
 }

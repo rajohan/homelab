@@ -21,6 +21,7 @@ import {
     saveMiraDelta,
 } from "../data/queue";
 import { readMiraRecallContext, readMiraRecallPolicy } from "../data/recall";
+import { isMiraReportRun } from "../data/reportAccess";
 import { listMiraSkills, miraSkillsRepositoryOnly } from "../data/skills";
 import { acknowledgeTaskSteering, readTaskSteering } from "../data/taskSteering";
 import type { AgentMailReadConfiguration } from "../integrations/agentmail/configuration";
@@ -217,6 +218,7 @@ export async function executeMiraTurn(
         const automaticModel = config.model;
         const chatSearch = run.manual && !run.automationId && !run.taskId;
         const nativeImages = chatSearch && Boolean(filesDirectory);
+        const webSearch = chatSearch || isMiraReportRun(run);
         const skillContext = {
             client,
             owner: run.owner,
@@ -240,7 +242,8 @@ export async function executeMiraTurn(
             },
             chatSearch,
             nativeSkills,
-            nativeImages
+            nativeImages,
+            webSearch
         );
         const verified = await inspectChatgpt(runtime, false);
         if (verified.status.state !== "connected") {
@@ -289,7 +292,7 @@ export async function executeMiraTurn(
             .update(miraSkillCatalogHash)
             .update(JSON.stringify(nativeSkills))
             .update(
-                `native-images:${nativeImages}:sleep:${chatSearch}:read-only-reviewers:1`
+                `native-images:${nativeImages}:web-search:${webSearch}:sleep:${chatSearch}:read-only-reviewers:1`
             )
             .digest("hex");
 

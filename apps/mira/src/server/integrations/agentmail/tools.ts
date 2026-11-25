@@ -8,6 +8,7 @@ import { saveMiraFile } from "../../data/files";
 import { agentMailReceiverCurrent } from "../../data/integrations";
 import { saveMiraMail } from "../../data/mail";
 import type { MiraClaim } from "../../data/queue";
+import { isMiraReportRun } from "../../data/reportAccess";
 import type { RuntimeTool } from "../../runtime/protocol";
 import { agentMailBindingHash, type AgentMailReadConfiguration } from "./configuration";
 import { AgentMailReader } from "./reader";
@@ -262,6 +263,7 @@ export function createAgentMailTools(
                 additionalProperties: false,
             },
             automatic: true,
+            readOnly: isMiraReportRun(run),
             action: async (input, signal) => {
                 const parsed = v.parse(
                     v.strictObject({
@@ -312,6 +314,7 @@ export function createAgentMailTools(
                 additionalProperties: false,
             },
             automatic: true,
+            readOnly: isMiraReportRun(run),
             action: async (input, signal) => {
                 const parsed = v.parse(
                     v.strictObject({ messageId: agentMailIdSchema }),

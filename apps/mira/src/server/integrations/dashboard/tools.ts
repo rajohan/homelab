@@ -8,6 +8,7 @@ import * as v from "valibot";
 import { miraManualRunAllowed } from "../../data/approvalPolicy";
 import { MiraFailure } from "../../data/context";
 import type { MiraClaim } from "../../data/queue";
+import { isMiraReportRun, miraReportRunAllowed } from "../../data/reportAccess";
 import type { MiraToolContext, MiraToolDefinition } from "../../executor/toolDefinition";
 import { dashboardActions, dashboardReads } from "./catalog";
 import { type MiraDashboardConfiguration, requestDashboard } from "./connection";
@@ -84,17 +85,27 @@ function portion(result: unknown, path: readonly string[], offset: number) {
     return { data: selected };
 }
 
-async function checkRun(context: MiraToolContext, signal: AbortSignal) {
+async function checkRun(
+    context: MiraToolContext,
+    signal: AbortSignal,
+    report?: MiraClaim
+) {
     signal.throwIfAborted();
-    if (!(await miraManualRunAllowed(context.client, context)))
+    const allowed = report
+        ? context.owner === report.owner &&
+          context.actor === `mira:${report.id}` &&
+          context.run?.leaseToken === report.leaseToken &&
+          (await miraReportRunAllowed(context.client, report))
+        : await miraManualRunAllowed(context.client, context);
+    if (!allowed)
         throw new MiraFailure(
             "FORBIDDEN",
-            "This chat no longer has access to the dashboard."
+            "This run no longer has access to the dashboard."
         );
     signal.throwIfAborted();
 }
 
-/** Expose the operational dashboard API to its configured owner's manual chats and tasks.
+/** Expose the operational dashboard API to its configured owner's manual work and read-only reports.
  * @param run - Durable claim selected by the executor, independent of tool arguments.
  * @param connection - Explicit per-owner machine credential with live dashboard grants.
  * @param request - HTTP transport, replaceable for isolated verification.
@@ -105,7 +116,11 @@ export function createMiraDashboardTools(
     connection?: MiraDashboardConfiguration,
     request: typeof fetch = fetch
 ): MiraToolDefinition[] {
-    if (!run.manual || run.automationId || run.taskAssessment || run.calendarEventId)
+    const report = isMiraReportRun(run) ? run : undefined;
+    if (
+        !report &&
+        (!run.manual || run.automationId || run.taskAssessment || run.calendarEventId)
+    )
         return [];
     const bound = connection?.owner === run.owner ? connection : undefined;
     const access: MiraToolDefinition = {
@@ -114,18 +129,18 @@ export function createMiraDashboardTools(
             "Discover this chat's operational dashboard views and actions with their current permissions and argument formats. Task, calendar and other dedicated Mira tools are listed separately.",
         inputSchema: object({}),
         readOnly: true,
-        automatic: false,
+        automatic: !!report,
         action: async (input, signal, context) => {
             v.parse(v.strictObject({}), input);
-            await checkRun(context, signal);
+            await checkRun(context, signal, report);
             if (!bound)
                 return {
                     configured: false,
                     reads: [],
                     actions: [],
-                    operatorOnly,
+                    operatorOnly: report ? [] : operatorOnly,
                     message:
-                        "A dashboard automation account has not been connected for this owner. Recorded incidents and jobs remain available via mira_dashboard_state.",
+                        "A dashboard automation account has not been connected for this owner. Use mira_dashboard_state for stored host, installed-version, backup, incident and job observations.",
                 };
             const raw = await requestDashboard(
                 bound,
@@ -155,70 +170,72 @@ export function createMiraDashboardTools(
                         name,
                         arguments: entry.arguments ?? "none",
                     }));
-            await checkRun(context, signal);
+            await checkRun(context, signal, report);
             return {
                 configured: true,
                 reads: granted(dashboardReads),
-                actions: granted(dashboardActions),
-                operatorOnly,
+                actions: report ? [] : granted(dashboardActions),
+                operatorOnly: report ? [] : operatorOnly,
             };
         },
     };
     if (!bound) return [access];
+    const read: MiraToolDefinition = {
+        name: "mira_dashboard_read",
+        description:
+            "Read a dashboard view using the arguments from mira_dashboard_access. For large results follow fields with path (string keys or array indices) and use nextOffset for the next page of an array. Normal source pagination uses its own cursor.",
+        inputSchema: object(
+            {
+                view: { enum: readNames },
+                arguments: argumentsField,
+                path: { type: "array", items: { type: "string" }, maxItems: 12 },
+                offset: { type: "integer", minimum: 0 },
+            },
+            ["view"]
+        ),
+        readOnly: true,
+        automatic: !!report,
+        action: async (input, signal, context) => {
+            const args = v.parse(
+                v.strictObject({
+                    view: v.picklist(readNames),
+                    arguments: fields,
+                    path: v.optional(pathSchema, []),
+                    offset: v.optional(
+                        v.pipe(
+                            v.number(),
+                            v.integer(),
+                            v.minValue(0),
+                            v.maxValue(2_097_152)
+                        ),
+                        0
+                    ),
+                }),
+                input
+            );
+            const entry = dashboardReads[args.view];
+            const hasArguments = Object.keys(args.arguments ?? {}).length > 0;
+            if (!("arguments" in entry) && hasArguments)
+                throw new MiraFailure("BAD_REQUEST", "This view takes no arguments.");
+            await checkRun(context, signal, report);
+            const defaultArguments =
+                "arguments" in entry && !("optionalInput" in entry) ? {} : undefined;
+            const result = await requestDashboard(
+                bound,
+                entry.route,
+                false,
+                hasArguments ? args.arguments : defaultArguments,
+                signal,
+                request
+            );
+            await checkRun(context, signal, report);
+            return portion(result, args.path, args.offset);
+        },
+    };
+    if (report) return [access, read];
     return [
         access,
-        {
-            name: "mira_dashboard_read",
-            description:
-                "Read a dashboard view using the arguments from mira_dashboard_access. For large results follow fields with path (string keys or array indices) and use nextOffset for the next page of an array. Normal source pagination uses its own cursor.",
-            inputSchema: object(
-                {
-                    view: { enum: readNames },
-                    arguments: argumentsField,
-                    path: { type: "array", items: { type: "string" }, maxItems: 12 },
-                    offset: { type: "integer", minimum: 0 },
-                },
-                ["view"]
-            ),
-            readOnly: true,
-            automatic: false,
-            action: async (input, signal, context) => {
-                const args = v.parse(
-                    v.strictObject({
-                        view: v.picklist(readNames),
-                        arguments: fields,
-                        path: v.optional(pathSchema, []),
-                        offset: v.optional(
-                            v.pipe(
-                                v.number(),
-                                v.integer(),
-                                v.minValue(0),
-                                v.maxValue(2_097_152)
-                            ),
-                            0
-                        ),
-                    }),
-                    input
-                );
-                const entry = dashboardReads[args.view];
-                const hasArguments = Object.keys(args.arguments ?? {}).length > 0;
-                if (!("arguments" in entry) && hasArguments)
-                    throw new MiraFailure("BAD_REQUEST", "This view takes no arguments.");
-                await checkRun(context, signal);
-                const defaultArguments =
-                    "arguments" in entry && !("optionalInput" in entry) ? {} : undefined;
-                const result = await requestDashboard(
-                    bound,
-                    entry.route,
-                    false,
-                    hasArguments ? args.arguments : defaultArguments,
-                    signal,
-                    request
-                );
-                await checkRun(context, signal);
-                return portion(result, args.path, args.offset);
-            },
-        },
+        read,
         {
             name: "mira_dashboard_request",
             description:
