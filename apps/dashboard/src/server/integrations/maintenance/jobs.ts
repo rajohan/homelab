@@ -343,23 +343,34 @@ export function maintenanceJobs(
                     if (error instanceof MaintenanceRefused) return refuse(error.message);
                     context.signal.throwIfAborted();
                 }
-                const recovered = (current: MaintenanceObservation) =>
-                    current.health &&
-                    (recipe.kind === "host"
-                        ? current.bootId !== before.bootId
-                        : current.bootId === before.bootId &&
-                          current.active === "active" &&
-                          Boolean(current.invocationId) &&
-                          (recipe.service === "systemd-manager"
-                              ? current.serviceRestartRequired === false
-                              : current.invocationId !== before.invocationId));
+                let needsClearReport =
+                    requiredOnly ||
+                    input.expected.serviceRestartRequired === true ||
+                    recipe.service === "systemd-manager";
+                const recovered = (current: MaintenanceObservation) => {
+                    if (recipe.kind === "host")
+                        return current.health && current.bootId !== before.bootId;
+                    // Once Linux flags this service, only a measured clear report can release the batch.
+                    needsClearReport ||= current.serviceRestartRequired === true;
+                    return (
+                        current.health &&
+                        current.bootId === before.bootId &&
+                        current.active === "active" &&
+                        Boolean(current.invocationId) &&
+                        (recipe.service === "systemd-manager" ||
+                            current.invocationId !== before.invocationId) &&
+                        (!needsClearReport || current.serviceRestartRequired === false)
+                    );
+                };
                 if (
                     !after ||
                     !recovered(after) ||
                     requiresNewSshConnection(recipe.service)
                 ) {
                     await context.reportProgress(
-                        "Verifying recovery through a fresh host connection."
+                        recipe.kind === "service" && needsClearReport
+                            ? "Checking service health and waiting for Linux to clear the restart requirement."
+                            : "Verifying recovery through a fresh host connection."
                     );
                     after = undefined;
                     const until =
@@ -387,7 +398,12 @@ export function maintenanceJobs(
                         }
                     }
                 }
-                if (!after?.health) throw new Error("Restart health verification failed");
+                if (!after?.health)
+                    throw new Error(
+                        recipe.kind === "service" && needsClearReport
+                            ? "The service did not pass both its health check and a fresh restart requirement check in time."
+                            : "Restart health verification failed"
+                    );
                 const { fleet, ...verified } = after;
                 const result = {
                     label: recipe.label,
@@ -396,11 +412,7 @@ export function maintenanceJobs(
                     installed: null,
                     health: "passed",
                     rebootRequired: after.rebootRequired,
-                    warnings: after.serviceRestartRequired
-                        ? [
-                              "The service is still reported as requiring a restart; inspect its dependencies.",
-                          ]
-                        : [],
+                    warnings: [],
                 };
                 if (
                     !(await context.commit(async (transaction) => {
