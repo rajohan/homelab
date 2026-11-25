@@ -109,6 +109,8 @@ def execute_accepted(directory):
                 raise RuntimeError("Guest identity changed")
             if service and not expected["invocationId"]:
                 raise RuntimeError("Service is stopped")
+            if service and service != "systemd-manager" and guest(vmid, ["/usr/bin/systemctl", "show", "-p", "Id", "--value", "--", service]) in ("dbus.service", "dbus-broker.service"):
+                raise RuntimeError("The system bus requires a qualified client recovery recipe")
             if recipe.get("preflight"):
                 guest(vmid, recipe["preflight"])
             ssh_check = ["/usr/sbin/sshd", "-t"]

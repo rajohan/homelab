@@ -127,7 +127,6 @@ export function EventTimeline({
                 renderItem={renderEvent}
                 continuation={scroll.continuation}
                 className="@container/events"
-                scrollbarGap
                 itemClassName="pb-0"
             />
         );

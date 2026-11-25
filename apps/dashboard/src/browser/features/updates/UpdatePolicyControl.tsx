@@ -54,7 +54,7 @@ export function UpdatePolicyControl({
         ) => api.updates.policy.mutate(input, { signal })
     );
     return (
-        <div className="rounded-lg border border-primary-700 bg-surface-card p-4">
+        <div className="p-4">
             <Switch
                 label={policy.label}
                 checked={policy.enabled}

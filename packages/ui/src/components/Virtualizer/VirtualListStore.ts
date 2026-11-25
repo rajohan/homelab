@@ -9,7 +9,6 @@ import {
 export interface VirtualSnapshot {
     readonly items: readonly VirtualItem[];
     readonly totalSize: number;
-    readonly viewportHeight: number;
 }
 
 /**
@@ -46,21 +45,15 @@ export class VirtualListStore {
         this.#snapshot = {
             items: this.#virtualizer.getVirtualItems(),
             totalSize: this.#virtualizer.getTotalSize(),
-            viewportHeight: this.#virtualizer.scrollRect?.height ?? 520,
         };
     }
 
     #publish(): void {
         const items = this.#virtualizer.getVirtualItems(),
-            totalSize = this.#virtualizer.getTotalSize(),
-            viewportHeight = this.#virtualizer.scrollRect?.height ?? 520;
-        if (
-            items === this.#snapshot.items &&
-            totalSize === this.#snapshot.totalSize &&
-            viewportHeight === this.#snapshot.viewportHeight
-        )
+            totalSize = this.#virtualizer.getTotalSize();
+        if (items === this.#snapshot.items && totalSize === this.#snapshot.totalSize)
             return;
-        this.#snapshot = { items, totalSize, viewportHeight };
+        this.#snapshot = { items, totalSize };
         for (const listener of this.#listeners) listener();
     }
 

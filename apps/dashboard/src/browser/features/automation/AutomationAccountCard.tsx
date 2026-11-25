@@ -2,7 +2,7 @@ import type {
     AutomationAccount,
     AutomationCredential,
 } from "@homelab/contracts/operations";
-import { ActionGroup, Badge, Button, Card, formatDateTime } from "@homelab/ui";
+import { ActionGroup, Badge, Button, formatDateTime } from "@homelab/ui";
 
 export type AutomationAction =
     | { kind: "rotate"; account: AutomationAccount }
@@ -25,7 +25,7 @@ export function AutomationAccountCard({
     readonly onAction: (action: AutomationAction) => void;
 }) {
     return (
-        <Card className="space-y-4">
+        <section className="space-y-4 p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold">{account.label}</h3>
                 <Badge tone={account.disabledAt ? "neutral" : "positive"}>
@@ -37,11 +37,11 @@ export function AutomationAccountCard({
                     <Badge key={capability}>{capability}</Badge>
                 ))}
             </div>
-            <div className="max-h-72 space-y-2 overflow-auto pe-3">
+            <div className="max-h-72 scroll-frame divide-y divide-primary-700 bg-surface-panel">
                 {credentials.map((credential) => (
                     <div
                         key={credential.id}
-                        className="@container/credential flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-700 bg-surface-card p-3"
+                        className="@container/credential flex flex-wrap items-center justify-between gap-3 p-3"
                     >
                         <div className="min-w-0 grow basis-64 text-sm">
                             <p className="font-mono">{credential.prefix.slice(0, 13)}…</p>
@@ -94,6 +94,6 @@ export function AutomationAccountCard({
                     </Button>
                 </ActionGroup>
             )}
-        </Card>
+        </section>
     );
 }

@@ -12,6 +12,7 @@ import { maintenanceRevision, type MaintenanceTarget } from "./configuration";
 import {
     type MaintenanceObservation,
     type MaintenanceProbe,
+    MaintenanceRefused,
     observationSchema,
     probeMaintenance,
 } from "./execution";
@@ -28,9 +29,35 @@ const payloadSchema = v.strictObject({
 });
 
 export interface MaintenanceReading {
-    value: { configuration: string; observation: MaintenanceObservation | null };
+    value: {
+        configuration: string;
+        observation: MaintenanceObservation | null;
+        lastMeasured?: { observation: MaintenanceObservation; capturedAt: string } | null;
+    };
     capturedAt: string;
     fresh: boolean;
+}
+
+async function saveReading(
+    transaction: TransactionSQL,
+    id: string,
+    configuration: string,
+    observation: MaintenanceObservation | null,
+    host: boolean
+) {
+    // Archive only the last measured fleet for display. Its timestamp never authorizes a restart.
+    const preserve = host && observation?.fleet?.evidence !== "measured";
+    await transaction`INSERT INTO operation_snapshots AS prior (key, value, captured_at)
+        VALUES (${`maintenance:${id}`}, ${JSON.stringify({ configuration, observation })}::text::jsonb, clock_timestamp())
+        ON CONFLICT (key) DO UPDATE SET captured_at = excluded.captured_at,
+        value = excluded.value || CASE WHEN ${preserve} AND prior.value->>'configuration'=excluded.value->>'configuration'
+            AND (excluded.value#>>'{observation,bootId}' IS NULL OR excluded.value#>>'{observation,bootId}'=
+                coalesce(prior.value#>>'{observation,bootId}',prior.value#>>'{lastMeasured,observation,bootId}'))
+            THEN jsonb_build_object('lastMeasured', CASE
+                WHEN prior.value#>>'{observation,fleet,evidence}'='measured'
+                THEN jsonb_build_object('observation',prior.value->'observation','capturedAt',prior.captured_at)
+                ELSE prior.value->'lastMeasured' END)
+            ELSE '{}'::jsonb END`;
 }
 
 /**
@@ -168,7 +195,13 @@ export function maintenanceJobs(
                 }
                 if (
                     !(await context.commit(async (transaction) => {
-                        await transaction`INSERT INTO operation_snapshots (key, value, captured_at) VALUES (${`maintenance:${target.id}`}, ${JSON.stringify({ configuration, observation })}::text::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, captured_at = EXCLUDED.captured_at`;
+                        await saveReading(
+                            transaction,
+                            target.id,
+                            configuration,
+                            observation,
+                            target.kind === "host"
+                        );
                     }))
                 )
                     throw new Error("Maintenance status ownership changed");
@@ -220,47 +253,74 @@ export function maintenanceJobs(
                 const recipe = reported
                     ? discoveredMaintenanceTarget(target, input.unit!)
                     : target;
+                const refuse = async (reason: string): Promise<never> => {
+                    const result = {
+                        label: recipe.label,
+                        operation: "restart-not-started",
+                        installed: null,
+                        health: "not-checked",
+                        rebootRequired: null,
+                        warnings: [reason],
+                    };
+                    await context.commit(async (transaction) => {
+                        await transaction`UPDATE job_runs SET results=${JSON.stringify([result])}::text::jsonb WHERE id=${context.runId}`;
+                    });
+                    throw new MaintenanceRefused(reason);
+                };
                 const requiredOnly = Boolean(input.requiredOnly || reported);
                 if (!recipe.workerIndependent)
-                    throw new Error("This target requires an external restart");
+                    return refuse("This target requires an external restart.");
                 if (
                     input.target !== recipe.id ||
                     input.configuration !== maintenanceRevision(recipe, connections)
                 )
-                    throw new Error("Restart confirmation expired or changed");
+                    return refuse(
+                        "The restart configuration changed after confirmation."
+                    );
                 const authorize = async () => {
+                    let fresh = false;
                     if (
                         !(await context.commit(async (transaction) => {
                             const [request] = await transaction<
                                 { fresh: boolean }[]
                             >`SELECT created_at >= clock_timestamp() - interval '5 minutes' AS fresh FROM job_runs WHERE id = ${context.runId}`;
-                            if (!request?.fresh)
-                                throw new Error("Restart confirmation expired");
+                            fresh = Boolean(request?.fresh);
                         }))
                     )
                         throw new Error("Restart ownership changed");
+                    if (!fresh)
+                        await refuse("The restart confirmation expired in the queue.");
                 };
                 await authorize();
-                const before = await probe(connection, recipe, "inspect", context.signal);
+                // The mutation probes Linux's current service requirement immediately before try-restart.
+                const before = await probe(
+                    connection,
+                    recipe,
+                    recipe.kind === "service" ? "state" : "inspect",
+                    context.signal
+                ).catch(() =>
+                    refuse(
+                        "The host could not confirm the service identity before restart."
+                    )
+                );
                 if (
                     before.bootId !== input.expected.bootId ||
                     before.active !== input.expected.active ||
                     before.invocationId !== input.expected.invocationId ||
                     (recipe.kind === "service" && before.invocationId === null)
                 )
-                    throw new Error("Restart target changed since confirmation");
+                    return refuse(
+                        "The host or service identity changed after confirmation."
+                    );
                 context.signal.throwIfAborted();
                 await authorize();
-                if (
-                    requiredOnly &&
-                    (recipe.kind === "host"
-                        ? !before.rebootRequired
-                        : before.serviceRestartRequired !== true)
-                )
-                    throw new Error("The restart requirement is no longer confirmed.");
+                if (requiredOnly && recipe.kind === "host" && !before.rebootRequired)
+                    return refuse("The host no longer reports a restart requirement.");
                 if (recipe.preflight) {
                     await context.reportProgress("Checking restart prerequisites.");
-                    await probe(connection, recipe, "preflight", context.signal);
+                    await probe(connection, recipe, "preflight", context.signal).catch(
+                        () => refuse("The host's restart prerequisites were not met.")
+                    );
                     await authorize();
                 }
                 await context.reportProgress(
@@ -276,9 +336,11 @@ export function maintenanceJobs(
                         "restart",
                         context.signal,
                         input.expected,
-                        requiredOnly
+                        requiredOnly,
+                        context.runId
                     );
-                } catch {
+                } catch (error) {
+                    if (error instanceof MaintenanceRefused) return refuse(error.message);
                     context.signal.throwIfAborted();
                 }
                 const recovered = (current: MaintenanceObservation) =>
@@ -312,15 +374,21 @@ export function maintenanceJobs(
                                 AbortSignal.any([
                                     context.signal,
                                     AbortSignal.timeout(40_000),
-                                ])
+                                ]),
+                                input.expected,
+                                false,
+                                context.runId
                             );
                             if (recovered(current)) after = current;
-                        } catch {
+                        } catch (error) {
+                            if (error instanceof MaintenanceRefused)
+                                return refuse(error.message);
                             context.signal.throwIfAborted();
                         }
                     }
                 }
                 if (!after?.health) throw new Error("Restart health verification failed");
+                const { fleet, ...verified } = after;
                 const result = {
                     label: recipe.label,
                     operation:
@@ -350,7 +418,46 @@ export function maintenanceJobs(
                                 : after.rebootRequired,
                             await restartObservationTime(transaction)
                         );
-                        await transaction`DELETE FROM operation_snapshots WHERE key = ${`maintenance:${recipe.reportedOn ?? recipe.id}`}`;
+                        // The final health check already collected a new report under this host's lease.
+                        // Preserve it for the next service instead of waiting for a scheduled inspection.
+                        if (!reported)
+                            await saveReading(
+                                transaction,
+                                target.id,
+                                configuration,
+                                {
+                                    ...verified,
+                                    health: false,
+                                    ...(target.kind === "host" && fleet ? { fleet } : {}),
+                                },
+                                target.kind === "host"
+                            );
+                        if (recipe.kind === "service") {
+                            const owner = targets.find(
+                                (candidate) =>
+                                    candidate.kind === "host" &&
+                                    candidate.connection === recipe.connection
+                            );
+                            if (owner)
+                                await saveReading(
+                                    transaction,
+                                    owner.id,
+                                    maintenanceRevision(owner, connections),
+                                    fleet
+                                        ? {
+                                              bootId: verified.bootId,
+                                              rebootRequired: verified.rebootRequired,
+                                              fleet,
+                                              active: null,
+                                              invocationId: null,
+                                              serviceRestartRequired: null,
+                                              serviceEvidence: null,
+                                              health: false,
+                                          }
+                                        : null,
+                                    true
+                                );
+                        }
                     }))
                 )
                     throw new Error("Restart result ownership changed");

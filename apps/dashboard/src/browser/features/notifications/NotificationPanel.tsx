@@ -109,7 +109,6 @@ export function NotificationPanel({ onClose }: { readonly onClose: () => void })
                 <VirtualList
                     label="Notification history"
                     itemClassName="pb-0"
-                    scrollbarGap
                     rows={rows}
                     getKey={(row) => row.id}
                     renderItem={(notification) => (

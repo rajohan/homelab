@@ -2,7 +2,7 @@ import { ConfirmDialog } from "@homelab/ui";
 import { useState } from "react";
 
 import { api } from "../../api/client";
-import { useOperation } from "../operations/useOperation";
+import { useJobOperation } from "../jobs/useJobOperation";
 import { restartGroups, type restartWorkload } from "./restartNavigation";
 
 /** Confirm the exact observed services eligible for a fleet restart.
@@ -18,7 +18,7 @@ export function RestartBatchDialog({
 }) {
     const [requestId] = useState(() => crypto.randomUUID());
     const groups = restartGroups(workload.eligible, "", "required", "dashboard");
-    const operation = useOperation((_input: void, signal) =>
+    const operation = useJobOperation((_input: void, signal) =>
         api.maintenance.restartAll.mutate(
             {
                 targets: workload.eligible.map(({ target, revision }) => ({
@@ -34,7 +34,7 @@ export function RestartBatchDialog({
     return (
         <ConfirmDialog
             title={`Restart ${total} ${total === 1 ? "service" : "services"}?`}
-            description="Each service may be briefly unavailable. Recovery is checked before continuing."
+            description="Each service may be briefly unavailable. Independent hosts can progress together. Recovery is checked before the next restart on the same host."
             confirmLabel={total === 1 ? "Restart service" : "Restart services"}
             onClose={onClose}
             onConfirm={async () => {
@@ -90,6 +90,13 @@ export function RestartBatchDialog({
                 {workload.unavailable.length > 0 && (
                     <p className="text-sm text-primary-300">
                         Currently unavailable for restart: {workload.unavailable.length}.
+                    </p>
+                )}
+                {workload.awaiting.length > 0 && (
+                    <p className="text-sm text-primary-300">
+                        {workload.awaiting.length}{" "}
+                        {workload.awaiting.length === 1 ? "service is" : "services are"}{" "}
+                        awaiting a fresh check.
                     </p>
                 )}
             </div>

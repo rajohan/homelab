@@ -42,14 +42,16 @@ type Restart = {
 
 /** Return the durable operator-visible result across a dashboard or database restart.
  * @param client - Dashboard observation database.
- * @returns The latest confirmed request and its durable phase.
+ * @param id - Optional exact controller request to inspect from activity history.
+ * @param actor - Owner of the selected controller operation.
+ * @returns The identified request, or the latest request when no ID is supplied.
  */
-export async function latestProxmoxRestart(client: SQL) {
+export async function latestProxmoxRestart(client: SQL, id?: string, actor?: string) {
     const [row] = await client<
         { label: string; phase: Restart["phase"]; started: string }[]
     >`
-        SELECT value->>'label' AS label,value->>'phase' AS phase,captured_at::text AS started
-        FROM operation_snapshots WHERE key LIKE 'maintenance.proxmox.run:%' ORDER BY captured_at DESC LIMIT 1`;
+        SELECT value->>'label' AS label,value->>'phase' AS phase,to_timestamp((value->>'started')::bigint)::text AS started
+        FROM operation_snapshots WHERE key LIKE 'maintenance.proxmox.run:%' AND (${id ?? null}::text IS NULL OR (key=${journal(id ?? "")} AND value->>'actor'=${actor ?? null})) ORDER BY (value->>'started')::bigint DESC,key DESC LIMIT 1`;
     return row ?? null;
 }
 
@@ -141,7 +143,7 @@ export async function coordinateProxmoxRestart(
                 { key: string }[]
             >`DELETE FROM operation_snapshots WHERE key=${marker} AND value->>'id'=${run.id} AND EXISTS(SELECT 1 FROM operation_snapshots WHERE key=${journal(run.id)} AND value->>'phase'=${run.phase}) RETURNING key`;
             if (removed.length === 0) return;
-            await tx`UPDATE operation_snapshots SET value=jsonb_set(value,'{phase}',to_jsonb(${phase}::text)) WHERE key=${journal(run.id)}`;
+            await tx`UPDATE operation_snapshots SET value=jsonb_set(value,'{phase}',to_jsonb(${phase}::text)), captured_at=clock_timestamp() WHERE key=${journal(run.id)}`;
             await auditOperation(
                 tx,
                 "worker",
@@ -204,7 +206,7 @@ export async function coordinateProxmoxRestart(
         if (!ready?.ready) return;
         const changed = await client<
             { key: string }[]
-        >`UPDATE operation_snapshots SET value=jsonb_set(value,'{phase}','"submitted"'::jsonb) WHERE key=${journal(run.id)} AND value->>'phase'='waiting' RETURNING key`;
+        >`UPDATE operation_snapshots SET value=jsonb_set(value,'{phase}','"submitted"'::jsonb), captured_at=clock_timestamp() WHERE key=${journal(run.id)} AND value->>'phase'='waiting' RETURNING key`;
         if (changed.length === 0) return;
         submit = true;
         run.phase = "submitted";

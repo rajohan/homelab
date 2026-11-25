@@ -1,9 +1,8 @@
 import { ConfirmDialog } from "@homelab/ui";
-import { useContext, useState } from "react";
+import { useState } from "react";
 
 import { api } from "../../api/client";
-import { JobActivityContext } from "../jobs/JobActivityContext";
-import { useOperation } from "../operations/useOperation";
+import { useJobOperation } from "../jobs/useJobOperation";
 
 /**
  * Confirm a specific observed restart with shared security verification and job activity.
@@ -25,11 +24,9 @@ export function RestartDialog({
     readonly onClose: () => void;
 }) {
     const [requestId] = useState(() => crypto.randomUUID());
-    const reveal = useContext(JobActivityContext);
-    const operation = useOperation(
+    const operation = useJobOperation(
         (input: { target: string; revision: string; requestId: string }, signal) =>
-            api.maintenance.request.mutate(input, { signal }),
-        plan.proxmox ? undefined : reveal
+            api.maintenance.request.mutate(input, { signal })
     );
     return (
         <ConfirmDialog

@@ -55,9 +55,12 @@ export function DaytonaJobs({
                     No code jobs yet. Ask Mira to prepare a command in Chat.
                 </p>
             )}
-            <div ref={scrollRoot} className="max-h-128 space-y-3 overflow-y-auto pe-3">
+            <div
+                ref={scrollRoot}
+                className="max-h-128 scroll-frame divide-y divide-primary-700 bg-surface-card"
+            >
                 {rows.map((job) => (
-                    <Card key={job.id} className="space-y-3">
+                    <section key={job.id} className="space-y-3 p-4 sm:p-5">
                         <SectionHeader
                             title={job.content.title}
                             icon={job.executionTarget === "main" ? Server : Cloud}
@@ -81,7 +84,7 @@ export function DaytonaJobs({
                         {job.message && (
                             <p className="text-sm text-primary-300">{job.message}</p>
                         )}
-                    </Card>
+                    </section>
                 ))}
                 <InfiniteScrollTrigger
                     rootRef={scrollRoot}

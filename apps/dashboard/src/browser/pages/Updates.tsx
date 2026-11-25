@@ -1,7 +1,11 @@
 import { PageHeader, PageSections } from "@homelab/ui";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { PackageCheck } from "lucide-react";
+import * as v from "valibot";
 
 import { MaintenancePanel } from "../features/maintenance/MaintenancePanel";
+import { RestartActivityDialog } from "../features/maintenance/RestartActivityDialog";
+import { restartLocation } from "../features/maintenance/restartLocation";
 import { BuildDependencies } from "../features/releases/BuildDependencies";
 import { ReleasesPanel } from "../features/releases/ReleasesPanel";
 import { UpdatesPanel } from "../features/updates/UpdatesPanel";
@@ -11,6 +15,8 @@ import { UpdatesPanel } from "../features/updates/UpdatesPanel";
  * @returns The existing operations page with shared maintenance controls.
  */
 export function Updates() {
+    const { restartBatch } = v.parse(restartLocation, useSearch({ from: "/updates" }));
+    const navigate = useNavigate({ from: "/updates" });
     return (
         <>
             <PageHeader
@@ -36,6 +42,16 @@ export function Updates() {
                     },
                 ]}
             />
+            {restartBatch && (
+                <RestartActivityDialog
+                    kind="notification"
+                    id={restartBatch}
+                    title="Service restarts need attention"
+                    onClose={() =>
+                        void navigate({ search: {}, hash: "maintenance", replace: true })
+                    }
+                />
+            )}
         </>
     );
 }

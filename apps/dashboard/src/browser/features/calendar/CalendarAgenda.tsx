@@ -45,7 +45,7 @@ export function CalendarAgenda({
             className="self-start"
         >
             {events.length > 0 ? (
-                <ul className="divide-y divide-primary-700 @min-[44rem]/calendar:max-h-[max(15rem,calc(100dvh-19rem))] @min-[44rem]/calendar:overflow-y-auto @min-[44rem]/calendar:pe-1">
+                <ul className="divide-y divide-primary-700 @min-[44rem]/calendar:max-h-[max(15rem,calc(100dvh-19rem))] @min-[44rem]/calendar:overflow-y-auto">
                     {events.map((event) => {
                         const start = new Date(event.startsAt),
                             end = new Date(event.endsAt);

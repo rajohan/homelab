@@ -14,6 +14,14 @@ export interface RestartGroup {
     readonly required: number;
 }
 
+/** Read the latest measured requirement for display, including an earlier report while a check is pending.
+ * @param plan - The server-owned current observation and its last measured requirement.
+ * @returns The display requirement. Admission always uses the current observation.
+ */
+export function reportedRestart(plan: RestartPlan): boolean | null {
+    return plan.required ?? plan.lastReportedRequired ?? null;
+}
+
 /** Check whether a host-wide service report or a specific requirement is incomplete.
  * @param plan - Latest target reading returned by the server.
  * @returns Whether the operator cannot see all restart requirements for this target.
@@ -30,16 +38,28 @@ export function incompleteRestart(plan: RestartPlan): boolean {
  * @returns Eligible services, outstanding manual items and whole-host reboots.
  */
 export function restartWorkload(plans: readonly RestartPlan[]) {
-    const required = plans.filter((plan) => plan.required === true);
+    const required = plans.filter((plan) => reportedRestart(plan) === true);
     const services = required.filter((plan) => plan.kind === "service");
+    const dashboard = services.filter((plan) => !plan.external);
+    const incompleteHosts = new Map(
+        plans
+            .filter((plan) => incompleteRestart(plan))
+            .map((plan) => [plan.host.id, plan.host.label])
+    );
     return {
-        eligible: services.filter((plan) => plan.allowed && !plan.external),
+        dashboard,
+        eligible: dashboard.filter((plan) => plan.required === true && plan.allowed),
+        awaiting: dashboard.filter(
+            (plan) => plan.required === null || (!plan.allowed && !plan.observed)
+        ),
         manual: services.filter((plan) => plan.external),
-        unavailable: services.filter((plan) => !plan.external && !plan.allowed),
+        unavailable: dashboard.filter(
+            (plan) => plan.required === true && !plan.allowed && plan.observed
+        ),
         reboots: required.filter((plan) => plan.kind === "host"),
-        incompleteHosts: new Set(
-            plans.filter((plan) => incompleteRestart(plan)).map((plan) => plan.host.id)
-        ).size,
+        incompleteHosts: [...incompleteHosts.values()].toSorted((a, b) =>
+            a.localeCompare(b)
+        ),
     };
 }
 
@@ -64,10 +84,11 @@ export function restartGroups(
     for (const plan of plans) {
         const text = [plan.host.label, plan.label, plan.unit].join(" ").toLowerCase();
         const unknown = incompleteRestart(plan);
+        const reported = reportedRestart(plan);
         if (
             !words.every((word) => text.includes(word)) ||
-            (requirement === "attention" && !plan.required && !unknown) ||
-            (requirement === "required" && plan.required !== true) ||
+            (requirement === "attention" && !reported && !unknown) ||
+            (requirement === "required" && reported !== true) ||
             (requirement === "unknown" && !unknown) ||
             (requirement === "not-required" && (plan.required !== false || unknown)) ||
             (location === "external" && !plan.external) ||
@@ -80,7 +101,7 @@ export function restartGroups(
             required: 0,
         };
         group.plans.push(plan);
-        if (plan.required) group.required++;
+        if (reported) group.required++;
         groups.set(plan.host.id, group);
     }
     return [...groups.values()]
@@ -89,7 +110,8 @@ export function restartGroups(
             plans: group.plans.toSorted(
                 (a, b) =>
                     Number(b.kind === "host") - Number(a.kind === "host") ||
-                    Number(b.required === true) - Number(a.required === true) ||
+                    Number(reportedRestart(b) === true) -
+                        Number(reportedRestart(a) === true) ||
                     a.label.localeCompare(b.label) ||
                     a.target.localeCompare(b.target)
             ),

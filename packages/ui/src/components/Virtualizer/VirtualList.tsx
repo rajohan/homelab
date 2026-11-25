@@ -19,7 +19,7 @@ export function VirtualList<T>({
     continuation,
     className,
     itemClassName,
-    scrollbarGap = true,
+    framed = false,
 }: {
     readonly label: string;
     readonly rows: readonly T[];
@@ -28,7 +28,7 @@ export function VirtualList<T>({
     readonly continuation?: InfiniteScrollContinuation;
     readonly className?: string;
     readonly itemClassName?: string;
-    readonly scrollbarGap?: boolean;
+    readonly framed?: boolean;
 }) {
     const scrollRef = useRef<HTMLElement>(null);
     return (
@@ -37,7 +37,10 @@ export function VirtualList<T>({
             aria-label={label}
             tabIndex={0}
             className={cn(
-                "max-h-[min(32.5rem,60dvh)] min-w-0 overflow-auto rounded-lg focus-visible:outline-2 focus-visible:outline-accent-500",
+                "max-h-[min(32.5rem,60dvh)] min-w-0 focus-visible:outline-2 focus-visible:outline-accent-500",
+                framed && rows.length > 0
+                    ? "scroll-frame bg-surface-card"
+                    : "overflow-auto rounded-lg",
                 className
             )}
         >
@@ -49,14 +52,8 @@ export function VirtualList<T>({
                     return row === undefined ? String(index) : getKey(row);
                 }}
             >
-                {({ items, totalSize, viewportHeight, measureElement }) => (
-                    <ul
-                        className={
-                            scrollbarGap && totalSize > viewportHeight
-                                ? "pe-3"
-                                : undefined
-                        }
-                    >
+                {({ items, totalSize, measureElement }) => (
+                    <ul>
                         <li aria-hidden="true" style={{ height: items[0]?.start ?? 0 }} />
                         {items.map((item) => {
                             const row = rows[item.index];
@@ -65,7 +62,13 @@ export function VirtualList<T>({
                                     key={item.key}
                                     data-index={item.index}
                                     ref={measureElement}
-                                    className={cn("pb-3", itemClassName)}
+                                    className={cn(
+                                        !framed && "pb-3",
+                                        framed &&
+                                            item.index > 0 &&
+                                            "border-t border-primary-700",
+                                        itemClassName
+                                    )}
                                 >
                                     {renderItem(row, item.index)}
                                 </li>

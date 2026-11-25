@@ -9,6 +9,7 @@ import * as v from "valibot";
 import type { Transaction } from "../database/connection";
 import { auditOperation } from "../operations/audit";
 import { OperationFailure } from "../operations/errors";
+import { queueMessage } from "./queueMessage";
 import { jobFingerprint } from "./registry";
 import { nextScheduleOccurrence } from "./scheduleTime";
 import type { JobDefinition, JobHandler } from "./types";
@@ -195,7 +196,7 @@ interface JobFilters {
 export function jobSummaryQuery(client: SQL, filters: JobFilters) {
     return client<
         JobSummary[]
-    >`SELECT id, action, label, resource_class AS "resourceClass", state, attempt, attempt_limit AS "attemptLimit", requested_by AS "requestedBy", created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt", message, cancel_requested AS "cancelRequested" FROM job_runs WHERE (${filters.action ?? null}::text IS NULL OR action = ${filters.action ?? null}) AND (${filters.requestedBy ?? null}::text IS NULL OR requested_by = ${filters.requestedBy ?? null}) AND (${filters.view ?? "all"} = 'all' OR (${filters.view ?? "all"} = 'active' AND state IN ('queued','running')) OR (${filters.view ?? "all"} = 'recent' AND state NOT IN ('queued','running'))) AND (${filters.completedWithinSeconds ?? null}::int IS NULL OR finished_at > now() - ${filters.completedWithinSeconds ?? null}::int * interval '1 second')`;
+    >`SELECT id, action, label, resource_class AS "resourceClass", state, attempt, attempt_limit AS "attemptLimit", requested_by AS "requestedBy", created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt", ${queueMessage(client)} AS message, cancel_requested AS "cancelRequested" FROM job_runs WHERE (${filters.action ?? null}::text IS NULL OR action = ${filters.action ?? null}) AND (${filters.requestedBy ?? null}::text IS NULL OR requested_by = ${filters.requestedBy ?? null}) AND (${filters.view ?? "all"} = 'all' OR (${filters.view ?? "all"} = 'active' AND state IN ('queued','running')) OR (${filters.view ?? "all"} = 'recent' AND state NOT IN ('queued','running'))) AND (${filters.completedWithinSeconds ?? null}::int IS NULL OR finished_at > now() - ${filters.completedWithinSeconds ?? null}::int * interval '1 second')`;
 }
 
 /**

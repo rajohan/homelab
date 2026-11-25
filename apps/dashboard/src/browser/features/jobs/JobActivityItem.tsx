@@ -5,7 +5,7 @@ import { CheckCircle2, CircleAlert, Clock3, LoaderCircle, X } from "lucide-react
 import { JobStatus } from "./JobStatus";
 
 const descriptions = {
-    queued: "Waiting for a worker.",
+    queued: "Queued for execution.",
     running: "Execution is in progress.",
     succeeded: "Completed successfully.",
     failed: "Execution failed. Open the run for details.",
@@ -32,7 +32,11 @@ export function JobActivityItem({
     onSelect,
     onDismiss,
 }: {
-    readonly run: JobSummary;
+    readonly run: Pick<
+        JobSummary,
+        "label" | "state" | "message" | "createdAt" | "finishedAt"
+    > &
+        Partial<Pick<JobSummary, "startedAt" | "cancelRequested">>;
     readonly unavailable: boolean;
     readonly onSelect: () => void;
     readonly onDismiss: () => void;

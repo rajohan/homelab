@@ -10,6 +10,7 @@ import * as v from "valibot";
 import { incidentLocation } from "./features/alerts/incidentLocation";
 import { calendarLocation } from "./features/calendar/calendarLocation";
 import { jobLocation } from "./features/jobs/jobLocation";
+import { restartLocation } from "./features/maintenance/restartLocation";
 import { Shell } from "./layout/Shell";
 import { Alerts } from "./pages/Alerts";
 import { Backups } from "./pages/Backups";
@@ -97,6 +98,7 @@ export function createDashboardRouter(history?: RouterHistory) {
             createRoute({
                 getParentRoute: () => root,
                 path: "/updates",
+                validateSearch: (raw) => v.parse(restartLocation, raw),
                 component: Updates,
             }),
             overview,
