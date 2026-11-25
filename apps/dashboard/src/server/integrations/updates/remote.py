@@ -318,6 +318,33 @@ def stable_parts(version):
     return tuple(int(part or 0) for part in match.groups()) if match else None
 
 
+def service_snapshot():
+    """Bind a measured service list to the boot that produced it."""
+    report = read_service_report(command)
+    if report["evidence"] != "measured":
+        return None
+    try:
+        boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    except OSError:
+        return None
+    return boot, {entry["unit"]: entry["invocationId"] for entry in report["services"]}
+
+
+def service_changes(before, after):
+    """Only attribute new needs or newly affected service invocations to this installation."""
+    if after is None:
+        return None
+    boot, pending = after
+    if pending and (before is None or before[0] != boot):
+        return None
+    previous = before[1] if before else {}
+    changes = []
+    for unit, invocation in pending.items():
+        if unit not in previous or (invocation and previous[unit] and invocation != previous[unit]):
+            changes.append({"unit": unit, "invocationId": invocation})
+    return {"bootId": boot, "services": changes}
+
+
 def apt_update(item, automatic):
     """Use APT for an exact package candidate, preserving holds and refusing removals."""
     import apt
@@ -331,7 +358,7 @@ def apt_update(item, automatic):
     # A fresh local inspection is sufficient for a no-op; never reinstall or accept another version.
     if package.installed and package.installed.version == item["available"]:
         progress("verifying")
-        return package.installed.version
+        return package.installed.version, {}
     if not package.installed or not package.candidate or package.installed.version != item["installed"] or package.candidate.version != item["available"] or package._pkg.selected_state == apt_pkg.SELSTATE_HOLD:
         raise UpdateRefusal("apt_candidate_changed")
     package.mark_install(auto_fix=True, auto_inst=True, from_user=False)
@@ -357,6 +384,7 @@ def apt_update(item, automatic):
     versions = [change.fullname + "=" + change.candidate.version for change in changes]
     if not versions or len(versions) > 500:
         raise RuntimeError("Unsupported package update plan")
+    before = service_snapshot()
     progress("installing")
     # Report services needing restart without needrestart killing this worker's
     # own Doppler-backed service midway through an approved host batch.
@@ -366,7 +394,7 @@ def apt_update(item, automatic):
     installed = cache[name].installed
     if not installed or installed.version != item["available"]:
         raise RuntimeError("Installed package version does not match the approved update")
-    return installed.version
+    return installed.version, {"restartChanges": service_changes(before, service_snapshot())}
 
 
 def native_update(driver, item):
@@ -419,15 +447,18 @@ def main():
     NATIVE_GITHUB_TOKEN = token
     progress("checking")
     driver, item = request["driver"], request["item"]
+    restart_receipt = {}
     if driver["kind"] == "docker":
         installed = docker_update(driver, item, request["automatic"])
     elif driver["kind"] == "apt":
-        installed = apt_update(item, request["automatic"])
+        installed, restart_receipt = apt_update(item, request["automatic"])
     elif driver["kind"] == "native":
+        before = service_snapshot()
         installed = native_update(driver, item)
+        restart_receipt = {"restartChanges": service_changes(before, service_snapshot())}
     else:
         raise RuntimeError("Unsupported updater")
-    receipt = {"complete": True, "installed": installed, "rebootRequired": reboot_required(), "health": UPDATE_HEALTH}
+    receipt = {"complete": True, "installed": installed, "rebootRequired": reboot_required(), "health": UPDATE_HEALTH, **restart_receipt}
     if driver.get("release") == "openclaw":
         receipt["warnings"] = ["OpenClaw-specific advisories are retained in its native update report; version and health verification do not clear those advisories."]
     if driver["kind"] == "docker":
@@ -437,7 +468,7 @@ def main():
 
 if __name__ == "__main__":
     def interrupted(_number, _frame):
-        raise RuntimeError("Update interrupted")
+        raise SystemExit(1)
     signal.signal(signal.SIGHUP, interrupted)
     signal.signal(signal.SIGTERM, interrupted)
     try:

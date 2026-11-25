@@ -1,6 +1,7 @@
 import type { UpdateItem } from "@homelab/contracts/updates";
 import * as v from "valibot";
 
+import serviceReport from "../maintenance/service_report.py" with { type: "text" };
 import binaryProgram from "./binary.py" with { type: "text" };
 import type { UpdateTarget } from "./configuration";
 import dockerDependenciesProgram from "./docker_dependencies.py" with { type: "text" };
@@ -9,8 +10,10 @@ import remoteProgram from "./remote.py" with { type: "text" };
 import stackPublication from "./stack_publication.py" with { type: "text" };
 import toolchainProgram from "./toolchain.py" with { type: "text" };
 
-// Both modules travel in one transient interpreter; no helper is installed on a host.
+// The fixed modules share one transient interpreter on the selected host.
 const program =
+    serviceReport +
+    "\n" +
     nativeProgram +
     "\n" +
     binaryProgram +
@@ -62,6 +65,14 @@ const refusals = {
         "Local application code is mounted into this deployment. Review or remove the override before updating its image.",
 } as const;
 const warningSchema = v.pipe(v.string(), v.maxLength(500));
+const affectedServiceSchema = v.object({
+    unit: v.pipe(v.string(), v.minLength(1), v.maxLength(255), v.regex(/^[^\p{Cc}]+$/u)),
+    invocationId: v.nullable(v.pipe(v.string(), v.regex(/^[a-f0-9]{32}$/))),
+});
+const restartChangesSchema = v.object({
+    bootId: v.pipe(v.string(), v.uuid()),
+    services: v.pipe(v.array(affectedServiceSchema), v.maxLength(1024)),
+});
 const eventSchema = v.variant("complete", [
     v.object({
         complete: v.literal(true),
@@ -69,6 +80,7 @@ const eventSchema = v.variant("complete", [
         rebootRequired: v.nullable(v.boolean()),
         health: v.optional(v.picklist(["passed", "not-checked", "preserved-stopped"])),
         warnings: v.optional(v.pipe(v.array(warningSchema), v.maxLength(10))),
+        restartChanges: v.optional(v.nullable(restartChangesSchema)),
         containerId: v.optional(v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/))),
     }),
     v.object({
@@ -91,6 +103,7 @@ const recreatedContainersSchema = v.strictObject({
     recreatedContainers: v.pipe(v.array(recreatedContainerSchema), v.maxLength(30)),
 });
 export interface UpdateReceipt {
+    readonly restartChanges?: v.InferOutput<typeof restartChangesSchema> | null;
     readonly health?: "passed" | "not-checked" | "preserved-stopped";
     readonly warnings?: readonly string[];
     readonly installed: string;
@@ -199,7 +212,8 @@ export function createUpdateExecutor(githubToken?: string): UpdateExecutor {
             const decoder = new TextDecoder("utf-8", { fatal: true });
             for await (const chunk of process.stdout) {
                 bytes += chunk.byteLength;
-                if (bytes > 65_536) throw new Error("Update receipt exceeded its budget");
+                if (bytes > 1_048_576)
+                    throw new Error("Update receipt exceeded its budget");
                 pending += decoder.decode(chunk, { stream: true });
                 let end = pending.indexOf("\n");
                 while (end !== -1) {
@@ -232,6 +246,9 @@ export function createUpdateExecutor(githubToken?: string): UpdateExecutor {
                         receipt = {
                             ...(event.health ? { health: event.health } : {}),
                             ...(event.warnings ? { warnings: event.warnings } : {}),
+                            ...(event.restartChanges === undefined
+                                ? {}
+                                : { restartChanges: event.restartChanges }),
                             installed: event.installed,
                             rebootRequired: event.rebootRequired,
                             ...(event.containerId

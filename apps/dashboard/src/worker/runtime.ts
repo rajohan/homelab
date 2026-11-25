@@ -1,6 +1,7 @@
 import { activeMaintenanceWindow } from "@homelab/mira/data/maintenanceWindow";
 import type { SQL } from "bun";
 
+import { queuePendingBuildDependencyCheck } from "../server/integrations/releases/dependencies";
 import { reservedCapacity } from "../server/jobs/capacity";
 import { claimJob, commitClaim, renewClaim, settleClaim } from "../server/jobs/claims";
 import { readWorkerControl } from "../server/jobs/control";
@@ -136,6 +137,9 @@ export async function runWorker(options: {
         }
     };
     const control = async () => {
+        const dependencyCheck = registry.get("homelab.dependencies")?.definition;
+        let nextDependencyCheck = 0;
+        let reconcileOnStartup = true;
         while (!signal.aborted) {
             const deployment = await activeMaintenanceWindow(client);
             const drained = deployment && state.active === 0 ? deployment.id : null;
@@ -147,6 +151,15 @@ export async function runWorker(options: {
                     "Worker registration expired; restart before accepting more work"
                 );
             await scheduleDueJobs(client, registry);
+            if (!deployment && dependencyCheck && Date.now() >= nextDependencyCheck) {
+                const reconciled = await queuePendingBuildDependencyCheck(
+                    client,
+                    dependencyCheck,
+                    reconcileOnStartup
+                );
+                if (reconciled) reconcileOnStartup = false;
+                nextDependencyCheck = Date.now() + 30_000;
+            }
             if (!deployment) await publishCalendarReminders(client);
             const controlState = await readWorkerControl(client);
             const schedules = await listSchedules(client, registry);

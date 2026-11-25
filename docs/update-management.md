@@ -5,6 +5,12 @@ The worker registers installers only for explicit `HOMELAB_DASHBOARD_UPDATE_TARG
 or `HOMELAB_DASHBOARD_UPDATE_TARGETS_FILE` configuration.
 All automatic policies default to **off**, including Docker and digest-pinned images.
 
+**Homelab source dependencies** reads the installed pins from the deployed manifest.
+The worker queues a check at startup when compatible observations are missing or
+stale, and checks again after a partial result or failed run with a five-minute
+backoff. The worker respects queue pauses and the source-check schedule's enabled
+setting. Pending and unavailable upstream versions are shown individually.
+
 The two managed Homelab Compose stacks publish verified image pin changes
 through [the host-side publication queue](stack-publication.md).
 
@@ -267,11 +273,12 @@ distribution upgrade or reboot is performed. A reboot-required flag produces a
 notification, not a host restart. Docker/native updates retain the host's observed
 restart flag but do not emit an OS-restart notification for an unrelated application
 update. Package scripts may restart their own services.
-For this APT invocation only, `NEEDRESTART_MODE=l` makes needrestart list services
-instead of automatically restarting them. Otherwise updating Doppler can terminate
-the dashboard/worker running the batch. No host configuration is changed. Required
-service restarts must be scheduled separately; list-only mode does not itself set
-the operating system's reboot-required flag.
+For this APT invocation, `NEEDRESTART_MODE=l` keeps the installation and service
+restart phases separate. After a verified APT or native update, the worker compares
+the Linux reports collected before and after installation on the same boot. It
+records newly affected service instances in the update receipt and processes
+them when the parent job finishes. Restart authority, live identity and health are
+checked for each affected service. Whole hosts require a separate operator action.
 The repository metadata refresh remains the host's existing APT responsibility.
 
 ### Native software

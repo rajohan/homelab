@@ -6,6 +6,7 @@ import {
     workerHealthBinding,
 } from "../server/config/environment";
 import { assertDashboardSchema } from "../server/database/migrations";
+import { coordinateRestartBatches } from "../server/integrations/maintenance/batchCoordinator";
 import { coordinateProxmoxRestart } from "../server/integrations/maintenance/proxmox";
 import { coordinateDeployment } from "../server/integrations/releases/deploymentCoordinator";
 import { createOperationsRuntime } from "../server/operations/runtime";
@@ -48,6 +49,12 @@ export async function main(): Promise<void> {
                         version: information.version,
                         state,
                         deployment: async (id, signal) => {
+                            await coordinateRestartBatches(
+                                runtime.client,
+                                configuration.maintenanceTargets ?? [],
+                                configuration.updateTargets ?? [],
+                                runtime.registry
+                            );
                             await coordinateProxmoxRestart(
                                 runtime.client,
                                 configuration.maintenanceTargets ?? [],

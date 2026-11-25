@@ -25,11 +25,13 @@ import { api } from "../../api/client";
 import { useJobOperation } from "../jobs/useJobOperation";
 import { useOperation } from "../operations/useOperation";
 
-const statusLabels = {
-    available: "Update available",
-    current: "Current",
-    unknown: "Check unavailable",
-    stale: "Outdated check",
+const statuses = {
+    available: { label: "Update available", tone: "warning" },
+    current: { label: "Current", tone: "positive" },
+    unknown: { label: "Check unavailable", tone: "warning" },
+    stale: { label: "Outdated check", tone: "warning" },
+    pending: { label: "Awaiting check", tone: "neutral" },
+    disabled: { label: "Not configured", tone: "neutral" },
 } as const;
 
 /**
@@ -69,7 +71,12 @@ export function BuildDependencies() {
                 : false,
     });
     const snapshot = query.data?.snapshot;
+    const items = snapshot?.value.items ?? query.data?.pending ?? [];
     const fresh = Boolean(snapshot?.fresh && !query.isError);
+    function statusFor(item: (typeof items)[number]) {
+        if (!snapshot) return query.data?.configured ? "pending" : "disabled";
+        return fresh ? item.status : "stale";
+    }
     const available =
         fresh && snapshot ? availableSourceUpdates(snapshot.value.items) : [];
     function review(items: AvailableSourceUpdate[], all: boolean) {
@@ -86,7 +93,7 @@ export function BuildDependencies() {
         <Card className="space-y-4">
             <SectionHeader
                 title="Homelab source dependencies"
-                description="Checked hourly. Mira opens a pull request with the verified updates."
+                description="Mira can prepare verified updates in a pull request."
                 icon={PackageSearch}
                 badge={
                     snapshot && !fresh && <Badge tone="warning">Status outdated</Badge>
@@ -119,11 +126,11 @@ export function BuildDependencies() {
             {query.isPending && <LoadingState label="Loading dependency updates…" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {refresh.isError && <ErrorNotice error={refresh.error} />}
-            {snapshot ? (
+            {items.length > 0 && (
                 <DataTable
                     label="Homelab source dependencies"
                     compact
-                    rows={snapshot.value.items}
+                    rows={items}
                     getKey={(item) => item.id}
                     columns={[
                         {
@@ -158,27 +165,18 @@ export function BuildDependencies() {
                         {
                             id: "status",
                             label: "Status",
-                            sortValue: (item) => (fresh ? item.status : null),
-                            render: (item) => (
-                                <Badge
-                                    tone={
-                                        fresh && item.status === "current"
-                                            ? "positive"
-                                            : "warning"
-                                    }
-                                >
-                                    {statusLabels[fresh ? item.status : "stale"]}
-                                </Badge>
-                            ),
+                            sortValue: (item) => statuses[statusFor(item)].label,
+                            render: (item) => {
+                                const status = statuses[statusFor(item)];
+                                return <Badge tone={status.tone}>{status.label}</Badge>;
+                            },
                         },
                         ...(available.length > 1
                             ? [
                                   {
                                       id: "review",
                                       label: "Review",
-                                      render: (
-                                          item: (typeof snapshot.value.items)[number]
-                                      ) => {
+                                      render: (item: (typeof items)[number]) => {
                                           const update = available.find(
                                               (row) => row.dependency === item.id
                                           );
@@ -202,15 +200,6 @@ export function BuildDependencies() {
                             : []),
                     ]}
                 />
-            ) : (
-                query.data &&
-                !query.isError && (
-                    <p className="text-sm text-primary-400">
-                        {query.data.configured
-                            ? "Waiting for the first dependency check."
-                            : "Release checks are not configured."}
-                    </p>
-                )
             )}
             {taskId && (
                 <output className="text-sm text-primary-300">

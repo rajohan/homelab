@@ -9,7 +9,9 @@ import type { UpdateTarget } from "../updates/configuration";
 import { updateSshArguments } from "../updates/execution";
 import { maintenanceRevision, type MaintenanceTarget } from "./configuration";
 import type { MaintenanceObservation } from "./execution";
+import nodeProgram from "./physicalNode.py" with { type: "text" };
 import program from "./proxmox.py" with { type: "text" };
+import { discoveredMaintenanceTarget, requiresNewSshConnection } from "./reportedTarget";
 
 const marker = "maintenance.proxmox.active";
 const journal = (id: string) => `maintenance.proxmox.run:${id}`;
@@ -31,6 +33,9 @@ type Restart = {
     revision: string;
     configuration: string;
     expected: MaintenanceObservation;
+    requiredOnly?: boolean;
+    reportedHost?: string;
+    unit?: string;
     started: number;
     phase: "waiting" | "submitted" | "verified" | "refused" | "unverified";
 };
@@ -83,9 +88,10 @@ export async function admitProxmoxRestart(
 async function callController(
     connection: UpdateTarget,
     payload: object,
-    signal: AbortSignal
+    signal: AbortSignal,
+    runner: string
 ) {
-    const child = Bun.spawn(updateSshArguments(connection, program), {
+    const child = Bun.spawn(updateSshArguments(connection, runner), {
         stdin: new TextEncoder().encode(JSON.stringify(payload)),
         stdout: "pipe",
         stderr: "ignore",
@@ -144,12 +150,31 @@ export async function coordinateProxmoxRestart(
             );
         });
     }
-    const target = targets.find((entry) => entry.id === run.target);
+    const host =
+        run.reportedHost &&
+        targets.find(
+            (entry) =>
+                entry.id === run.reportedHost &&
+                entry.kind === "host" &&
+                entry.restartReportedServices
+        );
+    const target =
+        host && run.unit
+            ? discoveredMaintenanceTarget(host, run.unit)
+            : targets.find((entry) => entry.id === run.target);
     const connection = connections.find(
-        (entry) => entry.id === target?.proxmox?.connection
+        (entry) =>
+            entry.id ===
+            (target?.physicalNode ? target.connection : target?.proxmox?.connection)
     );
+    const guest =
+        target?.proxmox && requiresNewSshConnection(target.service)
+            ? connections.find((entry) => entry.id === target.connection)
+            : undefined;
     if (
-        !target?.proxmox ||
+        !target ||
+        target.id !== run.target ||
+        (!target.proxmox && !target.physicalNode) ||
         !connection ||
         maintenanceRevision(target, connections) !== run.configuration
     ) {
@@ -161,7 +186,7 @@ export async function coordinateProxmoxRestart(
         await finish("refused");
         return;
     }
-    if (age >= 1000) {
+    if (age >= (target.physicalNode ? 3600 : 1000)) {
         await finish("unverified");
         return;
     }
@@ -185,19 +210,25 @@ export async function coordinateProxmoxRestart(
         run.phase = "submitted";
     }
     try {
+        const runner = target.physicalNode ? nodeProgram : program;
         const result = await callController(
             connection,
             submit
                 ? {
                       id: run.id,
                       mode: "submit",
-                      program,
+                      program: runner,
                       target,
+                      ...(guest
+                          ? { guestSsh: { host: guest.host, port: guest.port ?? 22 } }
+                          : {}),
                       expected: run.expected,
+                      requiredOnly: run.requiredOnly ?? false,
                       expires: run.started + 300,
                   }
                 : { id: run.id, mode: "read" },
-            signal
+            signal,
+            runner
         );
         if (result === "verified" || result === "refused" || result === "unverified")
             await finish(result);

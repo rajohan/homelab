@@ -1,11 +1,10 @@
-import { queryRefresh } from "@homelab/ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
-import { api } from "../../api/client";
 import { incidentOptions } from "../alerts/incidentQueries";
 import { backupInventoryQuery } from "../backups/backupInventoryQuery";
 import { useInfrastructure } from "../infrastructure/useInfrastructure";
 import { workerOverviewQuery } from "../jobs/workerOverviewQuery";
+import { restartPlansQuery } from "../maintenance/restartPlansQuery";
 import { updateInventoryQuery } from "../updates/updateInventoryQuery";
 
 /** Read the same observations as the domain pages; only current samples contribute to live totals.
@@ -17,12 +16,7 @@ export function useOverviewReadings() {
     const backups = useQuery(backupInventoryQuery);
     const updates = useQuery(updateInventoryQuery);
     const worker = useQuery(workerOverviewQuery);
-    const restarts = useQuery({
-        queryKey: ["operations", "maintenance"],
-        queryFn: ({ signal }) => api.maintenance.plans.query(undefined, { signal }),
-        ...queryRefresh("fast"),
-        retry: false,
-    });
+    const restarts = useQuery(restartPlansQuery);
     const page = incidents.data?.pages[0];
     const alerts =
         page?.configured && page.capturedAt && !page.stale && !incidents.isError
