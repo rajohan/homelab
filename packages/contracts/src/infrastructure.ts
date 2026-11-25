@@ -9,17 +9,62 @@ export const availabilityKinds = [
     "filesystem",
 ] as const;
 export type AvailabilityKind = (typeof availabilityKinds)[number];
-export type AvailabilityPeriod = "day" | "week" | "month" | "year" | "all";
+export const availabilityRetentionDays = 365;
+export type AvailabilityPeriod = "day" | "week" | "month" | "year";
+export interface AvailabilityCounts {
+    readonly available: number;
+    readonly observed: number;
+}
+/** Add disjoint intervals of minute checks for the same resource.
+ * @param intervals - Observed and healthy minute counts.
+ * @returns Combined counts, including zero counts for empty input.
+ */
+export function sumAvailabilityCounts(
+    intervals: readonly AvailabilityCounts[]
+): AvailabilityCounts {
+    let available = 0,
+        observed = 0;
+    for (const interval of intervals) {
+        available += interval.available;
+        observed += interval.observed;
+    }
+    return { available, observed };
+}
+
+/** Count scheduled minute checks in the interval, starting with the first tracked minute.
+ * @param firstMinute - First tracked UTC minute since epoch, or null before tracking starts.
+ * @param endMinute - Last included UTC minute since epoch.
+ * @param duration - Number of minutes in the selected interval.
+ * @returns Minutes that contribute to the uptime denominator.
+ */
+export function trackedAvailabilityMinutes(
+    firstMinute: number | null,
+    endMinute: number,
+    duration: number
+) {
+    return firstMinute === null
+        ? 0
+        : Math.max(0, Math.min(duration, endMinute - firstMinute + 1));
+}
+
 export interface ResourceAvailability {
     readonly measure: string;
     readonly capturedAt: string;
     readonly firstSampleAt: string | null;
     readonly monitorUnavailable: boolean;
     readonly stepSeconds: number;
+    /** Recent one-minute checkpoints, oldest first through capturedAt: 1 up, 0 down, ? unobserved. */
+    readonly recentMinutes: string;
+    /** Rolling one-day and five-day intervals, oldest first, both ending at capturedAt. */
+    readonly longHistory: {
+        readonly month: readonly AvailabilityCounts[];
+        readonly year: readonly AvailabilityCounts[];
+    };
     readonly periods: readonly {
         readonly period: AvailabilityPeriod;
         readonly available: number;
         readonly observed: number;
+        /** Scheduled checks on or after the resource's tracking start. */
         readonly expected: number;
     }[];
 }

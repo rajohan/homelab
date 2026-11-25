@@ -94,7 +94,7 @@ export function DataTable<T>({
                 tabIndex={0}
                 aria-label={label}
                 className={cn(
-                    "isolate max-h-[min(32.5rem,60dvh)] scroll-frame bg-surface-panel focus-visible:outline-2 focus-visible:outline-accent-500",
+                    "isolate max-h-[min(32.5rem,60dvh)] scroll-frame bg-surface-card focus-visible:outline-2 focus-visible:outline-accent-500",
                     className
                 )}
             >

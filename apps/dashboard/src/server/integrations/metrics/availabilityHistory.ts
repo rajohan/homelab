@@ -8,7 +8,7 @@ import { type MetricsConfiguration, queryMetrics } from "./transport";
 
 const day = 86_400;
 type Source = ReturnType<typeof availabilitySource>;
-type Window = { start: number; available: number; observed: number };
+type Window = { start: number; end: number; available: number; observed: number };
 type Era = { source: Source; after: number; until: number };
 const migrations = {
     "homelab-services": {
@@ -89,7 +89,7 @@ export interface RetainedEra {
  * @param eras - Reviewed identities and their UTC validity intervals.
  * @param end - Last completed minute, in Unix seconds.
  * @param signal - Shared operation deadline.
- * @param after - Skip minutes already reconciled into the permanent archive.
+ * @param after - Skip minutes already reconciled into the archive.
  * @returns Measured eras with resolved exporter identities and no target labels exposed.
  */
 export async function retainedEras(
@@ -220,7 +220,7 @@ async function addRange(
             if (observed > (to - from) / 60)
                 throw new Error("Overlapping availability observations");
             for (const p of periods)
-                if (from >= p.start) {
+                if (from >= p.start && to <= p.end) {
                     p.available += healthy;
                     p.observed += observed;
                 }
@@ -276,7 +276,7 @@ export async function addUnarchivedMinutes(
                 for (const [timestamp, state] of points)
                     if (observed[(timestamp - date * day) / 60] === "0")
                         for (const p of periods)
-                            if (timestamp > p.start) {
+                            if (timestamp > p.start && timestamp <= p.end) {
                                 p.available += state;
                                 p.observed++;
                             }

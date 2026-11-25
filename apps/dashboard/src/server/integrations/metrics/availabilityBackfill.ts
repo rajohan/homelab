@@ -1,6 +1,7 @@
-import type {
-    AvailabilityKind,
-    InfrastructureInventory,
+import {
+    type AvailabilityKind,
+    availabilityRetentionDays,
+    type InfrastructureInventory,
 } from "@homelab/contracts/infrastructure";
 import type { SQL, TransactionSQL } from "bun";
 
@@ -32,19 +33,23 @@ async function recover(
     today: number,
     signal: AbortSignal
 ): Promise<CompletedDay> {
+    const firstDay =
+        Math.floor(Date.parse(inventory.capturedAt) / (secondsPerDay * 1000)) -
+        availabilityRetentionDays;
+    const nextDay = Math.max(task.next_day ?? firstDay, firstDay);
     const eras = await retainedEras(
         config,
         availabilityEras(inventory, task.kind, task.resource),
         Math.floor(Date.now() / 60_000) * 60 - 60,
         signal,
-        task.next_day === null ? 0 : task.next_day * secondsPerDay - 60
+        nextDay * secondsPerDay - 60
     );
     const earliest = eras[0]?.first;
-    // Skip time already lost to retention, preserving all earlier durable observations.
+    // Do not reacquire days already outside the rolling archive.
     const day =
         earliest === undefined
             ? today
-            : Math.max(task.next_day ?? 0, Math.floor(earliest / secondsPerDay));
+            : Math.max(nextDay, Math.floor(earliest / secondsPerDay));
     const observed = Array.from({ length: minutesPerDay }, () => "0"),
         healthy = Array.from({ length: minutesPerDay }, () => "0");
     let first = minutesPerDay;
@@ -150,6 +155,8 @@ export async function saveAvailabilityBackfill(
             healthy=availability_days.healthy | (excluded.healthy & ~availability_days.observed),
             observed=availability_days.observed | excluded.observed
     )
-    INSERT INTO availability_backfill(kind,resource,next_day) SELECT kind,resource,next_day FROM batch
-    ON CONFLICT(kind,resource) DO UPDATE SET next_day=greatest(availability_backfill.next_day,excluded.next_day)`;
+    INSERT INTO availability_backfill AS cursor(kind,resource,next_day,first_minute)
+    SELECT kind,resource,next_day,CASE WHEN first<1440 THEN day*1440+first END FROM batch
+    ON CONFLICT(kind,resource) DO UPDATE SET next_day=greatest(cursor.next_day,excluded.next_day),
+        first_minute=least(cursor.first_minute,excluded.first_minute)`;
 }

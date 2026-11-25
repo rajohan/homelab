@@ -49,14 +49,15 @@ limits and point limits. Upstream error bodies are not exposed to the browser.
 
 ## Availability history
 
-Infrastructure → Availability shows the past 24 hours, 7, 30 and 365 days plus the full
-retained history of one selected resource. Host and monitored application
-inspectors show the same readings. Each percentage divides healthy observations
-by all observations with a known state. Coverage separately divides those known
-observations by the number of scheduled checkpoints in the requested window.
-An empty window has unknown availability. The all-time denominator starts at
-the first retained sample for that identity. A year with only a few months of
-retained data shows correspondingly low coverage.
+Infrastructure → Availability and the resource inspectors show one timeline with
+a choice of 1 hour, 24 hours, 7 days, 30 days or 1 year. The percentage above
+the timeline divides healthy minutes by scheduled minutes since tracking began.
+Time before the resource's first tracked minute appears as “No data” and stays
+outside the calculation. After that, both failed and missed checks count as downtime.
+Inspect an interval to see how many minutes were up, failed or missing. If a
+history query fails, unresolved gaps remain unknown and the dashboard withholds
+an incomplete percentage. The 30-day view groups checks by day and the 365-day
+view groups them into five-day intervals. Any downtime marks the interval.
 
 The read-only VictoriaMetrics integration uses the existing instant-query endpoint
 for timestamp discovery and bounded MetricsQL rollups. Each checkpoint requires
@@ -70,11 +71,15 @@ Disk I/O or remaining capacity alone does not establish a healthy state.
 The existing minute worker collects the health families in three bounded batch
 queries shared by all resources. Its lease-fenced transaction stores two daily
 bitmaps per resource in PostgreSQL (observed and healthy minutes). Repeated runs
-only count a minute once. Missing worker runs remain unknown. The archive has
-no time-based expiry, so annual and all-time histories outlive monitor retention.
+only count a minute once. The raw bitmaps preserve the distinction between failed
+and missed checks. The dashboard reads the most recent
+365 days. Hourly retention removes fully expired UTC days and obsolete recovery
+cursors. The boundary day remains available until its last minute expires.
+The resource cursor retains its first tracked minute as older bitmaps expire.
 In the same minute job, a separate bounded recovery pass reconciles up to 12
 resource-days, three at a time under a shared five-second deadline. It starts
-at each resource's earliest retained sample, fills gaps from worker outages,
+at each resource's earliest retained sample within the one-year window, fills
+recoverable gaps from worker outages,
 and advances a per-resource cursor atomically with the merged observed minutes.
 Retries never overwrite an already observed minute. Once caught up it only reads
 completed UTC days. Background reads rotate among resources; each requested

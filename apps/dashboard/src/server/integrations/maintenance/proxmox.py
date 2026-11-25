@@ -84,7 +84,7 @@ def recovered(request):
     vmid, service = recipe["proxmox"]["vmid"], recipe.get("service")
     boot, invocation = identity(vmid, service)
     if service == "systemd-manager":
-        changed = boot == expected["bootId"] and not pending(vmid, service)
+        changed = boot == expected["bootId"]
     elif service:
         changed = boot == expected["bootId"] and invocation and invocation != expected["invocationId"]
     else:
@@ -94,6 +94,9 @@ def recovered(request):
     guest(vmid, recipe["health"])
     if request.get("guestSsh"):
         check_guest_ssh(request["guestSsh"])
+    if service and (service == "systemd-manager" or recipe.get("reportedOn") or
+                    request.get("requiredOnly") or expected.get("serviceRestartRequired")):
+        return not pending(vmid, service)
     return True
 
 

@@ -1,9 +1,4 @@
-import {
-    type UpdateControl,
-    type UpdatePolicy,
-    updateRequestSchema,
-    type UpdateSource,
-} from "@homelab/contracts/updates";
+import { updateRequestSchema, type UpdateSource } from "@homelab/contracts/updates";
 import type { SQL } from "bun";
 import * as v from "valibot";
 
@@ -12,8 +7,9 @@ import type { JobHandler } from "../../jobs/types";
 import { OperationFailure } from "../../operations/errors";
 import type { ApplicationTarget } from "../applications/configuration";
 import { applyUpdate, updateTimeoutMs } from "./apply";
+import { admitAutomaticUpdates, automaticReason } from "./automaticAdmission";
 import { updateBatchJobs } from "./batch";
-import { type UpdateTarget, updateTargetRevision } from "./configuration";
+import type { UpdateTarget } from "./configuration";
 import { executeUpdate, type UpdateExecutor } from "./execution";
 import { freshAptObservation, readUpdateReport } from "./inventory";
 import { readUpdatePolicies } from "./policies";
@@ -22,7 +18,7 @@ import {
     updateReceiptScope,
     verifyUpdateReceiptLeases,
 } from "./receipts";
-import { matchesUpdateTarget, updateControl } from "./selection";
+import { updateControl } from "./selection";
 
 const payloadSchema = v.strictObject({
     ...v.omit(updateRequestSchema, ["requestId"]).entries,
@@ -30,27 +26,10 @@ const payloadSchema = v.strictObject({
     policyVersion: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
 });
 
-function automaticReason(
-    policy: UpdatePolicy | undefined,
-    control: UpdateControl
-): string | null {
-    if (!policy?.enabled) return "automatic updates off";
-    if (!control.allowed) return control.reason ?? "installation unavailable";
-    switch (control.change) {
-        case "digest": {
-            return policy.allowDigest ? null : "digest-only updates off";
-        }
-        case "major": {
-            return "major upgrade";
-        }
-        case "unknown": {
-            return "versions cannot be safely compared";
-        }
-        default: {
-            return null;
-        }
-    }
-}
+const continuationSchema = v.strictObject({
+    source: v.pipe(v.string(), v.minLength(1), v.maxLength(100)),
+    parent: v.pipe(v.string(), v.uuid()),
+});
 
 /**
  * Register separately authorized installers and a policy-gated automatic admission job.
@@ -71,6 +50,45 @@ export function updateActionJobs(
     sources: readonly UpdateSource[] = []
 ): readonly JobHandler[] {
     if (targets.length === 0) return [];
+    const continuation: JobHandler | undefined = refresh && {
+        definition: {
+            ...refresh.definition,
+            key: "updates.apt-continue",
+            label: "Check remaining automatic package updates",
+            description:
+                "Refresh one host's package inventory and admit the next eligible update under its original policy.",
+            admission: "integration",
+            capability: "updates:configure",
+            intervalSeconds: null,
+            resourceKeys: ["updates:admission", ...refresh.definition.resourceKeys],
+            validate: (input) => v.parse(continuationSchema, input),
+        },
+        execute: async (payload, context) => {
+            const { source, parent } = v.parse(continuationSchema, payload);
+            // The refresh is also required after interrupted or partially applied installs.
+            await refresh.execute({ source, purpose: "prepare" }, context);
+            const [prior] = await client<{ target: string; version: number }[]>`
+                SELECT payload->>'target' AS target, (payload->>'policyVersion')::int AS version
+                FROM job_runs WHERE id=${parent} AND state='succeeded' AND NOT cancel_requested
+                AND requested_by='system:automatic-updates' AND payload->>'automatic'='true'
+                AND action='updates.install.' || (payload->>'target')`;
+            const target = targets.find(
+                (entry) =>
+                    entry.id === prior?.target &&
+                    entry.source === source &&
+                    entry.driver.kind === "apt"
+            );
+            if (target && prior?.version)
+                await admitAutomaticUpdates(
+                    client,
+                    context,
+                    [target],
+                    [source],
+                    installers,
+                    prior.version
+                );
+        },
+    };
     const installers: JobHandler[] = targets.map((target) => ({
         definition: {
             key: `updates.install.${target.id}`,
@@ -116,6 +134,25 @@ export function updateActionJobs(
             await context.reportProgress(
                 `Preparing the approved update for ${item.name}.`
             );
+            const morePackages =
+                input.automatic &&
+                target.driver.kind === "apt" &&
+                report.items.some(
+                    (other) =>
+                        other.kind === "os" &&
+                        other.id !== item.id &&
+                        other.status === "available"
+                );
+            const followUp =
+                morePackages && continuation
+                    ? {
+                          definition: continuation.definition,
+                          payload: { source: target.source, parent: context.runId },
+                      }
+                    : refresh && {
+                          definition: refresh.definition,
+                          payload: { source: target.source },
+                      };
             await applyUpdate(
                 target,
                 item,
@@ -125,12 +162,13 @@ export function updateActionJobs(
                 context,
                 execute,
                 receiptScope,
-                refresh?.definition
+                followUp
             );
         },
     }));
     return [
         ...installers,
+        ...(continuation ? [continuation] : []),
         ...updateBatchJobs(targets, client, execute, applications, refresh?.definition),
         {
             definition: {
@@ -151,141 +189,19 @@ export function updateActionJobs(
                 validate: (input) => v.parse(v.strictObject({}), input),
             },
             execute: async (_input, context) => {
-                let policies = await readUpdatePolicies(client, targets);
-                if (refresh && policies.some((policy) => policy.enabled)) {
+                const policies = await readUpdatePolicies(client, targets);
+                if (refresh && policies.some((policy) => policy.enabled))
                     await refresh.execute({}, context);
-                    policies = await readUpdatePolicies(client, targets);
-                }
-                let queued = 0;
-                let available = 0;
-                const examples: string[] = [];
-                const skip = (name: string, reason: string) => {
-                    if (examples.length < 4)
-                        examples.push(
-                            `${name.replaceAll(/\p{Cc}/gu, " ").slice(0, 55)}: ${reason}`
-                        );
-                };
                 const sourceIds = new Set([
                     ...targets.map((target) => target.source),
                     ...sources.map((source) => source.id),
                 ]);
-                for (const source of sourceIds) {
-                    context.signal.throwIfAborted();
-                    const report = await readUpdateReport(client, source);
-                    if (!report) continue;
-                    const sourceTargets = targets.filter(
-                        (target) => target.source === source
-                    );
-                    for (const item of report.items) {
-                        if (item.status !== "available") continue;
-                        available++;
-                        const target = sourceTargets.find((candidate) =>
-                            matchesUpdateTarget(candidate, item)
-                        );
-                        if (!target) {
-                            skip(item.name, "no configured installer");
-                            continue;
-                        }
-                        const policy = policies.find(
-                            (candidate) => candidate.target === target.id
-                        );
-                        const control = updateControl(target, report, item);
-                        const reason =
-                            automaticReason(policy, control) ??
-                            (target.driver.kind === "apt" && !freshAptObservation(report)
-                                ? "package observation expired"
-                                : null) ??
-                            (queued >= 50 ? "queue limit reached" : null);
-                        if (reason || !policy) {
-                            skip(item.name, reason ?? "automatic updates off");
-                            continue;
-                        }
-                        const installer = installers.find(
-                            (candidate) =>
-                                candidate.definition.key ===
-                                `updates.install.${target.id}`
-                        )!;
-                        const candidateKey = new Bun.CryptoHasher("sha256")
-                            .update(
-                                JSON.stringify([
-                                    updateTargetRevision(target),
-                                    item.id,
-                                    item.available,
-                                    item.availableImage,
-                                ])
-                            )
-                            .digest("hex");
-                        if (
-                            !(await context.commit(async (transaction) => {
-                                // Serialize admission with operator policy writes so a
-                                // disable committed during checking cannot enqueue work.
-                                const [currentPolicy] = await transaction<
-                                    {
-                                        enabled: boolean;
-                                        version: number;
-                                        configuration: string;
-                                    }[]
-                                >`SELECT enabled,version,configuration FROM update_policies WHERE target=${target.id} FOR SHARE`;
-                                if (
-                                    !currentPolicy?.enabled ||
-                                    currentPolicy.version !== policy.version ||
-                                    currentPolicy.configuration !==
-                                        updateTargetRevision(target)
-                                ) {
-                                    skip(item.name, "policy changed");
-                                    return;
-                                }
-                                // Failed/expired automatic runs are not silently retried for the same candidate.
-                                const key = `automatic-update:${target.id}:${candidateKey}`;
-                                const [existing] = await transaction<
-                                    { id: string }[]
-                                >`SELECT id FROM job_runs WHERE idempotency_key=${key}`;
-                                if (existing) {
-                                    skip(item.name, "already attempted");
-                                    return;
-                                }
-                                const [active] = await transaction<
-                                    { id: string }[]
-                                >`SELECT id FROM job_runs WHERE action=${installer.definition.key} AND state IN ('queued','running') LIMIT 1`;
-                                if (active) {
-                                    skip(
-                                        item.name,
-                                        "another installation is queued or running"
-                                    );
-                                    return;
-                                }
-                                await enqueueJob(
-                                    transaction,
-                                    installer.definition,
-                                    "system:automatic-updates",
-                                    key,
-                                    {
-                                        target: target.id,
-                                        item: item.id,
-                                        revision: control.revision,
-                                        automatic: true,
-                                        policyVersion: policy.version,
-                                    },
-                                    `Update ${item.name}`
-                                );
-                                queued += 1;
-                            }, true))
-                        )
-                            throw new Error("Automatic update admission lost its claim");
-                    }
-                }
-                const skipped = available - queued;
-                const summary = `${available} available · ${queued} queued · ${skipped} skipped`;
-                await context.reportProgress(
-                    [
-                        summary,
-                        ...examples,
-                        ...(skipped > examples.length
-                            ? [`and ${skipped - examples.length} more`]
-                            : []),
-                    ]
-                        .join(" · ")
-                        .slice(0, 500)
+                await admitAutomaticUpdates(
+                    client,
+                    context,
+                    targets,
+                    sourceIds,
+                    installers
                 );
             },
         },

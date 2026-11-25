@@ -1,4 +1,3 @@
-import { controllerRestartMessages } from "@homelab/contracts/maintenance";
 import {
     Button,
     EmptyState,
@@ -36,19 +35,6 @@ export function MaintenancePanel() {
     const query = useQuery(restartPlansQuery);
     const plans = query.data ?? [];
     const workload = restartWorkload(plans);
-    const controller = useQuery({
-        queryKey: ["operations", "proxmox-restart"],
-        queryFn: ({ signal }) =>
-            api.maintenance.controllerStatus.query(undefined, { signal }),
-        ...queryRefresh("fast"),
-        refetchInterval: ({ state }) =>
-            queryRefresh(
-                state.data?.phase === "waiting" || state.data?.phase === "submitted"
-                    ? "progress"
-                    : "fast"
-            ).refetchInterval,
-        retry: false,
-    });
     const batch = useQuery({
         queryKey: ["operations", "restart-batch"],
         queryFn: ({ signal }) => api.maintenance.batchStatus.query(undefined, { signal }),
@@ -177,13 +163,6 @@ export function MaintenancePanel() {
             )}
             {workload.eligible.length > 0 && batch.isError && (
                 <ErrorNotice error={batch.error} />
-            )}
-            {controller.isError && <ErrorNotice error={controller.error} />}
-            {controller.data && (
-                <output className="rounded-lg border border-primary-700 bg-surface-card p-3 text-sm">
-                    <strong>{controller.data.label}</strong> ·{" "}
-                    {controllerRestartMessages[controller.data.phase]}
-                </output>
             )}
             {query.data && !query.isError && plans.length === 0 && (
                 <EmptyState message="No hosts are configured for restart monitoring." />

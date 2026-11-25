@@ -67,6 +67,12 @@ candidates. The target still verifies exact versions and holds immediately befor
 installation. A repository change after confirmation requires a new plan, never an
 implicit upgrade to a different version.
 
+When several APT updates are pending on one host, automatic installation runs one
+at a time. After a successful install, the worker checks that host again and queues
+the next eligible package under the same policy. A failed or cancelled install
+still refreshes inventory. Pausing the automatic schedule or changing the host's
+policy stops the continuation.
+
 Successful automatic jobs and internal confirmation checks remain in Jobs history
 without creating notifications. Failures and timeouts still notify the operator.
 

@@ -1,21 +1,28 @@
-import type {
-    AvailabilityKind,
-    InfrastructureInventory,
-    ResourceAvailability,
+import {
+    type AvailabilityCounts,
+    type AvailabilityKind,
+    type AvailabilityPeriod,
+    availabilityRetentionDays,
+    type InfrastructureInventory,
+    type ResourceAvailability,
+    sumAvailabilityCounts,
+    trackedAvailabilityMinutes,
 } from "@homelab/contracts/infrastructure";
 import type { SQL } from "bun";
 
 import { OperationFailure } from "../../operations/errors";
-import { availabilityWindows, readAvailabilityArchive } from "./availabilityArchive";
+import { readAvailabilityArchive } from "./availabilityArchive";
 import {
     addUnarchivedMinutes,
     availabilityEras,
     retainedEras,
 } from "./availabilityHistory";
+import { completeTimeline, timelineMinutes } from "./availabilityTimeline";
 import type { MetricsConfiguration } from "./transport";
 
 const day = 86_400;
 const ttl = 5 * 60_000;
+
 async function collect(
     client: SQL,
     config: MetricsConfiguration | undefined,
@@ -25,20 +32,13 @@ async function collect(
 ): Promise<ResourceAvailability> {
     const end = Math.floor((Date.now() / 1000 - 30) / 60) * 60;
     const archive = await readAvailabilityArchive(client, kind, id, end);
-    const periods = availabilityWindows.map(([period, days]) => {
-        const archived = archive.rows.find((row) => row.period === period);
-        return {
-            period,
-            start: days === null ? 0 : end - days * day,
-            available: archived?.available ?? 0,
-            observed: archived?.observed ?? 0,
-        };
-    });
+    const intervals = archive.intervals;
+    let recentMinutes = archive.recentMinutes;
     let first = archive.first;
     let monitorUnavailable = !config;
     if (config) {
         // Merge durable and retained history minute-for-minute in the unreconciled tail.
-        const retained = periods.map((row) => ({ ...row, available: 0, observed: 0 }));
+        const retained = intervals.map((row) => ({ ...row, available: 0, observed: 0 }));
         try {
             const signal = AbortSignal.timeout(25_000);
             const raw = await retainedEras(
@@ -46,20 +46,32 @@ async function collect(
                 eras,
                 end,
                 signal,
-                archive.nextDay === null ? 0 : archive.nextDay * day - 60
+                Math.max(
+                    end - availabilityRetentionDays * day,
+                    (archive.nextDay ?? 0) * day - 60
+                )
             );
+            const windowStart = end - timelineMinutes * 60;
             await addUnarchivedMinutes(
                 config,
-                raw,
+                raw.map((era) => ({ ...era, until: Math.min(era.until, windowStart) })),
                 archive.masks,
                 archive.nextDay,
+                retained,
+                signal
+            );
+            recentMinutes = await completeTimeline(
+                config,
+                raw,
+                windowStart,
+                recentMinutes,
                 retained,
                 signal
             );
             for (const era of raw)
                 first = first === null ? era.first : Math.min(first, era.first);
             for (const [index, row] of retained.entries()) {
-                const period = periods[index];
+                const period = intervals[index];
                 if (period) {
                     period.available += row.available;
                     period.observed += row.observed;
@@ -75,19 +87,42 @@ async function collect(
             "Availability history has not been collected for this resource."
         );
     }
-    const allExpected = first === null ? 0 : end / 60 - Math.ceil(first / 60) + 1;
+    const month = intervals.slice(-30);
+    const year: AvailabilityCounts[] = intervals
+        .slice(0, -30)
+        .map(({ available, observed }) => ({ available, observed }));
+    for (let index = 0; index < month.length; index += 5)
+        year.push(sumAvailabilityCounts(month.slice(index, index + 5)));
+    const firstMinute = first === null ? null : Math.ceil(first / 60);
+    function periodTotal(
+        period: AvailabilityPeriod,
+        days: number,
+        rows: AvailabilityCounts[]
+    ) {
+        const totals = sumAvailabilityCounts(rows);
+        return {
+            period,
+            ...totals,
+            expected: trackedAvailabilityMinutes(firstMinute, end / 60, days * 1440),
+        };
+    }
     return {
         measure: eras.at(-1)!.source.measure,
         capturedAt: new Date(end * 1000).toISOString(),
         firstSampleAt: first === null ? null : new Date(first * 1000).toISOString(),
         stepSeconds: 60,
+        recentMinutes,
         monitorUnavailable,
-        periods: periods.map(({ period, start, available, observed }) => ({
-            period,
-            available,
-            observed,
-            expected: period === "all" ? allExpected : (end - start) / 60,
-        })),
+        longHistory: {
+            month: month.map(({ available, observed }) => ({ available, observed })),
+            year,
+        },
+        periods: [
+            periodTotal("day", 1, month.slice(-1)),
+            periodTotal("week", 7, month.slice(-7)),
+            periodTotal("month", 30, month),
+            periodTotal("year", availabilityRetentionDays, year),
+        ],
     };
 }
 
@@ -104,7 +139,7 @@ const caches = new WeakMap<SQL, Map<string, CacheEntry>>();
  * @param inventory - Trusted inventory from which the queried resource must originate.
  * @param kind - Resource category selected by the operator.
  * @param id - Opaque resource identity from the inventory.
- * @returns Five periods of available, observed and expected checkpoints.
+ * @returns Observed minute history, rolling intervals and their covered totals.
  */
 export function readAvailability(
     client: SQL,

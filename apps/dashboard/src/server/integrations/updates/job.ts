@@ -250,7 +250,13 @@ export function updatesJob(
                 const [row] = await client<
                     { value: UpdateReport }[]
                 >`SELECT value FROM operation_snapshots WHERE key = ${`updates:${source.id}`} AND captured_at > now() - interval '26 hours'`;
-                if (!row) continue;
+                if (!row) {
+                    if (input.source && input.purpose === "prepare")
+                        throw new Error(
+                            "A current source inventory is required to prepare updates."
+                        );
+                    continue;
+                }
                 await context.reportProgress(
                     `Checking available versions for ${source.label}.`
                 );

@@ -1,3 +1,4 @@
+import { availabilityRetentionDays } from "@homelab/contracts/infrastructure";
 import * as v from "valibot";
 
 import type { JobHandler } from "./types";
@@ -49,6 +50,14 @@ export function maintenanceJob(retentionDays: number): JobHandler {
                 more = false;
                 if (
                     !(await context.commit(async (transaction) => {
+                        // Keep the entire UTC day that crosses the rolling window's lower edge.
+                        const cutoff = transaction`((now() AT TIME ZONE 'UTC')::date - date '1970-01-01' - ${availabilityRetentionDays}::int)`;
+                        const expiredDays = await transaction<{ day: number }[]>`
+                            DELETE FROM availability_days WHERE (kind, resource, day) IN (
+                                SELECT kind, resource, day FROM availability_days WHERE day < ${cutoff} LIMIT 2000
+                            ) RETURNING day`;
+                        await transaction`DELETE FROM availability_backfill c WHERE next_day < ${cutoff}
+                            AND NOT EXISTS (SELECT 1 FROM availability_days d WHERE d.kind=c.kind AND d.resource=c.resource)`;
                         const jobs = await transaction<
                             { id: string }[]
                         >`DELETE FROM job_runs WHERE id IN (SELECT id FROM job_runs WHERE state IN ('succeeded','failed','timed_out','cancelled') AND finished_at < now() - ${retentionDays} * interval '1 day' LIMIT 1000) RETURNING id`;
@@ -68,6 +77,7 @@ export function maintenanceJob(retentionDays: number): JobHandler {
                             { id: string }[]
                         >`DELETE FROM dashboard_notifications WHERE id IN (SELECT id FROM dashboard_notifications WHERE created_at < now() - ${retentionDays} * interval '1 day' ORDER BY id LIMIT 1000) RETURNING id`;
                         more =
+                            expiredDays.length === 2000 ||
                             jobs.length === 1000 ||
                             batches.length === 1000 ||
                             audit.length === 5000 ||

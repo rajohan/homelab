@@ -10,14 +10,6 @@ import { useInfrastructure } from "../features/infrastructure/useInfrastructure"
  */
 export function Infrastructure() {
     const { query, inventory, stale } = useInfrastructure();
-    const unknown =
-        inventory?.applications.filter((item) => item.state === "unknown").length ?? 0;
-    const failedApps =
-        inventory?.applications.filter((item) => item.state === "unhealthy").length ?? 0;
-    const failedProbes =
-        inventory?.services.filter(
-            (item) => item.kind === "probe" && item.state === "unhealthy"
-        ).length ?? 0;
     return (
         <>
             <PageHeader
@@ -28,32 +20,6 @@ export function Infrastructure() {
                 }
             />
             <div className="space-y-5">
-                {!stale && (failedApps > 0 || unknown > 0 || failedProbes > 0) && (
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                        {(failedApps > 0 || unknown > 0) && (
-                            <a
-                                className="rounded text-amber-300 underline"
-                                href="#applications"
-                            >
-                                {[
-                                    failedApps > 0 && `${failedApps} unhealthy`,
-                                    unknown > 0 && `${unknown} unknown`,
-                                ]
-                                    .filter(Boolean)
-                                    .join(" · ")}
-                            </a>
-                        )}
-                        {failedProbes > 0 && (
-                            <a
-                                className="rounded text-amber-300 underline"
-                                href="#services"
-                            >
-                                {failedProbes} failed{" "}
-                                {failedProbes === 1 ? "probe" : "probes"}
-                            </a>
-                        )}
-                    </div>
-                )}
                 {query.isError && <ErrorNotice error={query.error} />}
                 {query.isPending && <LoadingState label="Loading infrastructure…" />}
                 <InfrastructureOverview
