@@ -152,7 +152,7 @@ async function recordResult(
  * @param context - Current worker claim, cancellation signal and progress sink.
  * @param execute - Worker-only installation boundary or an isolated test replacement.
  * @param scope - Explicit host-bound sources whose verified dependent identities may be reconciled.
- * @param refresh - Registered read-only checker to refresh package dependencies after the job releases its host.
+ * @param followUp - Inventory check or policy-gated continuation to run after the host lease releases.
  * @returns Completion after the installed version and durable receipt are verified.
  */
 export async function applyUpdate(
@@ -162,7 +162,7 @@ export async function applyUpdate(
     context: JobExecution,
     execute: UpdateExecutor,
     scope?: UpdateReceiptScope,
-    refresh?: JobDefinition
+    followUp?: { definition: JobDefinition; payload: Record<string, unknown> }
 ): Promise<void> {
     const signal = AbortSignal.any([
         context.signal,
@@ -171,7 +171,7 @@ export async function applyUpdate(
     signal.throwIfAborted();
     if (
         !(await context.commit(async (transaction) => {
-            if (target.driver.kind !== "apt" || !refresh) return;
+            if (target.driver.kind !== "apt" || !followUp) return;
             const [run] = await transaction<{ resourceKeys: string[] }[]>`
             SELECT resource_keys AS "resourceKeys" FROM job_runs WHERE id=${context.runId}`;
             if (!run) throw new Error("Update job is unavailable");
@@ -181,16 +181,17 @@ export async function applyUpdate(
             await enqueueJob(
                 transaction,
                 {
-                    ...refresh,
+                    ...followUp.definition,
                     resourceKeys: [
-                        ...new Set([...refresh.resourceKeys, ...run.resourceKeys]),
+                        ...new Set([
+                            ...followUp.definition.resourceKeys,
+                            ...run.resourceKeys,
+                        ]),
                     ],
                 },
                 "system:updates",
                 `updates-installed:${context.runId}:${target.source}`,
-                {
-                    source: target.source,
-                }
+                followUp.payload
             );
         }, true))
     )

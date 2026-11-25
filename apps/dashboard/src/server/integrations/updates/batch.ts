@@ -305,7 +305,7 @@ export function updateBatchJobs(
                             },
                             execute,
                             receiptScope,
-                            refresh
+                            refresh && { definition: refresh, payload: { source } }
                         );
                     } catch (error) {
                         if (!context.signal.aborted)
