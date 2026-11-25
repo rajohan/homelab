@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/rajohan/homelab/compare/v0.27.0...v0.27.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **maintenance:** verify service restarts and track batch progress ([#276](https://github.com/rajohan/homelab/issues/276)) ([e868e30](https://github.com/rajohan/homelab/commit/e868e30d23fcf01ebf71cb1e156dbfc72372e7f2))
+
 ## [0.27.0](https://github.com/rajohan/homelab/compare/v0.26.1...v0.27.0) (2026-11-25)
 
 
