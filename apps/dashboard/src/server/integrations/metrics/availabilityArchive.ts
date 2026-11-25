@@ -1,7 +1,7 @@
-import type {
-    AvailabilityKind,
-    AvailabilityPeriod,
-    InfrastructureInventory,
+import {
+    type AvailabilityKind,
+    availabilityRetentionDays,
+    type InfrastructureInventory,
 } from "@homelab/contracts/infrastructure";
 import type { SQL, TransactionSQL } from "bun";
 
@@ -15,13 +15,6 @@ import { type MetricsConfiguration, queryMetrics } from "./transport";
 
 const minuteSeconds = 60,
     minutesPerDay = 1440;
-export const availabilityWindows: readonly [AvailabilityPeriod, number | null][] = [
-    ["day", 1],
-    ["week", 7],
-    ["month", 30],
-    ["year", 365],
-    ["all", null],
-];
 export const resourceCollections = {
     host: "hosts",
     application: "applications",
@@ -158,7 +151,7 @@ export async function saveAvailabilityCheckpoint(
 ) {
     const day = Math.floor(checkpoint.minute / minutesPerDay),
         slot = checkpoint.minute % minutesPerDay;
-    await tx`INSERT INTO availability_days (kind,resource,day,first_minute,observed,healthy)
+    await tx`WITH saved AS (INSERT INTO availability_days (kind,resource,day,first_minute,observed,healthy)
         SELECT kind,resource,${day}::int,${slot}::int,
             set_bit(B'0'::bit(1440), ${slot}::int, (status IS NOT NULL)::int),
             set_bit(B'0'::bit(1440), ${slot}::int, CASE WHEN status=1 THEN 1 ELSE 0 END)
@@ -168,7 +161,12 @@ export async function saveAvailabilityCheckpoint(
             observed=availability_days.observed | excluded.observed,
             healthy=availability_days.healthy | (excluded.healthy & ~availability_days.observed)
         WHERE excluded.first_minute < availability_days.first_minute OR
-            (get_bit(availability_days.observed,${slot}::int)=0 AND get_bit(excluded.observed,${slot}::int)=1)`;
+            (get_bit(availability_days.observed,${slot}::int)=0 AND get_bit(excluded.observed,${slot}::int)=1)
+        RETURNING kind,resource,first_minute)
+        INSERT INTO availability_backfill AS cursor(kind,resource,next_day,first_minute)
+        SELECT kind,resource,${day - availabilityRetentionDays}::int,${checkpoint.minute}::int FROM saved WHERE first_minute=${slot}::int
+        ON CONFLICT(kind,resource) DO UPDATE SET first_minute=excluded.first_minute
+        WHERE cursor.first_minute IS NULL OR cursor.first_minute>excluded.first_minute`;
 }
 
 /** Count observed archive minutes in rolling windows, including exact partial-day edges.
@@ -185,13 +183,20 @@ export async function readAvailabilityArchive(
     end: number
 ) {
     const minute = Math.floor(end / minuteSeconds);
-    const periods = availabilityWindows.map(([period, days]) => ({
-        period,
-        start: days === null ? -1 : minute - days * minutesPerDay,
-    }));
+    // One day per interval over the last month and five days per interval before it.
+    // Both spans end at the selected minute rather than at midnight.
+    const firstMinute = minute - availabilityRetentionDays * minutesPerDay;
+    const monthStart = minute - 30 * minutesPerDay;
+    const intervals = [];
+    for (let start = firstMinute; start < minute;) {
+        const end = start + (start < monthStart ? 5 : 1) * minutesPerDay;
+        intervals.push({ start, end });
+        start = end;
+    }
     const rows = await client<
         {
-            period: AvailabilityPeriod;
+            start: number;
+            end: number;
             first: number | null;
             observed: number;
             available: number;
@@ -199,27 +204,32 @@ export async function readAvailabilityArchive(
             masks: [number, string, string | null][] | null;
         }[]
     >`
-        WITH cursor_state AS (SELECT next_day FROM availability_backfill WHERE kind=${kind} AND resource=${id}),
-        periods AS (SELECT * FROM jsonb_to_recordset(${JSON.stringify(periods)}::text::jsonb) AS p(period text,start int)),
-        days AS (SELECT day*1440 AS start,first_minute,observed,healthy FROM availability_days WHERE kind=${kind} AND resource=${id} AND day <= ${Math.floor(minute / minutesPerDay)})
-        SELECT p.period,(SELECT next_day FROM cursor_state) AS next_day,
-            CASE WHEN p.period='all' THEN (SELECT jsonb_agg(jsonb_build_array(start/1440,observed::text,
+        WITH cursor_state AS (SELECT next_day,first_minute FROM availability_backfill WHERE kind=${kind} AND resource=${id}),
+        periods AS (SELECT * FROM jsonb_to_recordset(${JSON.stringify(intervals)}::text::jsonb) AS p(start int,"end" int)),
+        days AS (SELECT day*1440 AS start,first_minute,observed,healthy FROM availability_days WHERE kind=${kind} AND resource=${id} AND day BETWEEN ${Math.floor((firstMinute + 1) / minutesPerDay)} AND ${Math.floor(minute / minutesPerDay)})
+        SELECT p.start,p."end",(SELECT next_day FROM cursor_state) AS next_day,
+            CASE WHEN p.start=${firstMinute} THEN (SELECT jsonb_agg(jsonb_build_array(start/1440,observed::text,
                 CASE WHEN start+1439 > ${minute - timelineMinutes} THEN healthy::text END) ORDER BY start)
               FROM days WHERE start/1440>=coalesce((SELECT next_day FROM cursor_state),0)
                 OR start+1439 > ${minute - timelineMinutes}) END AS masks,
-            min(d.start+d.first_minute) FILTER (WHERE d.start+d.first_minute <= ${minute})::int AS first,
+            least((SELECT first_minute FROM cursor_state), min(d.start+d.first_minute) FILTER (WHERE d.start+d.first_minute <= ${minute}))::int AS first,
             coalesce(sum(bit_count(substring(d.observed from edge.lo+1 for greatest(0,edge.hi-edge.lo+1)))),0)::int AS observed,
             coalesce(sum(bit_count(substring(d.healthy from edge.lo+1 for greatest(0,edge.hi-edge.lo+1)))),0)::int AS available
-        FROM periods p LEFT JOIN days d ON d.start+1439>p.start
-        CROSS JOIN LATERAL (SELECT greatest(0,p.start+1-d.start) AS lo,least(1439,${minute}::int-d.start) AS hi) edge
-        GROUP BY p.period`;
-    const all = rows.find((row) => row.period === "all");
-    const first = all?.first ?? null;
+        FROM periods p LEFT JOIN days d ON d.start+1439>p.start AND d.start<=p."end"
+        CROSS JOIN LATERAL (SELECT greatest(0,p.start+1-d.start) AS lo,least(1439,p."end"-d.start) AS hi) edge
+        GROUP BY p.start,p."end" ORDER BY p.start`;
+    const meta = rows[0];
+    const firsts = rows.flatMap((row) => (row.first === null ? [] : [row.first]));
     return {
-        first: first === null ? null : first * minuteSeconds,
-        rows,
-        nextDay: all?.next_day ?? null,
-        masks: new Map((all?.masks ?? []).map(([day, observed]) => [day, observed])),
-        recentMinutes: archivedTimeline(minute, all?.masks ?? []),
+        first: firsts.length > 0 ? Math.min(...firsts) * minuteSeconds : null,
+        intervals: rows.map(({ start, end, available, observed }) => ({
+            start: start * minuteSeconds,
+            end: end * minuteSeconds,
+            available,
+            observed,
+        })),
+        nextDay: meta?.next_day ?? null,
+        masks: new Map((meta?.masks ?? []).map(([day, observed]) => [day, observed])),
+        recentMinutes: archivedTimeline(minute, meta?.masks ?? []),
     };
 }

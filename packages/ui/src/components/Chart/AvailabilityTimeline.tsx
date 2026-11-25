@@ -1,4 +1,8 @@
-import { CircleCheck, CircleHelp, CircleX } from "lucide-react";
+import {
+    type ResourceAvailability,
+    sumAvailabilityCounts,
+    trackedAvailabilityMinutes,
+} from "@homelab/contracts/infrastructure";
 import { useRef, useState } from "react";
 
 import { formatDateTimeParts } from "../../lib/formatDateTime";
@@ -8,89 +12,129 @@ const ranges = [
     { value: "hour", label: "1h", minutes: 60, size: 1 },
     { value: "day", label: "24h", minutes: 1440, size: 30 },
     { value: "week", label: "7d", minutes: 10_080, size: 180 },
+    { value: "month", label: "30d", minutes: 43_200, size: 1440 },
+    { value: "year", label: "1y", minutes: 525_600, size: 7200 },
 ] as const;
 type Range = (typeof ranges)[number]["value"];
 
 const states = {
-    up: { label: "Up", color: "text-emerald-300", mark: "h-7 bg-emerald-400" },
+    up: { label: "Up", mark: "h-7 bg-emerald-400" },
     down: {
         label: "Downtime",
-        color: "text-rose-300",
         mark: "h-5 rounded-b-none bg-rose-400",
-    },
-    partial: {
-        label: "Partial coverage",
-        color: "text-amber-300",
-        mark: "h-3.5 bg-amber-400",
     },
     unknown: {
         label: "No data",
-        color: "text-primary-400",
         mark: "h-1.5 bg-primary-400",
     },
 } as const;
 
-function intervalState(up: number, down: number, missing: number) {
-    if (down) return states.down;
-    if (!up) return states.unknown;
-    return missing ? states.partial : states.up;
-}
-
 const readings = {
-    "1": { label: "Up", color: states.up.color, icon: CircleCheck },
-    "0": { label: "Down", color: states.down.color, icon: CircleX },
-    "?": { label: "No data", color: states.unknown.color, icon: CircleHelp },
+    up: { label: "Up", color: "bg-emerald-400" },
+    down: { label: "Down", color: "bg-rose-400" },
+    missed: { label: "No signal", color: "bg-rose-400" },
+    unknown: { label: "No data", color: "bg-primary-400" },
 };
+
+function currentReading(sample: string | undefined, expected: boolean) {
+    if (sample === "1") return readings.up;
+    if (sample === "0") return readings.down;
+    return expected ? readings.missed : readings.unknown;
+}
 
 function timeLabel(ms: number, showDate: boolean) {
     const [date, time] = formatDateTimeParts(ms);
     return (showDate ? date.slice(0, 5) + " " : "") + time.slice(0, 5);
 }
 
-/** Show recent minute checks in time order and expose every interval to mouse, touch and keyboard.
- * @param props - Chronological one-minute checks (1 up, 0 down, ? unknown), their final timestamp and the measured condition.
- * @returns A range selector, an inspectable status history and the time of the latest observation.
+const percent = new Intl.NumberFormat(undefined, {
+    style: "percent",
+    maximumFractionDigits: 2,
+});
+function ratio(value: number, total: number) {
+    if (!total) return "—";
+    if (value > 0 && value / total < 0.0001) return "<" + percent.format(0.0001);
+    if (value < total && value / total > 0.9999) return ">" + percent.format(0.9999);
+    return percent.format(value / total);
+}
+
+function minuteCounts(data: string, size: number) {
+    const counts = [];
+    for (let i = 0; i < data.length; i += size) {
+        const chunk = data.slice(i, i + size);
+        const available = chunk.split("1").length - 1;
+        const down = chunk.split("0").length - 1;
+        counts.push({ available, observed: available + down });
+    }
+    return counts;
+}
+
+/** Show the selected period’s measured uptime and its chronological intervals together.
+ * @param props - Tracking start, timestamp, recent minute checks and long-range counts for one resource.
+ * @returns An interactive timeline with a period selector and inspectable intervals.
  */
 export function AvailabilityTimeline({
-    minutes,
-    capturedAt,
-    measure,
+    history,
 }: {
-    readonly minutes: string;
-    readonly capturedAt: string;
-    readonly measure: string;
+    readonly history: Pick<
+        ResourceAvailability,
+        "capturedAt" | "periods" | "firstSampleAt" | "monitorUnavailable"
+    > &
+        Partial<Pick<ResourceAvailability, "recentMinutes" | "longHistory">>;
 }) {
+    const { capturedAt, recentMinutes = "", longHistory } = history;
     const sliderRef = useRef<HTMLInputElement>(null);
     const [range, setRange] = useState<Range>("day");
     const [selected, setSelected] = useState<number | null>(null);
     const [hovered, setHovered] = useState<number | null>(null);
     const window = ranges.find((option) => option.value === range)!;
-    const data = minutes.slice(-window.minutes);
     const end = Date.parse(capturedAt);
-    const first = end - (data.length - 1) * 60_000;
-    const timestamp = (index: number) => first + index * 60_000;
-    const buckets = [];
-    for (let index = 0; index < data.length; index += window.size) {
-        const chunk = data.slice(index, index + window.size);
-        const up = chunk.split("1").length - 1;
-        const down = chunk.split("0").length - 1;
-        const missing = chunk.length - up - down;
-        buckets.push({
-            state: intervalState(up, down, missing),
-            up,
-            down,
-            missing,
-            start: timestamp(index),
-            end: timestamp(index + chunk.length - 1),
-        });
-    }
-    const last = data.at(-1);
-    const current = readings[last === "1" || last === "0" ? last : "?"];
-    const Icon = current.icon;
+    const firstMinute =
+        history.firstSampleAt === null
+            ? null
+            : Math.ceil(Date.parse(history.firstSampleAt) / 60_000);
+    const first = end - (window.minutes - 1) * 60_000;
+    const long = range === "month" || range === "year";
+    const data = recentMinutes.slice(-window.minutes);
+    const counts =
+        range === "month" || range === "year"
+            ? (longHistory?.[range] ?? [])
+            : minuteCounts(data, window.size);
+    const buckets = counts.map(({ available, observed }, i) => {
+        const start = first + i * window.size * 60_000;
+        const end = start + (window.size - 1) * 60_000;
+        const expected = trackedAvailabilityMinutes(
+            firstMinute,
+            end / 60_000,
+            window.size
+        );
+        const failed = observed - available;
+        const missed = history.monitorUnavailable ? 0 : Math.max(0, expected - observed);
+        const noData = window.size - observed - missed;
+        const down = failed + missed;
+        const measuredState = available ? states.up : states.unknown;
+        const state = down ? states.down : measuredState;
+        return { start, end, up: available, failed, missed, down, noData, state };
+    });
+    const totals =
+        history.periods.find((row) => row.period === range) ??
+        sumAvailabilityCounts(counts);
+    const expected = trackedAvailabilityMinutes(
+        firstMinute,
+        end / 60_000,
+        window.minutes
+    );
+    const incomplete = history.monitorUnavailable && totals.observed < expected;
+    const uptime = incomplete ? "—" : ratio(totals.available, expected);
+    const current = currentReading(
+        recentMinutes.at(-1),
+        expected > 0 && !history.monitorUnavailable
+    );
     const index = Math.min(hovered ?? selected ?? buckets.length - 1, buckets.length - 1);
     const active = buckets[index];
     const showDate =
         range === "week" ||
+        long ||
         (active &&
             new Date(active.start).toDateString() !==
                 new Date(active.end).toDateString());
@@ -103,36 +147,66 @@ export function AvailabilityTimeline({
     const details = active
         ? [
               active.up && active.up + " min up",
-              active.down && active.down + " min down",
-              active.missing && active.missing + " min unobserved",
+              active.failed && active.failed + " min down (failed checks)",
+              active.missed && active.missed + " min down (missed checks)",
+              active.noData &&
+                  active.noData +
+                      (history.monitorUnavailable
+                          ? " min without data"
+                          : " min before tracking"),
           ]
               .filter(Boolean)
               .join(" · ")
         : "";
     const inspecting = hovered !== null || selected !== null;
-    const lastDown = data.lastIndexOf("0");
+    const lastDown = buckets.findLastIndex((bucket) => bucket.down > 0);
+    const downInterval = buckets[lastDown];
+    const detailMinutes =
+        !long && downInterval
+            ? data.slice(lastDown * window.size, (lastDown + 1) * window.size)
+            : "";
+    const latestFailedOffset = Math.max(
+        detailMinutes.lastIndexOf("0"),
+        downInterval?.missed ? detailMinutes.lastIndexOf("?") : -1
+    );
+    const axisLabel = (ms: number) =>
+        long ? formatDateTimeParts(ms)[0] : timeLabel(ms, range !== "hour");
     return (
         <section
             aria-label="Availability timeline"
             className="min-w-0 rounded-lg border border-primary-700 bg-surface-card p-3 sm:p-4"
         >
-            <div className="flex flex-wrap items-start justify-between gap-x-5 gap-y-2">
-                <div className="min-w-0">
-                    <div
-                        className={
-                            "flex items-center gap-2 text-lg font-semibold " +
-                            current.color
-                        }
+            <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2">
+                <div className="flex min-w-0 items-center gap-3 whitespace-nowrap sm:gap-3.5">
+                    <span
+                        aria-label={"Current status: " + current.label}
+                        className="inline-flex items-center gap-2 text-base leading-none font-medium text-primary-100"
                     >
-                        <Icon size={19} aria-hidden="true" />
+                        <span
+                            aria-hidden="true"
+                            className={"size-2 rounded-full " + current.color}
+                        />
                         {current.label}
-                    </div>
-                    <p className="mt-0.5 text-sm text-primary-300">{measure}</p>
+                    </span>
+                    <span aria-hidden="true" className="h-4 w-px bg-primary-600" />
+                    <p
+                        aria-label="Period uptime"
+                        className="inline-flex items-baseline gap-1.5 leading-none"
+                    >
+                        <strong className="text-xl leading-none font-semibold tracking-tight text-primary-50 tabular-nums">
+                            {uptime}
+                        </strong>
+                        <span className="text-sm text-primary-300">uptime</span>
+                    </p>
                 </div>
                 <ChoiceBar
                     label="Status history range"
                     value={range}
-                    options={ranges}
+                    options={
+                        recentMinutes
+                            ? ranges
+                            : ranges.filter((option) => option.value !== "hour")
+                    }
                     onChange={(value) => {
                         setRange(value);
                         setSelected(null);
@@ -140,9 +214,9 @@ export function AvailabilityTimeline({
                     }}
                 />
             </div>
-            {active && (
+            {active ? (
                 <>
-                    <div className="group relative mt-3 flex h-11 items-center gap-px rounded-sm focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent-400 sm:gap-0.5">
+                    <div className="relative mt-3 flex h-11 items-center gap-px sm:gap-0.5">
                         {buckets.map((bucket, i) => (
                             <span
                                 key={bucket.start}
@@ -172,6 +246,7 @@ export function AvailabilityTimeline({
                             onFocus={() =>
                                 setSelected((previous) => previous ?? buckets.length - 1)
                             }
+                            onBlur={() => setSelected(null)}
                             onPointerMove={(event) => {
                                 if (event.pointerType !== "mouse" || event.buttons)
                                     return;
@@ -196,11 +271,9 @@ export function AvailabilityTimeline({
                     </div>
                     <div className="flex justify-between text-xs text-primary-400 tabular-nums">
                         <time dateTime={new Date(first).toISOString()}>
-                            {timeLabel(first, range !== "hour")}
+                            {axisLabel(first)}
                         </time>
-                        <time dateTime={capturedAt}>
-                            {timeLabel(end, range !== "hour")}
-                        </time>
+                        <time dateTime={capturedAt}>{axisLabel(end)}</time>
                     </div>
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-primary-700 pt-3 text-xs">
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-primary-300">
@@ -232,16 +305,27 @@ export function AvailabilityTimeline({
                                     className="rounded text-accent-300 hover:underline"
                                     onClick={() => {
                                         sliderRef.current?.focus();
-                                        setSelected(Math.floor(lastDown / window.size));
+                                        setSelected(lastDown);
                                     }}
                                 >
-                                    Latest downtime ·{" "}
-                                    {timeLabel(timestamp(lastDown), true)}
+                                    Latest downtime
+                                    {downInterval &&
+                                        latestFailedOffset !== -1 &&
+                                        " · " +
+                                            timeLabel(
+                                                downInterval.start +
+                                                    latestFailedOffset * 60_000,
+                                                true
+                                            )}
                                 </button>
                             )
                         )}
                     </div>
                 </>
+            ) : (
+                <p className="mt-3 text-sm text-primary-400">
+                    Interval history unavailable for this period.
+                </p>
             )}
         </section>
     );

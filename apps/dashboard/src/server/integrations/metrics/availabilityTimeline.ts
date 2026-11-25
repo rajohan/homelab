@@ -45,7 +45,7 @@ export async function completeTimeline(
     eras: readonly RetainedEra[],
     start: number,
     archived: string,
-    periods: { start: number; observed: number; available: number }[],
+    periods: { start: number; end: number; observed: number; available: number }[],
     signal: AbortSignal
 ): Promise<string> {
     const minutes = Array.from({ length: archived.length }, (_, index) =>
@@ -71,7 +71,7 @@ export async function completeTimeline(
                     if (minutes[index] !== "?") continue;
                     minutes[index] = String(state);
                     for (const period of periods) {
-                        if (at <= period.start) continue;
+                        if (at <= period.start || at > period.end) continue;
                         period.observed++;
                         period.available += state;
                     }

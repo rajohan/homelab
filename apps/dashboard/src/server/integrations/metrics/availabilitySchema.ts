@@ -6,6 +6,7 @@ export const availabilityBackfill = pgTable(
         kind: text().notNull(),
         resource: text().notNull(),
         nextDay: integer("next_day").notNull(),
+        firstMinute: integer("first_minute"),
     },
     (row) => [primaryKey({ columns: [row.kind, row.resource] })]
 );

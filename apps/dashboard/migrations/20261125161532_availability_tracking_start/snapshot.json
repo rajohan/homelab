@@ -1,0 +1,42 @@
+{
+    "type": "diff",
+    "version": "9",
+    "dialect": "postgres",
+    "id": "1259800c-3f1a-4675-9e0f-c3f3bc20d68b",
+    "prevIds": ["467ab971-11a9-41ee-8528-59971c30276d"],
+    "footprints": [
+        {
+            "statementType": "add_column",
+            "statementTarget": [
+                "column",
+                "public",
+                "availability_backfill",
+                "first_minute"
+            ],
+            "writes": [
+                "s|col|public.availability_backfill.first_minute",
+                "n|col|public.availability_backfill.first_minute",
+                "e|col|public.availability_backfill.first_minute"
+            ],
+            "reads": ["n|tbl|public.availability_backfill", "n|sch|public"]
+        }
+    ],
+    "deltas": [
+        {
+            "op": "create",
+            "row": {
+                "schema": "public",
+                "table": "availability_backfill",
+                "name": "first_minute",
+                "type": "integer",
+                "typeSchema": null,
+                "notNull": false,
+                "dimensions": 0,
+                "default": null,
+                "generated": null,
+                "identity": null,
+                "entityType": "columns"
+            }
+        }
+    ]
+}
