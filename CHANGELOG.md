@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/rajohan/homelab/compare/v0.26.1...v0.27.0) (2026-11-25)
+
+
+### Features
+
+* **maintenance:** reconcile fleet restarts and refresh release dependency checks ([#274](https://github.com/rajohan/homelab/issues/274)) ([d0008a5](https://github.com/rajohan/homelab/commit/d0008a56b67df1988514f0e213a1d780dc792511))
+
 ## [0.26.1](https://github.com/rajohan/homelab/compare/v0.26.0...v0.26.1) (2026-11-24)
 
 
