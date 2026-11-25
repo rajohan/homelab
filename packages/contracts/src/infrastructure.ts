@@ -16,6 +16,8 @@ export interface ResourceAvailability {
     readonly firstSampleAt: string | null;
     readonly monitorUnavailable: boolean;
     readonly stepSeconds: number;
+    /** Recent one-minute checkpoints, oldest first through capturedAt: 1 up, 0 down, ? unobserved. */
+    readonly recentMinutes: string;
     readonly periods: readonly {
         readonly period: AvailabilityPeriod;
         readonly available: number;

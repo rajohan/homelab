@@ -12,6 +12,7 @@ import {
     availabilityEras,
     retainedEras,
 } from "./availabilityHistory";
+import { completeTimeline, timelineMinutes } from "./availabilityTimeline";
 import type { MetricsConfiguration } from "./transport";
 
 const day = 86_400;
@@ -34,6 +35,7 @@ async function collect(
             observed: archived?.observed ?? 0,
         };
     });
+    let recentMinutes = archive.recentMinutes;
     let first = archive.first;
     let monitorUnavailable = !config;
     if (config) {
@@ -48,11 +50,20 @@ async function collect(
                 signal,
                 archive.nextDay === null ? 0 : archive.nextDay * day - 60
             );
+            const windowStart = end - timelineMinutes * 60;
             await addUnarchivedMinutes(
                 config,
-                raw,
+                raw.map((era) => ({ ...era, until: Math.min(era.until, windowStart) })),
                 archive.masks,
                 archive.nextDay,
+                retained,
+                signal
+            );
+            recentMinutes = await completeTimeline(
+                config,
+                raw,
+                windowStart,
+                recentMinutes,
                 retained,
                 signal
             );
@@ -81,6 +92,7 @@ async function collect(
         capturedAt: new Date(end * 1000).toISOString(),
         firstSampleAt: first === null ? null : new Date(first * 1000).toISOString(),
         stepSeconds: 60,
+        recentMinutes,
         monitorUnavailable,
         periods: periods.map(({ period, start, available, observed }) => ({
             period,

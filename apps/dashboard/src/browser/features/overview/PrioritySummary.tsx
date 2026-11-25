@@ -1,4 +1,4 @@
-import { Card } from "@homelab/ui";
+import { BreakableName, Card } from "@homelab/ui";
 import { CircleCheck, CircleHelp, PackageOpen, TriangleAlert } from "lucide-react";
 
 import { FleetCoverage } from "./FleetCoverage";
@@ -48,8 +48,8 @@ export function PrioritySummary({ readings }: { readonly readings: OverviewReadi
                         className={`mt-1 shrink-0 ${appearance.color}`}
                     />
                     <div className="min-w-0">
-                        <h2 className="max-w-[23ch] text-2xl leading-tight font-semibold tracking-tight text-balance wrap-anywhere sm:text-3xl">
-                            {priority.title}
+                        <h2 className="text-2xl leading-tight font-semibold tracking-tight text-balance wrap-anywhere sm:text-3xl">
+                            <BreakableName>{priority.title}</BreakableName>
                         </h2>
                         <p className="mt-2 max-w-prose text-sm leading-relaxed text-primary-300">
                             {priority.detail}

@@ -10,6 +10,7 @@ import {
     availabilitySource,
     exporterSource,
 } from "./availabilitySource";
+import { archivedTimeline, timelineMinutes } from "./availabilityTimeline";
 import { type MetricsConfiguration, queryMetrics } from "./transport";
 
 const minuteSeconds = 60,
@@ -195,15 +196,17 @@ export async function readAvailabilityArchive(
             observed: number;
             available: number;
             next_day: number | null;
-            masks: [number, string][] | null;
+            masks: [number, string, string | null][] | null;
         }[]
     >`
         WITH cursor_state AS (SELECT next_day FROM availability_backfill WHERE kind=${kind} AND resource=${id}),
         periods AS (SELECT * FROM jsonb_to_recordset(${JSON.stringify(periods)}::text::jsonb) AS p(period text,start int)),
         days AS (SELECT day*1440 AS start,first_minute,observed,healthy FROM availability_days WHERE kind=${kind} AND resource=${id} AND day <= ${Math.floor(minute / minutesPerDay)})
         SELECT p.period,(SELECT next_day FROM cursor_state) AS next_day,
-            CASE WHEN p.period='all' THEN (SELECT jsonb_agg(jsonb_build_array(start/1440,observed::text) ORDER BY start)
-              FROM days WHERE start/1440>=coalesce((SELECT next_day FROM cursor_state),0)) END AS masks,
+            CASE WHEN p.period='all' THEN (SELECT jsonb_agg(jsonb_build_array(start/1440,observed::text,
+                CASE WHEN start+1439 > ${minute - timelineMinutes} THEN healthy::text END) ORDER BY start)
+              FROM days WHERE start/1440>=coalesce((SELECT next_day FROM cursor_state),0)
+                OR start+1439 > ${minute - timelineMinutes}) END AS masks,
             min(d.start+d.first_minute) FILTER (WHERE d.start+d.first_minute <= ${minute})::int AS first,
             coalesce(sum(bit_count(substring(d.observed from edge.lo+1 for greatest(0,edge.hi-edge.lo+1)))),0)::int AS observed,
             coalesce(sum(bit_count(substring(d.healthy from edge.lo+1 for greatest(0,edge.hi-edge.lo+1)))),0)::int AS available
@@ -216,6 +219,7 @@ export async function readAvailabilityArchive(
         first: first === null ? null : first * minuteSeconds,
         rows,
         nextDay: all?.next_day ?? null,
-        masks: all?.masks ? new Map(all.masks) : new Map<number, string>(),
+        masks: new Map((all?.masks ?? []).map(([day, observed]) => [day, observed])),
+        recentMinutes: archivedTimeline(minute, all?.masks ?? []),
     };
 }

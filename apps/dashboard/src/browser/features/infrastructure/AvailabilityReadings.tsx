@@ -2,7 +2,12 @@ import type {
     AvailabilityKind,
     AvailabilityPeriod,
 } from "@homelab/contracts/infrastructure";
-import { ErrorNotice, LoadingState, SummaryStrip } from "@homelab/ui";
+import {
+    AvailabilityTimeline,
+    ErrorNotice,
+    LoadingState,
+    SummaryStrip,
+} from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../api/client";
@@ -48,7 +53,16 @@ export function AvailabilityReadings({
     const history = query.data;
     return (
         <div className="space-y-3">
-            <p className="text-sm font-medium text-primary-200">{history.measure}</p>
+            {history.recentMinutes ? (
+                <AvailabilityTimeline
+                    key={id}
+                    minutes={history.recentMinutes}
+                    capturedAt={history.capturedAt}
+                    measure={history.measure}
+                />
+            ) : (
+                <p className="text-sm text-primary-300">{history.measure}</p>
+            )}
             <SummaryStrip
                 label="Availability over observed samples"
                 items={history.periods.map((row) => ({
