@@ -110,7 +110,7 @@ export function JobActivity({
     const running = runs.filter((run) => run.state === "running").length;
     const queued = runs.filter((run) => run.state === "queued").length;
     const active = running + queued;
-    const summary = query.isPending ? "Checking queue…" : "Your jobs";
+    const summary = query.isPending ? "Checking queue…" : undefined;
     const label = query.isPending
         ? "Worker activity, loading"
         : `Worker activity, ${running} running, ${queued} queued`;

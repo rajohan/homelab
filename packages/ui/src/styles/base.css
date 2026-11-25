@@ -1,4 +1,5 @@
 @import "./surfaces.css";
+@import "overlayscrollbars/overlayscrollbars.css" layer(base);
 
 @theme {
     --spacing-form-control: 2.75rem;
@@ -66,6 +67,18 @@
         color: theme("colors.primary.50");
         font-synthesis: none;
         text-rendering: optimizeLegibility;
+    }
+
+    .os-scrollbar.os-theme-homelab {
+        --os-size: 10px;
+        --os-padding-perpendicular: 1px;
+        --os-padding-axis: 1px;
+        --os-handle-border-radius: 4px;
+        --os-handle-bg: var(--scrollbar-thumb);
+        --os-handle-bg-hover: theme("colors.primary.200");
+        --os-handle-bg-active: theme("colors.primary.200");
+        /* Keep the thumb above sticky table headings and below popovers and dialogs. */
+        z-index: 20;
     }
 
     html,
