@@ -3,7 +3,7 @@ import {
     sumAvailabilityCounts,
     trackedAvailabilityMinutes,
 } from "@homelab/contracts/infrastructure";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 import { formatDateTimeParts } from "../../lib/formatDateTime";
 import { ChoiceBar } from "../Select/ChoiceBar";
@@ -58,6 +58,22 @@ function ratio(value: number, total: number) {
     return percent.format(value / total);
 }
 
+function intervalKey(key: string, index: number, count: number) {
+    const page = Math.max(1, Math.round(count / 10));
+    const positions: Readonly<Record<string, number>> = {
+        Home: 0,
+        End: count - 1,
+        ArrowLeft: index - 1,
+        ArrowDown: index - 1,
+        ArrowRight: index + 1,
+        ArrowUp: index + 1,
+        PageDown: index - page,
+        PageUp: index + page,
+    };
+    const next = positions[key];
+    return typeof next === "number" ? Math.min(count - 1, Math.max(0, next)) : null;
+}
+
 function minuteCounts(data: string, size: number) {
     const counts = [];
     for (let i = 0; i < data.length; i += size) {
@@ -83,7 +99,9 @@ export function AvailabilityTimeline({
         Partial<Pick<ResourceAvailability, "recentMinutes" | "longHistory">>;
 }) {
     const { capturedAt, recentMinutes = "", longHistory } = history;
-    const sliderRef = useRef<HTMLInputElement>(null);
+    const trackRef = useRef<HTMLFieldSetElement>(null);
+    const detailsId = useId();
+    const [focusIndex, setFocusIndex] = useState<number | null>(null);
     const [range, setRange] = useState<Range>("day");
     const [selected, setSelected] = useState<number | null>(null);
     const [hovered, setHovered] = useState<number | null>(null);
@@ -169,6 +187,20 @@ export function AvailabilityTimeline({
         detailMinutes.lastIndexOf("0"),
         downInterval?.missed ? detailMinutes.lastIndexOf("?") : -1
     );
+    function focusInterval(i: number) {
+        const button = trackRef.current?.elements.item(i);
+        if (button instanceof HTMLButtonElement) button.focus({ preventScroll: true });
+    }
+    function intervalAt(clientX: number) {
+        const rect = trackRef.current!.getBoundingClientRect();
+        return Math.max(
+            0,
+            Math.min(
+                buckets.length - 1,
+                Math.floor(((clientX - rect.left) / rect.width) * buckets.length)
+            )
+        );
+    }
     const axisLabel = (ms: number) =>
         long ? formatDateTimeParts(ms)[0] : timeLabel(ms, range !== "hour");
     return (
@@ -209,6 +241,7 @@ export function AvailabilityTimeline({
                     }
                     onChange={(value) => {
                         setRange(value);
+                        setFocusIndex(null);
                         setSelected(null);
                         setHovered(null);
                     }}
@@ -216,59 +249,100 @@ export function AvailabilityTimeline({
             </div>
             {active ? (
                 <>
-                    <div className="relative mt-3 flex h-11 items-center gap-px sm:gap-0.5">
+                    <fieldset
+                        ref={trackRef}
+                        aria-label="Inspect status intervals"
+                        className="mt-3 flex h-11 min-w-0"
+                        onPointerLeave={() => setHovered(null)}
+                        onPointerCancel={() => setHovered(null)}
+                    >
                         {buckets.map((bucket, i) => (
-                            <span
-                                key={bucket.start}
-                                aria-hidden="true"
-                                className={
-                                    "min-w-0 flex-1 rounded-sm " +
-                                    bucket.state.mark +
-                                    (inspecting && i === index
-                                        ? " outline-2 outline-offset-1 outline-primary-50"
-                                        : "")
+                            <button
+                                key={i}
+                                type="button"
+                                aria-label={
+                                    timeLabel(bucket.start, range !== "hour") +
+                                    " · " +
+                                    bucket.state.label
                                 }
-                            />
-                        ))}
-                        <input
-                            ref={sliderRef}
-                            type="range"
-                            aria-label="Inspect status interval"
-                            aria-valuetext={interval + " · " + details}
-                            min={0}
-                            max={buckets.length - 1}
-                            step={1}
-                            value={index}
-                            onChange={(event) => {
-                                setHovered(null);
-                                setSelected(Number(event.target.value));
-                            }}
-                            onFocus={() =>
-                                setSelected((previous) => previous ?? buckets.length - 1)
-                            }
-                            onBlur={() => setSelected(null)}
-                            onPointerMove={(event) => {
-                                if (event.pointerType !== "mouse" || event.buttons)
-                                    return;
-                                const rect = event.currentTarget.getBoundingClientRect();
-                                setHovered(
-                                    Math.min(
-                                        buckets.length - 1,
-                                        Math.max(
-                                            0,
-                                            Math.floor(
-                                                ((event.clientX - rect.left) /
-                                                    rect.width) *
-                                                    buckets.length
-                                            )
+                                aria-pressed={selected === i}
+                                aria-describedby={
+                                    inspecting && i === index ? detailsId : undefined
+                                }
+                                tabIndex={
+                                    i === (selected ?? focusIndex ?? buckets.length - 1)
+                                        ? 0
+                                        : -1
+                                }
+                                className="group flex h-full min-w-0 flex-1 cursor-pointer touch-pan-y items-center px-[0.5px] select-none focus-visible:outline-none sm:px-px"
+                                onFocus={(event) => {
+                                    setFocusIndex(i);
+                                    if (event.currentTarget.matches(":focus-visible"))
+                                        setHovered(i);
+                                }}
+                                onBlur={() => setHovered(null)}
+                                onPointerEnter={(event) => {
+                                    if (
+                                        selected === null &&
+                                        event.pointerType === "mouse" &&
+                                        !event.buttons
+                                    )
+                                        setHovered(i);
+                                }}
+                                onPointerDown={(event) => {
+                                    if (event.isPrimary && event.button === 0)
+                                        event.currentTarget.setPointerCapture(
+                                            event.pointerId
+                                        );
+                                }}
+                                onPointerMove={(event) => {
+                                    if (
+                                        event.buttons === 1 &&
+                                        event.currentTarget.hasPointerCapture(
+                                            event.pointerId
                                         )
                                     )
-                                );
-                            }}
-                            onPointerLeave={() => setHovered(null)}
-                            className="absolute inset-0 m-0 size-full cursor-pointer opacity-0"
-                        />
-                    </div>
+                                        setHovered(intervalAt(event.clientX));
+                                }}
+                                onClick={(event) => {
+                                    const target = event.detail
+                                        ? intervalAt(event.clientX)
+                                        : i;
+                                    if (target !== i) focusInterval(target);
+                                    setFocusIndex(target);
+                                    setSelected((previous) =>
+                                        previous === target && target === i
+                                            ? null
+                                            : target
+                                    );
+                                    setHovered(null);
+                                }}
+                                onKeyDown={(event) => {
+                                    const next = intervalKey(
+                                        event.key,
+                                        i,
+                                        buckets.length
+                                    );
+                                    if (next === null) return;
+                                    event.preventDefault();
+                                    focusInterval(next);
+                                    setHovered(next);
+                                    if (selected !== null) setSelected(next);
+                                }}
+                            >
+                                <span
+                                    aria-hidden="true"
+                                    className={
+                                        "pointer-events-none w-full rounded-sm group-focus-visible:ring-1 group-focus-visible:ring-primary-400 " +
+                                        bucket.state.mark +
+                                        (inspecting && i === index
+                                            ? " outline-2 outline-offset-1 outline-primary-50"
+                                            : "")
+                                    }
+                                />
+                            </button>
+                        ))}
+                    </fieldset>
                     <div className="flex justify-between text-xs text-primary-400 tabular-nums">
                         <time dateTime={new Date(first).toISOString()}>
                             {axisLabel(first)}
@@ -295,7 +369,10 @@ export function AvailabilityTimeline({
                             ))}
                         </div>
                         {inspecting ? (
-                            <span className="text-primary-200 tabular-nums">
+                            <span
+                                id={detailsId}
+                                className="text-primary-200 tabular-nums"
+                            >
                                 {interval} · {details}
                             </span>
                         ) : (
@@ -304,7 +381,7 @@ export function AvailabilityTimeline({
                                     type="button"
                                     className="rounded text-accent-300 hover:underline"
                                     onClick={() => {
-                                        sliderRef.current?.focus();
+                                        focusInterval(lastDown);
                                         setSelected(lastDown);
                                     }}
                                 >
