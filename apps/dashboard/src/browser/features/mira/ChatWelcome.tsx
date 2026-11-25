@@ -1,96 +1,142 @@
 import { Button, ErrorNotice } from "@homelab/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowUp, MessageCircle, SlidersHorizontal } from "lucide-react";
-import { useRef, useState } from "react";
+import { Activity, Bot, HardDrive, ListChecks } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
-import { ChatgptConnection } from "./ChatgptConnection";
-import { MessageField } from "./MessageField";
+import { ChatComposer } from "./ChatComposer";
+import { FileLibrary } from "./FileLibrary";
+import { useChatComputer } from "./useChatComputer";
+import { useChatDraft } from "./useChatDraft";
 
 /** Start typing before a conversation exists, with an explicit path to its model, voice and attachment controls.
  * @returns A first-message composer that retains its draft and request identity after an error.
  */
-export function ChatWelcome() {
-    const [text, setText] = useState("");
-    const [conversationId] = useState(() => crypto.randomUUID());
-    const request = useRef<{ text: string; id: string } | null>(null);
+export function ChatWelcome({
+    connectionNotice,
+}: {
+    readonly connectionNotice: ReactNode;
+}) {
+    const field = useRef<HTMLTextAreaElement>(null);
     const client = useQueryClient();
+    const [conversationId] = useState(
+        () => client.getQueryData<string>(["mira-new-chat-id"]) ?? crypto.randomUUID()
+    );
+    useEffect(() => {
+        client.setQueryData(["mira-new-chat-id"], conversationId);
+    }, [client, conversationId]);
+    const draft = useChatDraft(conversationId);
+    const { text, setText } = draft;
+    const [selectingFile, setSelectingFile] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const request = useRef<{ content: string; id: string } | null>(null);
     const navigate = useNavigate();
+    const source = useChatComputer();
     const start = useOperation(async (action: "send" | "setup", signal) => {
         await api.mira.conversations.create.mutate(
             { title: "New conversation", id: conversationId },
             { signal }
         );
         if (action === "send") {
-            if (request.current?.text !== text)
-                request.current = { text, id: crypto.randomUUID() };
+            const attachmentIds = draft.attachments.map((file) => file.id);
+            const content = JSON.stringify([text, attachmentIds]);
+            if (request.current?.content !== content)
+                request.current = { content, id: crypto.randomUUID() };
             await api.mira.conversations.send.mutate(
                 {
+                    ...source,
                     conversationId,
                     requestId: request.current.id,
                     text,
-                    attachmentIds: [],
+                    attachmentIds,
                 },
                 { signal }
             );
-        } else if (text) client.setQueryData(["mira-draft", conversationId], text);
-        await navigate({ to: "/mira/$conversationId", params: { conversationId } });
+            draft.clear();
+        }
+        await navigate({
+            to: "/mira/$conversationId",
+            params: { conversationId },
+            search: action === "setup" ? { settings: true } : {},
+        });
+        if (client.getQueryData(["mira-new-chat-id"]) === conversationId)
+            client.removeQueries({ queryKey: ["mira-new-chat-id"], exact: true });
     });
-    const canSend = Boolean(text.trim()) && !start.isPending;
     return (
-        <section className="chat-split:col-start-2 chat-split:row-start-1 flex min-h-0 min-w-0 flex-col bg-transparent">
-            <div className="chat-split:py-10 mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center px-4 py-5 sm:px-8">
-                <div className="mb-4 flex items-center gap-3">
-                    <MessageCircle
-                        size={25}
-                        className="text-workspace-accent shrink-0"
-                        aria-hidden="true"
-                    />
-                    <h2 className="text-2xl font-semibold tracking-tight text-primary-50 sm:text-3xl">
-                        Message Mira
+        <section className="mx-auto flex w-full max-w-184 flex-1 flex-col justify-center px-4 py-8 sm:px-8">
+            <div className="w-full">
+                <div className="mb-6 flex flex-col items-center gap-3 text-center sm:mb-8">
+                    <div className="grid size-12 place-items-center rounded-2xl border border-accent-400/20 bg-accent-400/10 text-accent-300">
+                        <Bot size={26} aria-hidden="true" />
+                    </div>
+                    <h2 className="text-3xl font-semibold tracking-tight text-primary-50 sm:text-4xl">
+                        How can Mira help?
                     </h2>
                 </div>
-                <form
-                    className="rounded-xl border border-primary-600 bg-surface-card p-2 focus-within:border-accent-400 sm:p-3"
-                    onSubmit={(event) => {
-                        event.preventDefault();
-                        if (canSend) start.mutate("send");
-                    }}
-                >
-                    <MessageField
-                        value={text}
-                        onChange={setText}
-                        canSend={canSend}
-                        disabled={start.isPending}
-                        rows={3}
+                <ChatComposer
+                    inputRef={field}
+                    text={text}
+                    onText={setText}
+                    attachments={draft.attachments}
+                    onAttachments={draft.setAttachments}
+                    uploading={uploading}
+                    onUploading={setUploading}
+                    sending={start.isPending}
+                    onBrowse={() => setSelectingFile(true)}
+                    onSend={() => start.mutate("send")}
+                    onSetup={() => start.mutate("setup")}
+                />
+                {selectingFile && (
+                    <FileLibrary
+                        onClose={() => setSelectingFile(false)}
+                        onSelect={(file) => {
+                            draft.addFile(file);
+                            setSelectingFile(false);
+                        }}
                     />
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                        <Button
-                            size="sm"
-                            variant="secondary"
-                            busy={start.isPending && start.variables === "setup"}
-                            disabled={start.isPending}
-                            onClick={() => start.mutate("setup")}
-                        >
-                            <SlidersHorizontal size={16} aria-hidden="true" />
-                            Chat tools
-                        </Button>
-                        <Button
-                            type="submit"
-                            busy={start.isPending && start.variables === "send"}
-                            disabled={!canSend}
-                        >
-                            <ArrowUp size={16} aria-hidden="true" />
-                            Send
-                        </Button>
+                )}
+                {!text && (
+                    <div
+                        aria-label="Suggested prompts"
+                        className="mt-3 flex flex-wrap justify-center gap-x-2 gap-y-1"
+                    >
+                        {[
+                            {
+                                label: "Homelab health",
+                                icon: Activity,
+                                prompt: "Check the health of my homelab. What needs my attention?",
+                            },
+                            {
+                                label: "Backups",
+                                icon: HardDrive,
+                                prompt: "Review my recent backups and tell me which need attention.",
+                            },
+                            {
+                                label: "My tasks",
+                                icon: ListChecks,
+                                prompt: "What tasks should I focus on today?",
+                            },
+                        ].map(({ label, icon: Icon, prompt }) => (
+                            <Button
+                                key={label}
+                                size="sm"
+                                variant="ghost"
+                                disabled={start.isPending}
+                                onClick={() => {
+                                    setText(prompt);
+                                    field.current?.focus();
+                                }}
+                            >
+                                <Icon size={15} aria-hidden="true" />
+                                {label}
+                            </Button>
+                        ))}
                     </div>
-                </form>
+                )}
                 {start.error && <ErrorNotice error={start.error} />}
-                <div className="mt-3">
-                    <ChatgptConnection />
-                </div>
+                {connectionNotice}
             </div>
         </section>
     );

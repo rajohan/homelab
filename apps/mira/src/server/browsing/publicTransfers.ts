@@ -21,6 +21,7 @@ async function resolve(cdp: CDPSession, frameId: string, node: number) {
  * @param node - One-use observed Chromium node.
  * @param file - Immutable file staged in the session's private directory.
  * @param origin - Website bound to the operator's observation.
+ * @param clicked - A hidden field requires its visible label or a browser-confirmed native picker.
  * @returns Completion after Chromium accepts the assignment; delivery still requires observation.
  */
 export async function publicUpload(
@@ -28,17 +29,19 @@ export async function publicUpload(
     frameId: string,
     node: number,
     file: string,
-    origin: string
+    origin: string,
+    clicked?: "label" | "chooser"
 ): Promise<void> {
     const objectId = await resolve(cdp, frameId, node);
     try {
         const result = await cdp.send("Runtime.callFunctionOn", {
             objectId,
             returnByValue: true,
-            arguments: [{ value: origin }],
-            functionDeclaration: `function(origin) {
+            arguments: [{ value: origin }, { value: clicked ?? null }],
+            functionDeclaration: `function(origin, clicked) {
                 return location.origin === origin && this instanceof HTMLInputElement &&
-                    this.type === "file" && this.isConnected && this.checkVisibility() &&
+                    this.type === "file" && this.isConnected && (this.checkVisibility() ||
+                        clicked === "chooser" || (clicked === "label" && [...this.labels].some(label => label.checkVisibility()))) &&
                     !this.disabled && (!this.form || new URL(this.form.action).origin === origin);
             }`,
         });
@@ -56,6 +59,7 @@ export async function publicUpload(
  * @param node - One-use observed anchor node.
  * @param origin - Website bound to the operator's observation.
  * @param signal - Current operation cancellation; the enclosing session closes Chromium on abort.
+ * @param originalHref - URL of the exact link activated by the operator.
  * @returns At most 25 MiB of immutable bytes and a verified digest, never a website-selected path.
  */
 export async function publicDownload(
@@ -63,7 +67,8 @@ export async function publicDownload(
     frameId: string,
     node: number,
     origin: string,
-    signal: AbortSignal
+    signal: AbortSignal,
+    originalHref?: string | null
 ): Promise<BrowserDownloadFile> {
     signal.throwIfAborted();
     const objectId = await resolve(cdp, frameId, node);
@@ -72,11 +77,16 @@ export async function publicDownload(
             objectId,
             awaitPromise: true,
             returnByValue: true,
-            arguments: [{ value: origin }, { value: browserDownloadLimit }],
-            functionDeclaration: `async function(origin, limit) {
+            arguments: [
+                { value: origin },
+                { value: browserDownloadLimit },
+                { value: originalHref ?? null },
+            ],
+            functionDeclaration: `async function(origin, limit, originalHref) {
                 if (location.origin !== origin || !(this instanceof HTMLAnchorElement) ||
                     !this.isConnected || !this.checkVisibility()) return null;
                 const url = new URL(this.href);
+                if (originalHref !== null && originalHref !== url.href) return null;
                 if (url.origin !== origin || !["http:", "https:"].includes(url.protocol) ||
                     url.username || url.password) return null;
                 const response = await fetch(url.href, {

@@ -150,7 +150,7 @@ async function verifyFile(
  * Stage one newer Windows installer, authenticate its evidence twice and scope the file to its consumer.
  * @param options - Stable installed version, authenticated private-server lookup, cancellation and optional test transport/temp parent.
  * @param consume - Trusted local consumer invoked only after verification; it must await all file users and never delegate authority from remote data.
- * @returns The consumer's result; the unique staging directory is removed after success, rejection or cancellation.
+ * @returns The consumer's result, or null when fresh release evidence shows the installed version is current or newer.
  */
 export async function withComputerUpdate<T>(
     options: {
@@ -161,7 +161,7 @@ export async function withComputerUpdate<T>(
         temporaryDirectory?: string;
     },
     consume: (file: string, update: MiraComputerUpdate, signal: AbortSignal) => Promise<T>
-): Promise<T> {
+): Promise<T | null> {
     const deadline = new AbortController();
     const signal = AbortSignal.any([options.signal, deadline.signal]);
     let timer = setTimeout(() => deadline.abort(), 300_000);
@@ -174,10 +174,9 @@ export async function withComputerUpdate<T>(
         signal.throwIfAborted();
         if (!candidate) throw new Error("No fresh verified Windows update is available.");
         const update = v.parse(miraComputerUpdateSchema, candidate);
-        if (!newerVersion(options.installedVersion, update.version))
-            throw new Error("No newer stable Windows update is available.");
         const remaining = Math.floor(update.validForMs - (performance.now() - started));
         if (remaining <= 0) throw new Error("The update evidence expired.");
+        if (!newerVersion(options.installedVersion, update.version)) return null;
         clearTimeout(timer);
         timer = setTimeout(() => deadline.abort(), remaining);
         const parent = options.temporaryDirectory ?? tmpdir();

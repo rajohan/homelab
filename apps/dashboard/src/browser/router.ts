@@ -82,6 +82,8 @@ export function createDashboardRouter(history?: RouterHistory) {
             createRoute({
                 getParentRoute: () => root,
                 path: "/mira/$conversationId",
+                validateSearch: (raw): { settings?: boolean } =>
+                    raw.settings === true ? { settings: true } : {},
                 component: Mira,
             }),
             createRoute({

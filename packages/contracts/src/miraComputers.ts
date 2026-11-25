@@ -43,12 +43,14 @@ export interface MiraComputerSummary {
 }
 
 const id = v.pipe(v.string(), v.uuid());
+export const miraComputerScopeSchema = v.picklist(["window", "desktop", "displays"]);
+export type MiraComputerScope = v.InferOutput<typeof miraComputerScopeSchema>;
 export const miraComputerAccessRequestSchema = v.strictObject({
     computerId: id,
     computerVersion: v.pipe(v.number(), v.integer(), v.minValue(1)),
     runId: id,
     mode: v.picklist(["view", "control"]),
-    scope: v.optional(v.picklist(["window", "desktop"]), "window"),
+    scope: v.optional(miraComputerScopeSchema, "window"),
     keepOpen: v.optional(v.boolean(), true),
 });
 export const miraComputerAccessConnectionSchema = v.strictObject({ connectionId: id });
@@ -65,7 +67,7 @@ export interface MiraComputerAccessSummary {
     runId: string;
     mode: "view" | "control";
     /** Omitted by older companions, which support one selected window only. */
-    scope?: "window" | "desktop";
+    scope?: MiraComputerScope;
     state: "pending" | "active" | "stopped" | "expired" | "unavailable";
     expiresAt: string;
     /** Local approval remains valid for this conversation between manual runs. */

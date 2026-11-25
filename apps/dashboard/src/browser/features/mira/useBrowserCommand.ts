@@ -1,4 +1,7 @@
-import type { miraBrowserHumanCommandSchema } from "@homelab/contracts/miraBrowser";
+import {
+    browserAddressRejected,
+    type miraBrowserHumanCommandSchema,
+} from "@homelab/contracts/miraBrowser";
 import { useQueryClient } from "@tanstack/react-query";
 import { TRPCClientError } from "@trpc/client";
 import { useEffect, useRef, useState } from "react";
@@ -25,7 +28,7 @@ export function useBrowserCommand() {
         []
     );
     const mutate = (input: v.InferOutput<typeof miraBrowserHumanCommandSchema>) => {
-        if (pending.current) return;
+        if (pending.current) return false;
         pending.current = true;
         setPending(true);
         setError(null);
@@ -48,10 +51,13 @@ export function useBrowserCommand() {
                     });
                     return null;
                 },
-                () => {
+                (error: unknown) => {
                     setError(
                         new Error(
-                            "The command could not be confirmed. Refresh the browser status before continuing; do not repeat the input."
+                            error instanceof TRPCClientError &&
+                                error.message === browserAddressRejected
+                                ? browserAddressRejected
+                                : "The command could not be confirmed. Refresh the browser status before continuing; do not repeat the input."
                         )
                     );
                     void queries.invalidateQueries({
@@ -64,6 +70,7 @@ export function useBrowserCommand() {
                 setPending(false);
                 lifetime.current = null;
             });
+        return true;
     };
     return { mutate, isPending, error };
 }

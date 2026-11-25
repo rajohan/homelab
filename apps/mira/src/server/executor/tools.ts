@@ -44,6 +44,8 @@ import { readMiraPdf } from "../files/content";
 import { createImprovementTools } from "../improvement/tools";
 import type { AgentMailReadConfiguration } from "../integrations/agentmail/configuration";
 import { createAgentMailTools } from "../integrations/agentmail/tools";
+import type { MiraDashboardConfiguration } from "../integrations/dashboard/connection";
+import { createMiraDashboardTools } from "../integrations/dashboard/tools";
 import type { DaytonaBinding } from "../integrations/daytona/configuration";
 import { createDaytonaTools } from "../integrations/daytona/tools";
 import { readDependencyPackage } from "../integrations/dependencyPackage";
@@ -133,6 +135,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param moltbook - Optional social read settings, retained only by the service.
  * @param github - Optional GitHub mapping and dedicated read credential, retained only in the service closure.
  * @param operations - Explicit host administration, separate from sandbox execution.
+ * @param dashboard - Scoped dashboard machine credential, retained only in the executor.
  * @param localCode - Optional Main mapping; the run freezes its target before inference.
  * @param daytona - Nonsecret cloud job mapping; model tools cannot execute or approve.
  * @returns The fixed tool declarations for this conversation and their checked handlers.
@@ -147,7 +150,8 @@ export function createMiraTools(
     daytona?: DaytonaBinding,
     github?: GitHubBinding | GitHubConfiguration,
     localCode?: LocalCodeBinding,
-    operations?: MiraOperationsConfiguration
+    operations?: MiraOperationsConfiguration,
+    dashboard?: MiraDashboardConfiguration
 ): RuntimeTool<RuntimeToolResult>[] {
     const context: MiraContext = {
         client,
@@ -158,6 +162,7 @@ export function createMiraTools(
     let uncertain = false;
     const definitions: MiraToolDefinition[] = [
         ...createMiraOperationsTools(client, run, operations),
+        ...createMiraDashboardTools(run, dashboard),
         ...createMiraQuestionTools(run),
         ...createMiraRecallTools(client, run),
         ...createMiraComputerTools(),

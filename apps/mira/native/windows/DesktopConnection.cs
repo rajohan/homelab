@@ -10,24 +10,33 @@ internal sealed class DesktopConnection : IDisposable
     private readonly Action<Action> dispatch;
     private DesktopSession session;
     private DesktopUpdateSession download;
-    private bool blocked, stopping, installing, closing;
+    private TaskCompletionSource<bool> presenceStopped;
+    private string connectionMessage = "Disconnected", updateMessage;
+    private bool blocked, stopping, installing, closing, reconnect;
     internal event Action Changed;
     internal event Action ExitRequested;
-    internal string Message { get; private set; }
+    internal string Message { get { return updateMessage ?? connectionMessage; } }
     internal string ComputerId { get; private set; }
-    internal bool Busy { get { return session != null || download != null || installing; } }
+    internal string InstalledVersion { get; private set; }
+    internal bool ReconnectAfterUpdate { get { return reconnect; } }
+    internal bool Updating { get { return updateMessage != null; } }
+    internal bool Busy { get { return session != null || Updating; } }
     internal bool CanStart { get { return !Busy && !blocked && !closing; } }
     internal bool CanStop { get { return Busy && !stopping && !installing; } }
-    internal bool CanUpdate { get { return CanStart && maintenance != null; } }
+    internal bool CanUpdate { get { return maintenance != null && !Updating && !stopping && !blocked && !closing && (session == null || presenceStopped != null); } }
 
     internal DesktopConnection(string packageDirectory, string settingsDirectory, Action<bool> installation, Action<Action> invoke)
     {
         package = packageDirectory; settings = settingsDirectory; maintenance = installation; dispatch = invoke;
-        Message = "Disconnected";
     }
     private void Publish(string message)
     {
-        Message = message;
+        connectionMessage = message;
+        if (Changed != null) Changed();
+    }
+    private void UpdateStatus(string message)
+    {
+        updateMessage = message;
         if (Changed != null) Changed();
     }
     internal async Task Start(string operation, string ticket = null)
@@ -38,6 +47,7 @@ internal sealed class DesktopConnection : IDisposable
         try {
             current = new DesktopSession(package, operation, DesktopSettings.ServerOrigin, ticket);
             session = current; stopping = false;
+            if (operation == "run") presenceStopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             Publish(operation == "pair" ? "Pairing…" : operation == "forget" ? "Removing pairing…" : "Connecting…");
             DesktopResult result = await current.Run(delegate(string state) {
                 dispatch(delegate {
@@ -48,7 +58,7 @@ internal sealed class DesktopConnection : IDisposable
                     if (Changed != null) Changed();
                 });
             });
-            blocked = !result.Clean;
+            blocked |= !result.Clean;
             if (result.ComputerId != null) ComputerId = result.ComputerId;
             if (result.PairingMissing) ComputerId = null;
             if (blocked) Publish("Process cleanup could not be confirmed. Close Mira before reconnecting.");
@@ -60,19 +70,24 @@ internal sealed class DesktopConnection : IDisposable
                 Publish(result.Success ? "Local pairing removed. Revoke the computer in Settings too." : "The local pairing could not be removed.");
             } else Publish(result.Stopped ? "Disconnected" : ComputerId == null ? "Pair this computer in Settings." : "Connection ended. Check your home network or Meshnet and reconnect.");
         } catch (ArgumentException error) { Publish(error.Message); }
-        catch { blocked = session != null; Publish("The computer connection could not start. Check the installation and private network."); }
+        catch { blocked |= session != null; Publish("The computer connection could not start. Check the installation and private network."); }
         finally {
             if (current != null) current.Dispose();
-            session = null; stopping = false;
+            session = null;
+            if (!Updating) stopping = false;
+            var stopped = presenceStopped; presenceStopped = null;
+            if (stopped != null) stopped.TrySetResult(!blocked);
             if (Changed != null) Changed();
-            if (closing && ExitRequested != null) ExitRequested();
+            if (closing && !Busy && ExitRequested != null) ExitRequested();
         }
         if (paired && !closing) await Start("run");
     }
     internal void Stop()
     {
+        reconnect = false;
         if (!CanStop) return;
-        stopping = true; Publish("Stopping…");
+        stopping = true;
+        if (Updating) UpdateStatus("Cancelling update…"); else Publish("Stopping…");
         if (session != null) session.Stop();
         if (download != null) download.Stop();
     }
@@ -86,32 +101,57 @@ internal sealed class DesktopConnection : IDisposable
     internal async Task UpdateApp(IWin32Window owner)
     {
         if (!CanUpdate) return;
-        DesktopUpdateSession current = null;
+        reconnect = false;
+        UpdateStatus("Checking for updates…");
+        await InstallAvailableUpdate(owner);
+        if (reconnect && CanStart) await Start("run");
+    }
+    private async Task InstallAvailableUpdate(IWin32Window owner)
+    {
         DesktopUpdateArtifact artifact = null;
         bool released = false, completed = false;
+        string notice = null;
         try {
-            current = new DesktopUpdateSession(package, DesktopSettings.ServerOrigin, settings);
-            download = current; stopping = false; Publish("Checking and downloading update…");
-            var result = await current.Run(); artifact = result.Artifact; blocked = !result.Clean;
-            if (blocked) { Publish("Update cleanup could not be confirmed. Close Mira before trying again."); return; }
-            if (closing || stopping) { Publish("Update cancelled."); return; }
-            if (artifact == null) { Publish("No verified update was downloaded. Check the server and pairing."); return; }
-            artifact.RequireFresh(); installing = true; Publish("Installing Mira " + artifact.Version + "…");
+            download = new DesktopUpdateSession(package, DesktopSettings.ServerOrigin, settings);
+            var result = await download.Run();
+            artifact = result.Artifact;
+            blocked |= !result.Clean;
+            if (blocked) { notice = "Mira could not confirm process cleanup. Close the app before trying again."; return; }
+            if (closing || stopping) return;
+            if (result.UpToDate) { notice = "You're using the latest verified release of Mira."; return; }
+            if (artifact == null) { notice = "Mira couldn't get a verified update. Check your computer pairing and home network, then try again."; return; }
+            UpdateStatus("Mira " + artifact.Version + " is ready to install.");
+            if (!MiraNotice.ConfirmUpdate(owner, artifact.Version, presenceStopped != null) || closing || stopping || blocked) return;
+            artifact.RequireFresh();
+            if (presenceStopped != null) {
+                reconnect = true;
+                UpdateStatus("Ending local computer access before updating…");
+                var stopped = presenceStopped.Task;
+                session.Stop();
+                if (!await stopped) { notice = "Computer access could not be stopped cleanly. Close Mira before updating."; return; }
+                if (closing || stopping) return;
+            }
+            artifact.RequireFresh();
+            installing = true; UpdateStatus("Installing Mira " + artifact.Version + "…");
             maintenance(true); released = true;
             bool success = await Task.Run((Func<bool>)artifact.Install); completed = true;
             if (success) {
-                MiraNotice.ShowNotice(owner, "Mira was updated. Open it again from Start; your pairing and sign-in are kept.", "Update installed");
-                closing = true;
-            } else Publish("Setup did not complete. Close other Mira clients and try again.");
-        } catch { blocked = true; Publish("The update could not be confirmed. Let setup finish, then reopen Mira from Start."); }
+                InstalledVersion = artifact.Version; closing = true;
+            } else notice = "Setup did not complete. Close other Mira clients and try again.";
+        } catch {
+            blocked |= released && !completed;
+            notice = blocked ? "The update could not be confirmed. Let setup finish, then reopen Mira from Start." : "The verified update is no longer available. Check for updates again.";
+        }
         finally {
             installing = false;
             if (released && completed && !closing) { try { maintenance(false); } catch { blocked = true; } }
             if (artifact != null) { try { artifact.Dispose(); } catch { blocked = true; } }
-            if (current != null) current.Dispose();
-            download = null; stopping = false;
-            if (Changed != null) Changed();
-            if (closing && ExitRequested != null) ExitRequested();
+            if (download != null) { download.Dispose(); download = null; }
+            if (blocked && !closing) Publish("Reopen Mira after setup and process cleanup have finished.");
+            if (notice != null && !closing && !stopping) MiraNotice.ShowNotice(owner, notice, "Mira updates");
+            if (session == null) stopping = false;
+            UpdateStatus(null);
+            if (closing && !Busy && ExitRequested != null) ExitRequested();
         }
     }
     public void Dispose()

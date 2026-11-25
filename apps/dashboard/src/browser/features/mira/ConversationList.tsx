@@ -1,7 +1,8 @@
 import type { MiraConversationCursor } from "@homelab/contracts/mira";
 import {
-    Card,
+    buttonStyles,
     ChoiceBar,
+    IconButton,
     InfiniteScrollTrigger,
     LoadingState,
     queryRefresh,
@@ -9,21 +10,23 @@ import {
 } from "@homelab/ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { PanelLeftClose, SquarePen } from "lucide-react";
+import { Fragment, useState } from "react";
 
 import { api } from "../../api/client";
-import { NewConversationButton } from "./NewConversationButton";
 
 /**
  * Browse searchable conversations with explicit archive filtering and bounded pages.
- * @returns The conversation sidebar, stacked above chat on smaller screens.
+ * @returns The same history list for the desktop rail and mobile history dialog.
  */
 export function ConversationList({
     selected,
     onSelect,
+    onCollapse,
     embedded = false,
     landing = false,
 }: {
+    readonly onCollapse?: () => void;
     readonly embedded?: boolean;
     readonly landing?: boolean;
     readonly onSelect?: () => void;
@@ -71,14 +74,43 @@ export function ConversationList({
     const hasMore = history.data ? history.hasNextPage : !!latest.data?.nextCursor;
     let empty = archived ? "No archived conversations." : "No conversations yet.";
     if (search.trim()) empty = "No conversations match your search.";
+    const today = new Date(latest.dataUpdatedAt);
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const group = (value: string) => {
+        const date = new Date(value);
+        if (date.toDateString() === today.toDateString()) return "Today";
+        if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+        return date.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+    };
     return (
-        <Card
-            className={`chat-split:border-r flex min-h-0 w-full flex-col gap-3 rounded-none border-0 bg-surface-heading p-4 shadow-none sm:p-4 ${embedded ? "border-0 bg-transparent p-0 shadow-none sm:p-0" : ""}`}
+        <div
+            className={`flex min-h-0 w-full flex-col gap-3 ${embedded ? "max-h-[65dvh]" : "bg-surface-heading p-3"}`}
         >
-            <h2 className="text-lg font-semibold tracking-tight text-primary-50">
-                Conversations
-            </h2>
-            {!landing && <NewConversationButton fullWidth onSelect={onSelect} />}
+            {!embedded && (
+                <div className="flex min-h-10 items-center justify-between gap-2 pl-2">
+                    <h2 className="text-sm font-semibold text-primary-100">
+                        Chat history
+                    </h2>
+                    {onCollapse && (
+                        <IconButton
+                            icon={PanelLeftClose}
+                            label="Hide chat history"
+                            onClick={onCollapse}
+                        />
+                    )}
+                </div>
+            )}
+            {!landing && (
+                <Link
+                    to="/mira"
+                    onClick={onSelect}
+                    className={buttonStyles({ variant: "secondary", fullWidth: true })}
+                >
+                    <SquarePen size={16} aria-hidden="true" />
+                    New chat
+                </Link>
+            )}
             <SearchInput
                 label="Search conversations"
                 value={search}
@@ -86,6 +118,7 @@ export function ConversationList({
                 placeholder="Search history…"
             />
             <ChoiceBar
+                fullWidth
                 label="Conversation history"
                 value={archived ? "archived" : "active"}
                 options={[
@@ -102,28 +135,28 @@ export function ConversationList({
                 aria-label="Conversations"
                 className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain p-0.5"
             >
-                {conversations.map((chat) => (
-                    <Link
-                        key={chat.id}
-                        to="/mira/$conversationId"
-                        params={{ conversationId: chat.id }}
-                        onClick={onSelect}
-                        aria-current={selected === chat.id ? "page" : undefined}
-                        className={`flex min-h-11 items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors ${selected === chat.id ? "bg-primary-700 text-primary-50" : "text-primary-300 hover:bg-primary-800 hover:text-primary-50"}`}
-                    >
-                        <span className="line-clamp-2 min-w-0 font-medium wrap-anywhere">
-                            {chat.title}
-                        </span>
-                        <time
-                            className="shrink-0 text-xs text-primary-400 tabular-nums"
-                            dateTime={chat.updatedAt}
+                {conversations.map((chat, index) => (
+                    <Fragment key={chat.id}>
+                        {(!index ||
+                            group(chat.updatedAt) !==
+                                group(conversations[index - 1]!.updatedAt)) && (
+                            <h3 className="px-2.5 pt-4 pb-1 text-xs font-medium text-primary-400">
+                                {group(chat.updatedAt)}
+                            </h3>
+                        )}
+                        <Link
+                            title={chat.title}
+                            to="/mira/$conversationId"
+                            params={{ conversationId: chat.id }}
+                            onClick={onSelect}
+                            aria-current={selected === chat.id ? "page" : undefined}
+                            className={`flex min-h-11 items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors ${selected === chat.id ? "bg-primary-700 text-primary-50" : "text-primary-300 hover:bg-primary-800 hover:text-primary-50"}`}
                         >
-                            {new Intl.DateTimeFormat("en-GB", {
-                                day: "numeric",
-                                month: "short",
-                            }).format(new Date(chat.updatedAt))}
-                        </time>
-                    </Link>
+                            <span className="line-clamp-2 min-w-0 font-medium wrap-anywhere">
+                                {chat.title}
+                            </span>
+                        </Link>
+                    </Fragment>
                 ))}
                 <InfiniteScrollTrigger
                     itemCount={conversations.length}
@@ -141,6 +174,6 @@ export function ConversationList({
                     }}
                 />
             </nav>
-        </Card>
+        </div>
     );
 }

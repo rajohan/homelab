@@ -25,6 +25,7 @@ import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
+import { CodeTargetSettings } from "./CodeTargetSettings";
 import { ModelSettings } from "./ModelSettings";
 import { RecallSettings } from "./RecallSettings";
 
@@ -136,6 +137,13 @@ export function AutomationEditor({
                         fresh={models.data?.fresh === true}
                         disabled={save.isPending}
                         label="Automation model"
+                    />
+                    <CodeTargetSettings
+                        value={settings.executionTarget}
+                        disabled={save.isPending}
+                        onChange={(executionTarget) =>
+                            setSettings({ ...settings, executionTarget })
+                        }
                     />
                     {models.error && <ErrorNotice error={models.error} />}
                 </Fieldset>

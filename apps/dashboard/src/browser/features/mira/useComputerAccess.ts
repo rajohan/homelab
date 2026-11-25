@@ -1,9 +1,22 @@
 import type { MiraRun } from "@homelab/contracts/mira";
-import type { MiraComputerAccessSummary } from "@homelab/contracts/miraComputers";
+import type {
+    MiraComputerAccessSummary,
+    MiraComputerScope,
+} from "@homelab/contracts/miraComputers";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { api } from "../../api/client";
+
+/** Describe the immutable extent of a local computer grant, including older single-display sessions.
+ * @param scope - Scope confirmed by the PC, or omitted for window-only clients.
+ * @returns A short display name for status surfaces.
+ */
+export function computerScopeLabel(scope?: MiraComputerScope) {
+    if (scope === "displays") return "All displays";
+    if (scope === "desktop") return "Primary display";
+    return "One window";
+}
 
 /**
  * Observe only the selected run's owned requests; polling never requests or restores access.
@@ -18,8 +31,9 @@ export function useComputerAccess(run: MiraRun | null) {
         const timer = setInterval(() => setNow(Date.now()), 1000);
         return () => clearInterval(timer);
     }, []);
+    const queryKey = ["operations", "mira", "computer-access", runId] as const;
     const query = useQuery({
-        queryKey: ["operations", "mira", "computer-access", runId],
+        queryKey,
         queryFn: async ({ signal }) =>
             runId ? api.mira.computers.access.list.query({ runId }, { signal }) : [],
         ...(runId ? {} : { enabled: false }),
@@ -34,6 +48,7 @@ export function useComputerAccess(run: MiraRun | null) {
     });
     return {
         ...query,
+        queryKey,
         now,
         fresh:
             !query.error &&

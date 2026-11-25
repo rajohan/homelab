@@ -28,6 +28,9 @@ export async function buildWindowsWorkerHost(outputRoot?: string) {
         "/warnaserror+",
         "/optimize+",
         "/target:exe",
+        "/reference:System.Drawing.dll",
+        "/reference:System.Windows.Forms.dll",
+        "/reference:System.Web.Extensions.dll",
         `/win32manifest:${path.join(source, "app.manifest")}`,
     ];
     const compile = (outfile: string, files: string[]) =>
@@ -40,7 +43,14 @@ export async function buildWindowsWorkerHost(outputRoot?: string) {
             ],
             { windowsHide: true, timeout: 30_000, maxBuffer: 64 * 1024 }
         );
-    compile(host, ["WorkerJob.cs", "WorkerProgram.cs"]);
+    compile(host, [
+        "WorkerJob.cs",
+        "WorkerProgram.cs",
+        "DisplayLayout.cs",
+        "DisplayWorker.cs",
+        "NativeWindows.cs",
+        "ConsentProtocol.cs",
+    ]);
     return { host };
 }
 

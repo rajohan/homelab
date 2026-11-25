@@ -17,10 +17,7 @@ export function CodeTargetSettings({
     readonly inherit?: boolean;
 }) {
     return (
-        <FormField
-            label="Code execution"
-            description="Main runs Homelab checks locally. Daytona uses a cloud sandbox."
-        >
+        <FormField label="Code execution">
             <Select
                 label="Code execution"
                 value={value ?? (inherit ? "" : miraDefaultCodeTarget)}

@@ -156,8 +156,15 @@ export async function readConversation(
         })
     );
     const [run] = await context.client<
-        (MiraRun & { model: string | null })[]
-    >`SELECT id, manual, coalesce(effective_settings->>'model',settings->>'model') AS model, conversation_id AS "conversationId", automation_id AS "automationId", task_id AS "taskId", activity, state, cancel_requested AS "cancelRequested", message, created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt" FROM mira_runs WHERE conversation_id = ${id} ORDER BY id DESC LIMIT 1`;
+        (MiraRun &
+            Pick<MiraChatSettings, "model" | "effort" | "serviceTier"> & {
+                settingsResolved: boolean;
+            })[]
+    >`SELECT id, manual, coalesce(effective_settings->>'model',settings->>'model') AS model,
+          coalesce(effective_settings,settings)->>'effort' AS effort,
+          coalesce(effective_settings,settings)->>'serviceTier' AS "serviceTier",
+          effective_settings IS NOT NULL AS "settingsResolved",
+          conversation_id AS "conversationId", automation_id AS "automationId", task_id AS "taskId", activity, state, cancel_requested AS "cancelRequested", message, created_at::text AS "createdAt", started_at::text AS "startedAt", finished_at::text AS "finishedAt" FROM mira_runs WHERE conversation_id = ${id} ORDER BY id DESC LIMIT 1`;
     const tools = run
         ? await context.client<
               {
@@ -177,6 +184,16 @@ export async function readConversation(
         run: run ?? null,
         nextCursor: rows.length === 50 ? rows.at(-1)!.id : null,
     };
+}
+
+/** Hash message content for retries; the device hint is only routing metadata.
+ * @param input - Validated chat message with an optional device hint.
+ * @returns The stable request hash used by manual messages and queued follow-ups.
+ */
+export function miraMessageHash(input: v.InferOutput<typeof miraMessageInputSchema>) {
+    const message = { ...input };
+    delete message.sourceComputer;
+    return new Bun.CryptoHasher("sha256").update(JSON.stringify(message)).digest("hex");
 }
 
 /**
@@ -203,9 +220,7 @@ export async function enqueueTurn(
     if (source.taskId)
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:task:${context.owner}:${source.taskId}`}, 0))`;
     const requestKey = `${context.owner}:${input.requestId}`;
-    const hash =
-        source.requestHash ??
-        new Bun.CryptoHasher("sha256").update(JSON.stringify(input)).digest("hex");
+    const hash = source.requestHash ?? miraMessageHash(input);
     // Explicit task admission already serializes requests and can hold the conversation row.
     if (!source.taskId)
         await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:request:${requestKey}`},0))`;
@@ -297,7 +312,7 @@ export async function enqueueTurn(
     } else
         await query`INSERT INTO mira_messages (id,conversation_id,role,content,state,attachment_ids) VALUES (${userMessage},${input.conversationId},'user',${input.text},'completed',${JSON.stringify(input.attachmentIds)}::text::jsonb)`;
     await query`INSERT INTO mira_messages (id,conversation_id,role,content,state,attachment_ids) VALUES (${assistantMessage},${input.conversationId},'assistant','','queued','[]'::jsonb)`;
-    await query`INSERT INTO mira_runs (id, owner, request_key, request_hash, conversation_id, user_message_id, assistant_message_id, automation_id, automation_kind, task_id, state, priority, budget_seconds, manual, settings) VALUES (${id}, ${context.owner}, ${requestKey}, ${hash}, ${input.conversationId}, ${userMessage}, ${assistantMessage}, ${source.automationId ?? null}, (SELECT kind FROM mira_automations WHERE id=${source.automationId ?? null} AND owner=${context.owner}), ${taskId ?? null}, 'queued', ${manual ? 100 : 0}, ${budgetSeconds}, ${manual}, ${JSON.stringify(settings)}::text::jsonb)`;
+    await query`INSERT INTO mira_runs (id, owner, request_key, request_hash, conversation_id, user_message_id, assistant_message_id, automation_id, automation_kind, task_id, state, priority, budget_seconds, manual, settings, source_computer) VALUES (${id}, ${context.owner}, ${requestKey}, ${hash}, ${input.conversationId}, ${userMessage}, ${assistantMessage}, ${source.automationId ?? null}, (SELECT kind FROM mira_automations WHERE id=${source.automationId ?? null} AND owner=${context.owner}), ${taskId ?? null}, 'queued', ${manual ? 100 : 0}, ${budgetSeconds}, ${manual}, ${JSON.stringify(settings)}::text::jsonb, ${manual ? (input.sourceComputer ?? null) : null})`;
     await query`UPDATE mira_conversations SET version = version + 1, updated_at = now() WHERE id = ${input.conversationId}`;
     await auditMira(query, context, "run.queued", id);
     return { id };

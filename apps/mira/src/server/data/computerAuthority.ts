@@ -1,3 +1,4 @@
+import type { MiraComputerScope } from "@homelab/contracts/miraComputers";
 import type { TransactionSQL } from "bun";
 
 import { readComputerCredential } from "../computer/credentials";
@@ -11,7 +12,7 @@ export interface AccessRow {
     conversationId: string;
     keepOpen: boolean;
     mode: "view" | "control";
-    scope: "window" | "desktop";
+    scope: MiraComputerScope;
     state: "pending" | "active" | "stopped";
     connectionId: string;
     targetId: string | null;
@@ -49,9 +50,11 @@ export async function readComputerAccess(
         SELECT g.id,g.owner,g.computer_id AS "computerId",g.run_id AS "runId",r.conversation_id AS "conversationId",g.keep_open AS "keepOpen",g.mode,g.scope,g.state,
             g.connection_id AS "connectionId",g.target_id AS "targetId",g.run_lease AS "runLease",g.expires_at AS "expiresAt",
             least(g.expires_at,g.created_at+interval '1 minute') AS "consentExpiresAt",
-            g.expires_at<=clock_timestamp() AS expired,
+            (g.expires_at<=clock_timestamp() OR (g.state='pending' AND g.created_at<=clock_timestamp()-interval '1 minute')) AS expired,
             (g.state IN ('pending','active') AND g.expires_at>clock_timestamp()
-             AND (g.state<>'pending' OR g.created_at>clock_timestamp()-interval '1 minute')
+             AND (g.state<>'pending' OR (g.created_at>clock_timestamp()-interval '1 minute'
+                 AND r.state='running' AND NOT r.cancel_requested AND r.lease_token=g.run_lease
+                 AND r.lease_expires_at>clock_timestamp() AND (r.budget_seconds=0 OR r.started_at+r.budget_seconds*interval '1 second'>clock_timestamp())))
              AND c.state='paired' AND c.version=g.computer_version AND c.connection_id=g.connection_id
              AND c.expires_at>clock_timestamp() AND c.connection_expires_at>clock_timestamp()
              AND ((g.keep_open AND r.manual AND r.automation_id IS NULL) OR

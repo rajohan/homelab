@@ -1,20 +1,24 @@
 import type { MiraRun } from "@homelab/contracts/mira";
-import { Badge, Button, ErrorNotice } from "@homelab/ui";
-import { Globe, Square } from "lucide-react";
-import { useState } from "react";
+import { Badge, Button, ErrorNotice, IconButton } from "@homelab/ui";
+import { Globe, PanelRightOpen, Square } from "lucide-react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
-import { BrowserConsoleDialog } from "./BrowserConsoleDialog";
 import { accessStatusTone } from "./statusTone";
-import { browserAccessLabel, useBrowserAccess } from "./useBrowserAccess";
+import { browserAccessLabel, type useBrowserAccess } from "./useBrowserAccess";
 
 /** Show the running browser with direct observation, takeover and stop controls.
  * @returns A compact session row only while a browser exists or cleanup is pending.
  */
-export function BrowserAccessPanel({ run }: { readonly run: MiraRun | null }) {
-    const [showBrowser, setShowBrowser] = useState(false);
-    const query = useBrowserAccess(run);
+export function BrowserAccessPanel({
+    run,
+    query,
+    onView,
+}: {
+    readonly run: MiraRun | null;
+    readonly query: ReturnType<typeof useBrowserAccess>;
+    readonly onView: (id: string) => void;
+}) {
     const access = query.data?.[0];
     const stop = useOperation((id: string, signal) =>
         api.mira.browser.stop.mutate({ id }, { signal })
@@ -28,44 +32,37 @@ export function BrowserAccessPanel({ run }: { readonly run: MiraRun | null }) {
     const label = browserAccessLabel(access, run, query.fresh);
     return (
         <section
-            className="shrink-0 border-t border-primary-700 px-4 py-2"
+            className="mx-auto w-full max-w-3xl px-2 pb-1 sm:px-6"
             aria-label="Browser session"
         >
-            <div className="flex flex-wrap items-center gap-2">
-                <Globe size={16} aria-hidden="true" />
-                <span className="text-sm font-medium">Browser</span>
-                <Badge tone={accessStatusTone(label)}>{label}</Badge>
-                <div className="ml-auto flex flex-wrap gap-2">
-                    {access.state === "active" && (
-                        <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => setShowBrowser(true)}
-                        >
-                            View browser
-                        </Button>
-                    )}
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        busy={stop.isPending}
-                        disabled={access.state === "stopping"}
-                        onClick={() => stop.mutate(access.id)}
-                    >
-                        <Square size={14} aria-hidden="true" />
-                        Stop browser
-                    </Button>
-                </div>
+            <div className="flex min-w-0 items-center gap-2 rounded-xl border border-primary-700 bg-surface-card px-1.5 py-0.5">
+                <Button
+                    variant="ghost"
+                    className="min-w-0 flex-1 justify-start"
+                    disabled={access.state !== "active"}
+                    aria-label="View browser"
+                    onClick={() => onView(access.id)}
+                >
+                    <Globe size={16} aria-hidden="true" className="text-accent-300" />
+                    Browser
+                    <Badge tone={accessStatusTone(label)}>{label}</Badge>
+                    <PanelRightOpen
+                        size={16}
+                        aria-hidden="true"
+                        className="ml-auto text-primary-400"
+                    />
+                </Button>
+                <IconButton
+                    icon={Square}
+                    label="Stop browser"
+                    size="sm"
+                    busy={stop.isPending}
+                    disabled={access.state === "stopping"}
+                    onClick={() => stop.mutate(access.id)}
+                />
             </div>
             {query.error && <ErrorNotice error={query.error} />}
             {stop.error && <ErrorNotice error={stop.error} />}
-            {showBrowser && access.state === "active" && (
-                <BrowserConsoleDialog
-                    key={access.id}
-                    access={access}
-                    onClose={() => setShowBrowser(false)}
-                />
-            )}
         </section>
     );
 }

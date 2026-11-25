@@ -1,153 +1,154 @@
-import {
-    miraBrowserDownloadNameSchema,
-    type miraBrowserHumanCommandSchema,
-    type MiraBrowserPreview,
-} from "@homelab/contracts/miraBrowser";
+import { miraBrowserDownloadNameSchema } from "@homelab/contracts/miraBrowser";
 import {
     ActionGroup,
     Button,
-    ConfirmDialog,
+    ErrorNotice,
     FormField,
     Input,
-    Select,
+    LoadingState,
 } from "@homelab/ui";
+import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import * as v from "valibot";
 
-type Operation = v.InferOutput<typeof miraBrowserHumanCommandSchema>["operation"];
-type DownloadOperation = Extract<Operation, { method: "download" }>;
+import { api } from "../../api/client";
+import { AttachmentFileActions } from "./AttachmentFileActions";
+import type { BrowserFileCommand, BrowserFileTarget } from "./BrowserFileDialog";
 
-/**
- * Confirm a visible download link and its display filename before importing it into this conversation.
- * @returns Shared operator controls bound to the current page observation and approved website.
+/** Confirm a specific download and expose local preview/save only after its verified attachment exists.
+ * @returns File naming, explicit confirmation, and the actual downloaded file's actions.
  */
 export function BrowserDownloadControls({
-    preview,
+    target,
+    suggestedName,
     disabled,
+    now,
     onCommand,
+    onSubmitted,
+    onClose,
 }: {
-    readonly preview: MiraBrowserPreview | null;
+    readonly target: BrowserFileTarget | null;
+    readonly suggestedName: string;
     readonly disabled: boolean;
-    readonly onCommand: (operation: Operation) => void;
+    readonly now: number;
+    readonly onCommand: BrowserFileCommand;
+    readonly onSubmitted: (origin: string) => void;
+    readonly onClose: () => void;
 }) {
-    const [ref, setRef] = useState("");
-    const [name, setName] = useState("");
-    const [confirmation, setConfirmation] = useState<{
-        operation: DownloadOperation;
-        label: string;
+    const [name, setName] = useState(() =>
+        v.safeParse(miraBrowserDownloadNameSchema, suggestedName).success
+            ? suggestedName
+            : ""
+    );
+    const [receipt, setReceipt] = useState<{
+        id: string;
+        name: string;
+        at: number;
     } | null>(null);
-    const targets =
-        preview?.refs.filter(
-            (item) => item.role === "link" && item.actions.includes("click")
-        ) ?? [];
-    const target = targets.find((item) => item.ref === ref);
-    const parsedName = v.safeParse(miraBrowserDownloadNameSchema, name);
-    const current =
-        confirmation &&
-        !disabled &&
-        preview?.observationId === confirmation.operation.input.observationId &&
-        new URL(preview.url).origin === confirmation.operation.origin &&
-        targets.some(
-            (item) =>
-                item.ref === confirmation.operation.input.ref &&
-                (item.label || item.ref) === confirmation.label
+    const [notice, setNotice] = useState("");
+    const submitting = useRef(false);
+    const parsed = v.safeParse(miraBrowserDownloadNameSchema, name);
+    const timedOut = receipt && now - receipt.at >= 60_000;
+    const files = useQuery({
+        queryKey: ["operations", "mira", "browser-download-file", receipt?.id],
+        queryFn: ({ signal }) => api.mira.files.metadata.query([receipt!.id], { signal }),
+        enabled: Boolean(receipt),
+        retry: false,
+        gcTime: 0,
+        refetchInterval: (query) =>
+            query.state.data?.length || timedOut || query.state.error ? false : 1200,
+    });
+    if (receipt) {
+        const file = files.data?.find(
+            (row) => row.id === receipt.id && row.name === receipt.name
         );
+        return (
+            <div className="space-y-4">
+                {file && (
+                    <>
+                        <p className="text-sm wrap-anywhere text-primary-200">
+                            {file.name} was saved in this chat.
+                        </p>
+                        <AttachmentFileActions file={file} />
+                    </>
+                )}
+                {!file && files.error && <ErrorNotice error={files.error} />}
+                {!file && !files.error && timedOut && (
+                    <p className="text-sm text-primary-300">
+                        This file has not appeared in the chat. Check its status before
+                        requesting another download.
+                    </p>
+                )}
+                {!file && !files.error && !timedOut && (
+                    <LoadingState label={`Waiting for ${receipt.name}…`} />
+                )}
+                <ActionGroup>
+                    <Button variant="secondary" onClick={onClose}>
+                        Close
+                    </Button>
+                    {!file && (timedOut || files.error) && (
+                        <Button
+                            busy={files.isFetching}
+                            onClick={() => void files.refetch()}
+                        >
+                            Check file status
+                        </Button>
+                    )}
+                </ActionGroup>
+            </div>
+        );
+    }
     return (
-        <section
-            className="space-y-3 border-t border-primary-700 pt-4"
-            aria-label="Download to this conversation"
+        <form
+            className="space-y-4"
+            onSubmit={(event) => {
+                event.preventDefault();
+                if (!target || disabled || !parsed.success || submitting.current) return;
+                submitting.current = true;
+                const commandId = onCommand({
+                    method: "download",
+                    input: { observationId: target.observationId, ref: target.ref },
+                    origin: target.origin,
+                    name: parsed.output,
+                });
+                if (commandId) {
+                    setReceipt({ id: commandId, name: parsed.output, at: Date.now() });
+                    onSubmitted(target.origin);
+                } else {
+                    submitting.current = false;
+                    setNotice("The browser is busy. Check the page before saving.");
+                }
+            }}
         >
             <FormField
-                label="Download link on the page"
-                description="Choose a file link from the current view. Refresh if it is missing."
-            >
-                <Select
-                    value={ref}
-                    onChange={setRef}
-                    disabled={disabled}
-                    options={[
-                        { value: "", label: "Choose a download link" },
-                        ...targets.map((item) => ({
-                            value: item.ref,
-                            label: item.label || item.ref,
-                        })),
-                    ]}
-                />
-            </FormField>
-            <FormField
-                label="Save attachment as"
-                description="PNG, JPEG, WebP, PDF or UTF-8 text, up to 25 MiB. Use a filename without folders."
+                label="File name"
+                description="PNG, JPEG, WebP, PDF or UTF-8 text, up to 25 MiB."
             >
                 <Input
                     value={name}
                     onChange={(event) => setName(event.target.value)}
                     maxLength={200}
-                    disabled={disabled}
                     placeholder="document.pdf"
+                    required
                 />
             </FormField>
+            <p className="text-sm leading-relaxed text-primary-400">
+                Save the file in this chat to make it available to Mira. You can then
+                preview it or download a copy to your device.
+            </p>
+            {notice && (
+                <output className="block text-sm text-primary-300">{notice}</output>
+            )}
             <ActionGroup>
-                <Button
-                    variant="secondary"
-                    disabled={disabled || !preview || !target || !parsedName.success}
-                    onClick={() => {
-                        if (preview && target && parsedName.success)
-                            setConfirmation({
-                                label: target.label || target.ref,
-                                operation: {
-                                    method: "download",
-                                    name: parsedName.output,
-                                    origin: new URL(preview.url).origin,
-                                    input: {
-                                        observationId: preview.observationId,
-                                        ref: target.ref,
-                                    },
-                                },
-                            });
-                    }}
-                >
-                    <Download size={14} aria-hidden="true" />
-                    Review download
+                <Button variant="secondary" onClick={onClose}>
+                    Cancel
+                </Button>
+                <Button type="submit" disabled={!target || disabled || !parsed.success}>
+                    <Download size={16} aria-hidden="true" />
+                    Save to chat
                 </Button>
             </ActionGroup>
-            {confirmation && (
-                <ConfirmDialog
-                    title="Download attachment"
-                    description="The file will be saved in this conversation and available to Mira when you return control."
-                    confirmLabel="Save to conversation"
-                    variant="primary"
-                    confirmDisabled={!current}
-                    onClose={() => setConfirmation(null)}
-                    onConfirm={() => {
-                        if (current) {
-                            onCommand(confirmation.operation);
-                            setConfirmation(null);
-                        }
-                        return Promise.resolve();
-                    }}
-                >
-                    <dl className="space-y-3 rounded-lg border border-primary-700 bg-surface-card p-4 text-sm wrap-anywhere">
-                        <div>
-                            <dt className="text-primary-400">File</dt>
-                            <dd>{confirmation.operation.name}</dd>
-                        </div>
-                        <div>
-                            <dt className="text-primary-400">Link</dt>
-                            <dd>{confirmation.label}</dd>
-                        </div>
-                        <div>
-                            <dt className="text-primary-400">Website</dt>
-                            <dd>{confirmation.operation.origin}</dd>
-                        </div>
-                    </dl>
-                    {!current && (
-                        <p className="text-sm text-primary-400">
-                            The view changed. Cancel and refresh before confirming again.
-                        </p>
-                    )}
-                </ConfirmDialog>
-            )}
-        </section>
+        </form>
     );
 }

@@ -112,6 +112,8 @@ or full metric labels are returned to browsers.
 
 ## Automation access
 
+Mira can use this API from an operator-started chat or task with a dedicated machine account. Its discovery tool lists granted reads, granted actions and direct dashboard links for steps requiring a human operator. [Mira dashboard operations and setup](mira-operations.md#dashboard-operations-in-chat)
+
 Settings manages named accounts with explicit capabilities. Administration requires a
 live human session and recent MFA through Auth; machine tokens cannot administer access.
 Dashboard users are governed by the Auth client's group policy. Account and credential

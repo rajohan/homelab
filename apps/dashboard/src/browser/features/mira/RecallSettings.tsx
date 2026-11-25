@@ -10,14 +10,16 @@ export function RecallSettings({
     onChange,
     disabled = false,
     restricted = false,
+    hideLegend = false,
 }: {
     readonly settings: MiraChatSettings;
     readonly onChange: (settings: MiraChatSettings) => void;
     readonly disabled?: boolean;
     readonly restricted?: boolean;
+    readonly hideLegend?: boolean;
 }) {
     return (
-        <Fieldset legend="Context">
+        <Fieldset legend="Context" hideLegend={hideLegend}>
             {restricted ? (
                 <p className="text-sm text-primary-400">
                     Dashboard improvement uses repository and task context. Private memory
@@ -39,11 +41,6 @@ export function RecallSettings({
                         disabled={disabled}
                         onChange={(useHistory) => onChange({ ...settings, useHistory })}
                     />
-                    <p className="text-xs leading-5 text-primary-400">
-                        Relevant context is sent to the model provider selected for the
-                        run. Turning these off stops future retrieval; existing messages
-                        and previous replies remain in their conversations.
-                    </p>
                 </>
             )}
         </Fieldset>

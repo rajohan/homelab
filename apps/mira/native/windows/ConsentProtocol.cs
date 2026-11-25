@@ -34,8 +34,8 @@ namespace Homelab.Mira.Computer
             string scope = "window";
             if (value.ContainsKey("scope")) {
                 keys.Add("scope");
-                scope = ConsentProtocol.Text(value, "scope", 7);
-                if (scope != "window" && scope != "desktop") throw new InvalidDataException("Invalid target scope.");
+                scope = ConsentProtocol.Text(value, "scope", 8);
+                if (scope != "window" && scope != "desktop" && scope != "displays") throw new InvalidDataException("Invalid target scope.");
             }
             ConsentProtocol.Keys(value, keys.ToArray());
             string id = ConsentProtocol.Text(value, "id", 36);
@@ -119,7 +119,7 @@ namespace Homelab.Mira.Computer
             return parameters;
         }
 
-        internal static string ReadLine(TextReader reader)
+        internal static string ReadLine(TextReader reader, int limit = 8192)
         {
             var line = new StringBuilder();
             int consumed = 0;
@@ -127,13 +127,13 @@ namespace Homelab.Mira.Computer
             {
                 int next = reader.Read();
                 if (next < 0) return null;
-                if (++consumed > 8193) throw new InvalidDataException("Message too large.");
+                if (++consumed > limit + 1) throw new InvalidDataException("Message too large.");
                 if (next == '\n')
                 {
                     if (line.Length > 0 && line[line.Length - 1] == '\r') line.Length--;
                     return line.ToString();
                 }
-                if (line.Length == 8192) throw new InvalidDataException("Message too large.");
+                if (line.Length == limit) throw new InvalidDataException("Message too large.");
                 line.Append((char)next);
             }
         }

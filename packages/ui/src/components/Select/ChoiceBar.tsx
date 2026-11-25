@@ -9,8 +9,10 @@ export function ChoiceBar<T extends string>({
     value,
     options,
     onChange,
+    fullWidth = false,
 }: {
     readonly label: string;
+    readonly fullWidth?: boolean;
     readonly value: T;
     readonly options: readonly { value: T; label: string; count?: number | string }[];
     readonly onChange: (value: T) => void;
@@ -18,7 +20,12 @@ export function ChoiceBar<T extends string>({
     return (
         <fieldset
             aria-label={label}
-            className="inline-flex max-w-full flex-wrap items-center gap-0.5 rounded-lg border border-primary-700 bg-primary-950 p-0.5"
+            className={cn(
+                "max-w-full items-center gap-0.5 rounded-lg border border-primary-700 bg-primary-950 p-0.5",
+                fullWidth
+                    ? "grid w-full auto-cols-fr grid-flow-col"
+                    : "inline-flex flex-wrap"
+            )}
         >
             {options.map((item) => (
                 <button

@@ -34,6 +34,8 @@ export async function openNativeComputer(
         | null = process.platform === "win32" ? openWindowsCapture : null
 ): Promise<ComputerWindowPort> {
     const grant = computerGrant(input);
+    if (grant.scope === "displays")
+        throw new Error("All displays require the Windows display worker.");
     if (
         grant.scope !== "desktop" &&
         (await realpath(grant.executable)) !== grant.executable

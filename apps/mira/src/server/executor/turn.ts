@@ -24,6 +24,7 @@ import { readMiraRecallContext, readMiraRecallPolicy } from "../data/recall";
 import { listMiraSkills, miraSkillsRepositoryOnly } from "../data/skills";
 import { acknowledgeTaskSteering, readTaskSteering } from "../data/taskSteering";
 import type { AgentMailReadConfiguration } from "../integrations/agentmail/configuration";
+import type { MiraDashboardConfiguration } from "../integrations/dashboard/connection";
 import type { DaytonaBinding } from "../integrations/daytona/configuration";
 import type {
     GitHubBinding,
@@ -67,6 +68,7 @@ export { miraInstructionsHash } from "../persona/instructions";
  * @param github - Optional GitHub mapping and dedicated read credential, retained only in the service closure.
  * @param localCode - Optional Main mapping; the run freezes its target before inference.
  * @param operations - Explicit owner-bound host administration settings.
+ * @param dashboard - Owner-bound dashboard machine credential for operational tools.
  * @param onConnectionFailure - Refresh provider health when preflight cannot verify ChatGPT.
  * @param daytona - Nonsecret cloud mapping for local drafts and result reads.
  * @returns Completion after recording the observed terminal outcome and reaping the child.
@@ -84,7 +86,8 @@ export async function executeMiraTurn(
     github?: GitHubBinding | GitHubConfiguration,
     localCode?: LocalCodeBinding,
     operations?: MiraOperationsConfiguration,
-    onConnectionFailure?: (status: MiraChatgptStatus) => void
+    onConnectionFailure?: (status: MiraChatgptStatus) => void,
+    dashboard?: MiraDashboardConfiguration
 ): Promise<void> {
     const controller = new AbortController();
     const deadline = new AbortController();
@@ -321,7 +324,8 @@ export async function executeMiraTurn(
                     daytona,
                     github,
                     localCode,
-                    operations
+                    operations,
+                    dashboard
                 ),
                 ...(computerAssistance
                     ? [

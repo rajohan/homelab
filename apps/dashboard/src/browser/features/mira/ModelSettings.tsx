@@ -1,8 +1,6 @@
 import type { MiraChatSettings, MiraModel } from "@homelab/contracts/mira";
 import { FormField, Select } from "@homelab/ui";
 
-import { CodeTargetSettings } from "./CodeTargetSettings";
-
 /**
  * Share current ChatGPT model and capability choices between Chat and Automations.
  * @returns Controlled fields backed by the native Codex model catalog.
@@ -80,69 +78,86 @@ export function ModelSettings({
                         });
                     }}
                 />
-                {selected?.description && (
-                    <p className="text-xs text-primary-400">{selected.description}</p>
-                )}
             </FormField>
-            <div className="grid gap-4 sm:grid-cols-2">
-                <FormField label="Thinking">
-                    <Select
-                        label="Thinking level"
-                        value={draft.effort ?? ""}
-                        disabled={!fresh || disabled || !selected}
-                        options={[
-                            {
-                                value: "",
-                                label: selected?.defaultReasoningEffort
-                                    ? `Default (${selected.defaultReasoningEffort})`
-                                    : "Default",
-                            },
-                            ...(selected?.supportedReasoningEfforts.map((entry) => ({
-                                value: entry.reasoningEffort,
-                                label:
-                                    entry.reasoningEffort.charAt(0).toUpperCase() +
-                                    entry.reasoningEffort.slice(1),
-                            })) ?? []),
-                        ]}
-                        onChange={(effort) =>
-                            setDraft({ ...draft, effort: effort || null })
-                        }
-                    />
-                    {thinking && (
-                        <p className="text-xs text-primary-400">{thinking.description}</p>
+            <div className="grid gap-4 empty:hidden sm:grid-cols-2">
+                {selected &&
+                    (selected.supportedReasoningEfforts.length > 0 || !!draft.effort) && (
+                        <FormField label="Thinking">
+                            <Select
+                                label="Thinking level"
+                                value={draft.effort ?? ""}
+                                disabled={!fresh || disabled || !selected}
+                                options={[
+                                    {
+                                        value: "",
+                                        label: selected?.defaultReasoningEffort
+                                            ? `Default (${selected.defaultReasoningEffort})`
+                                            : "Default",
+                                    },
+                                    ...(selected?.supportedReasoningEfforts.map(
+                                        (entry) => ({
+                                            value: entry.reasoningEffort,
+                                            label:
+                                                entry.reasoningEffort
+                                                    .charAt(0)
+                                                    .toUpperCase() +
+                                                entry.reasoningEffort.slice(1),
+                                        })
+                                    ) ?? []),
+                                    ...(draft.effort && !thinking
+                                        ? [
+                                              {
+                                                  value: draft.effort,
+                                                  label: `${draft.effort} (unavailable)`,
+                                                  disabled: true,
+                                              },
+                                          ]
+                                        : []),
+                                ]}
+                                onChange={(effort) =>
+                                    setDraft({ ...draft, effort: effort || null })
+                                }
+                            />
+                        </FormField>
                     )}
-                </FormField>
-                <FormField label="Speed">
-                    <Select
-                        label="Response speed"
-                        value={draft.serviceTier ?? ""}
-                        disabled={!fresh || disabled || !selected}
-                        options={[
-                            {
-                                value: "",
-                                label: selected?.defaultServiceTier
-                                    ? `Default (${selected.serviceTiers.find((entry) => entry.id === selected.defaultServiceTier)?.name ?? selected.defaultServiceTier})`
-                                    : "Standard",
-                            },
-                            ...(selected?.serviceTiers.map((entry) => ({
-                                value: entry.id,
-                                label: entry.name,
-                            })) ?? []),
-                        ]}
-                        onChange={(serviceTier) =>
-                            setDraft({ ...draft, serviceTier: serviceTier || null })
-                        }
-                    />
-                    {speed && (
-                        <p className="text-xs text-primary-400">{speed.description}</p>
+                {selected &&
+                    (selected.serviceTiers.length > 0 || !!draft.serviceTier) && (
+                        <FormField label="Speed">
+                            <Select
+                                label="Response speed"
+                                value={draft.serviceTier ?? ""}
+                                disabled={!fresh || disabled || !selected}
+                                options={[
+                                    {
+                                        value: "",
+                                        label: selected?.defaultServiceTier
+                                            ? `Default (${selected.serviceTiers.find((entry) => entry.id === selected.defaultServiceTier)?.name ?? selected.defaultServiceTier})`
+                                            : "Standard",
+                                    },
+                                    ...(selected?.serviceTiers.map((entry) => ({
+                                        value: entry.id,
+                                        label: entry.name,
+                                    })) ?? []),
+                                    ...(draft.serviceTier && !speed
+                                        ? [
+                                              {
+                                                  value: draft.serviceTier,
+                                                  label: `${draft.serviceTier} (unavailable)`,
+                                                  disabled: true,
+                                              },
+                                          ]
+                                        : []),
+                                ]}
+                                onChange={(serviceTier) =>
+                                    setDraft({
+                                        ...draft,
+                                        serviceTier: serviceTier || null,
+                                    })
+                                }
+                            />
+                        </FormField>
                     )}
-                </FormField>
             </div>
-            <CodeTargetSettings
-                value={draft.executionTarget}
-                disabled={disabled}
-                onChange={(executionTarget) => setDraft({ ...draft, executionTarget })}
-            />
         </>
     );
 }

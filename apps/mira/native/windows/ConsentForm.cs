@@ -31,7 +31,10 @@ namespace Homelab.Mira.Computer
         private readonly ConsentRequest request;
         private readonly NativeWindows.DesktopState desktop;
         private readonly Rectangle primaryBounds;
-        private bool WholeDesktop { get { return request.Scope == "desktop"; } }
+        private bool AllDisplays { get { return request.Scope == "displays"; } }
+        private bool WholeDesktop { get { return AllDisplays || request.Scope == "desktop"; } }
+        private readonly DisplayLayout displayLayout;
+        private string DisplayLabel { get { return AllDisplays ? (displayLayout.Monitors.Length == 1 ? "your display" : "all " + displayLayout.Monitors.Length + " displays") : "your primary display"; } }
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private readonly double consentDeadline;
         private readonly double sessionDeadline;
@@ -68,6 +71,7 @@ namespace Homelab.Mira.Computer
             request = input;
             desktop = NativeWindows.ReadyDesktop();
             primaryBounds = Screen.PrimaryScreen.Bounds;
+            if (AllDisplays) displayLayout = DisplayLayout.Current();
             consentDeadline = Math.Max(0, (input.ConsentExpiresAt - DateTime.UtcNow).TotalMilliseconds);
             sessionDeadline = Math.Max(0, (input.ExpiresAt - DateTime.UtcNow).TotalMilliseconds);
             destroyedCallback = delegate(IntPtr hook, uint eventId, IntPtr window, int objectId, int childId, uint thread, uint time)
@@ -88,25 +92,25 @@ namespace Homelab.Mira.Computer
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             Font = new Font("Segoe UI", 10);
             ForeColor = TextColor;
-            Size = new Size(720, 590);
-            MinimumSize = new Size(580, 480);
+            Size = WholeDesktop ? new Size(600, 365) : new Size(720, 590);
+            MinimumSize = WholeDesktop ? new Size(500, 345) : new Size(580, 480);
             StartPosition = FormStartPosition.CenterScreen;
             MaximizeBox = false;
             AutoScaleMode = AutoScaleMode.Dpi;
-            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(20), ColumnCount = 1, RowCount = 6 };
+            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(20), ColumnCount = 1, RowCount = 6 };
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(WholeDesktop ? new RowStyle(SizeType.AutoSize) : new RowStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(WholeDesktop ? new RowStyle(SizeType.Percent, 100) : new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             heading.AutoSize = true;
-            heading.Text = "Allow Mira to " + (input.Mode == "view" ? "view " : "control ") + (WholeDesktop ? "your desktop" : "one window");
+            heading.Text = "Allow Mira to " + (input.Mode == "view" ? "view " : "control ") + (WholeDesktop ? DisplayLabel : "one window");
             heading.Font = new Font(Font.FontFamily, 16, FontStyle.Bold);
             heading.Margin = new Padding(0, 0, 0, 12);
             detail.AutoSize = true; detail.MaximumSize = new Size(640, 0); detail.ForeColor = Muted;
             detail.Text = input.Origin + (WholeDesktop
-                ? "\nEverything visible on your primary display is shared, including other apps and notifications."
+                ? "\nEverything visible on " + DisplayLabel + " is shared, including other apps and notifications." + (AllDisplays && input.Mode == "control" ? " Allow control lets Mira click and type across these displays." : "")
                 : "\nChoose a window to share. Its contents, including tabs, may be visible to Mira.") +
                 (input.KeepOpen ? " Access stays open between replies until you stop it, lock the PC or disconnect." : " Access ends with this run, within five minutes.");
             detail.Margin = new Padding(0, 0, 0, 16);
@@ -130,7 +134,7 @@ namespace Homelab.Mira.Computer
             foreground.AutoSize = true;
             foreground.MaximumSize = new Size(640, 0);
             foreground.Text = WholeDesktop ? "Allow Mira to click and type across apps on my primary display." : "Allow Mira to bring this window forward while clicking or typing.";
-            foreground.Visible = input.Mode == "control";
+            foreground.Visible = input.Mode == "control" && !AllDisplays;
             foreground.Margin = new Padding(0, 14, 0, 10);
             foreground.CheckedChanged += delegate { UpdateAllow(); };
             status.AutoSize = true;
@@ -151,18 +155,17 @@ namespace Homelab.Mira.Computer
             stop.Click += delegate { Retire(); };
             actions.Controls.Add(allow);
             actions.Controls.Add(stop);
-            layout.Controls.Add(heading);
-            layout.Controls.Add(detail);
-            var choicePanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0), BackColor = Raised };
+            layout.Controls.Add(heading, 0, 0);
+            layout.Controls.Add(detail, 0, 1);
+            var choicePanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0), BackColor = Raised, Visible = !WholeDesktop };
             selection.Dock = DockStyle.Fill; selection.Padding = new Padding(20);
-            selection.ForeColor = TextColor; selection.Visible = WholeDesktop;
-            selection.Text = "Entire desktop · primary display\n\nOther displays are not shared. Move a window onto the primary display to work with it.";
+            selection.ForeColor = TextColor; selection.Visible = false;
             windows.Visible = !WholeDesktop;
             choicePanel.Controls.Add(windows); choicePanel.Controls.Add(selection);
-            layout.Controls.Add(choicePanel);
-            layout.Controls.Add(foreground);
-            layout.Controls.Add(status);
-            layout.Controls.Add(actions);
+            layout.Controls.Add(choicePanel, 0, 2);
+            layout.Controls.Add(foreground, 0, 3);
+            layout.Controls.Add(status, 0, 4);
+            layout.Controls.Add(actions, 0, 5);
             Content.Controls.Add(layout);
             Content.Resize += delegate {
                 int width = Math.Max(120, Content.ClientSize.Width - 48);
@@ -221,7 +224,7 @@ namespace Homelab.Mira.Computer
         private void CheckDesktop()
         {
             var current = NativeWindows.ReadyDesktop();
-            if (current.SessionId != desktop.SessionId || current.ConnectedAt != desktop.ConnectedAt || (WholeDesktop && Screen.PrimaryScreen.Bounds != primaryBounds))
+            if (current.SessionId != desktop.SessionId || current.ConnectedAt != desktop.ConnectedAt || (AllDisplays && DisplayLayout.Current().Identity != displayLayout.Identity) || (WholeDesktop && Screen.PrimaryScreen.Bounds != primaryBounds))
                 throw new InvalidOperationException("The desktop connection changed.");
         }
 
@@ -245,7 +248,7 @@ namespace Homelab.Mira.Computer
         private void UpdateAllow()
         {
             allow.Enabled = stopped == 0 && !announced && (WholeDesktop || windows.SelectedItems.Count == 1) &&
-                (request.Mode == "view" || foreground.Checked) &&
+                (request.Mode == "view" || AllDisplays || foreground.Checked) &&
                 clock.Elapsed.TotalMilliseconds < consentDeadline &&
                 (WholeDesktop || !destroyed.Contains(((NativeWindows.WindowIdentity)windows.SelectedItems[0].Tag).Handle));
         }
@@ -261,7 +264,9 @@ namespace Homelab.Mira.Computer
                         throw new InvalidOperationException("Local consent is unavailable.");
                     CheckDesktop();
                     object target;
-                    if (WholeDesktop) {
+                    if (AllDisplays) {
+                        target = new { scope = "displays", layout = displayLayout.Identity, delivery = "foreground" };
+                    } else if (WholeDesktop) {
                         target = new { scope = "desktop", displayId = "primary", delivery = "foreground" };
                     } else {
                         var choice = (NativeWindows.WindowIdentity)windows.SelectedItems[0].Tag;
@@ -277,14 +282,17 @@ namespace Homelab.Mira.Computer
                 }
                 allow.Visible = false;
                 windows.Visible = false;
-                selection.Text = WholeDesktop
-                    ? "Connected desktop · primary display\n\n" + (request.Mode == "view" ? "Mira can view all visible apps." : "Mira can view, click and type across apps.")
-                    : "Connected window\n\n" + selected.Title + "\n" + System.IO.Path.GetFileName(selected.Executable) +
+                if (!WholeDesktop) {
+                    selection.Text = "Connected window\n\n" + selected.Title + "\n" + System.IO.Path.GetFileName(selected.Executable) +
                         (request.Mode == "view" ? "\n\nMira can view this window." : "\n\nMira can view, click and type in this window.");
-                selection.Visible = true; selection.BringToFront();
+                    selection.Visible = true; selection.BringToFront();
+                }
                 foreground.Visible = false;
-                heading.Text = "Computer access is active";
-                detail.Text = request.Origin + (WholeDesktop ? "\nYour primary display is shared." : "\nOnly the selected window is shared.") + " You can stop access at any time.";
+                heading.Text = WholeDesktop
+                    ? (request.Mode == "view" ? "Mira is viewing " : "Mira can control ") + DisplayLabel
+                    : "Computer access is active";
+                Text = "Mira · " + (WholeDesktop ? "Sharing " + DisplayLabel : "Sharing one window");
+                detail.Text = request.Origin + (WholeDesktop ? "\nVisible apps and notifications are shared." : "\nOnly the selected window is shared.");
                 status.ForeColor = Color.FromArgb(110, 231, 183);
                 stop.Text = "Stop access";
                 Tick();

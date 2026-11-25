@@ -1,133 +1,115 @@
-import { Button, ErrorNotice } from "@homelab/ui";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+    ActionGroup,
+    Button,
+    buttonStyles,
+    CopyTextButton,
+    ErrorNotice,
+    Modal,
+} from "@homelab/ui";
+import { ExternalLink, KeyRound, LoaderCircle } from "lucide-react";
 
-import { api } from "../../api/client";
-import { useOperation } from "../operations/useOperation";
+import type { ChatgptConnectionState } from "./useChatgptConnection";
 
-/** Show verified ChatGPT health and the native device-code login inside the existing dashboard.
- * @returns Current status, an owned one-time code and an explicit success acknowledgement.
+/** Present the operator's current device-code request and its explicit actions.
+ * @returns The sign-in dialog, including preparation, verification and recovery states.
  */
 export function ChatgptConnection({
-    alertsOnly = false,
-}: { readonly alertsOnly?: boolean } = {}) {
-    const client = useQueryClient();
-    const status = useQuery({
-        queryKey: ["operations", "mira", "chatgpt"],
-        queryFn: async () => {
-            const next = await api.mira.chatgpt.status.query();
-            const previous = client.getQueryData<typeof next>([
-                "operations",
-                "mira",
-                "chatgpt",
-            ]);
-            if (
-                next.state === "connected" &&
-                (previous?.state !== "connected" ||
-                    previous.login?.requestId !== next.login?.requestId)
-            ) {
-                void client.invalidateQueries({
-                    queryKey: ["operations", "mira", "models"],
-                });
-                void client.invalidateQueries({
-                    queryKey: ["operations", "mira", "status"],
-                });
-            }
-            return next;
-        },
-        refetchInterval: 2000,
-    });
-    const start = useOperation(() => api.mira.chatgpt.login.mutate());
-    const cancel = useOperation((id: string) => api.mira.chatgpt.cancel.mutate({ id }));
-    const connection = status.data;
-    const login = connection?.login;
-    const active =
-        !!login &&
-        ["requested", "starting", "waiting"].includes(login.state) &&
-        connection?.online === true;
-    const busy = start.isPending || cancel.isPending;
-    const needsSignIn =
-        connection?.state === "disconnected" || connection?.state === "expired";
-    if (
-        alertsOnly &&
-        !needsSignIn &&
-        !active &&
-        !start.error &&
-        !cancel.error &&
-        !login?.message
-    )
-        return null;
+    auth,
+    onClose,
+    onStart,
+}: {
+    readonly auth: ChatgptConnectionState;
+    readonly onClose: () => void;
+    readonly onStart: () => void;
+}) {
+    const { login, start, cancel } = auth;
+    const code =
+        auth.active && login?.userCode && login.verificationUrl ? login : undefined;
+    const preparing = !code && (auth.active || start.isPending);
+    let message = auth.description;
+    if (preparing) message = "Requesting a one-time code from OpenAI…";
+    else if (login?.state === "cancelled")
+        message = "Sign-in cancelled. You can request another code.";
     return (
-        <div className="shrink-0 space-y-2 p-2 text-sm leading-relaxed text-primary-300">
-            <output className="block">
-                {status.isError
-                    ? "ChatGPT connection status could not be checked. Retrying…"
-                    : (connection?.message ?? "Checking ChatGPT connection…")}
-            </output>
-            {active ? (
-                <div className="space-y-2">
-                    {login.verificationUrl && login.userCode ? (
-                        <>
-                            <p>Open the sign-in page and enter this one-time code:</p>
-                            <p className="font-mono text-base font-semibold text-primary-50 select-all">
-                                {login.userCode}
-                            </p>
-                            <a
-                                className="text-accent-300 underline"
-                                href={login.verificationUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                            >
-                                Sign in to ChatGPT
-                            </a>
-                            <p>
-                                Waiting for you to finish signing in. This page updates
-                                automatically.
-                            </p>
-                        </>
-                    ) : (
-                        <p>Preparing ChatGPT sign-in…</p>
-                    )}
-                    <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() => cancel.mutate(login.requestId)}
-                    >
-                        Cancel sign-in
-                    </Button>
-                </div>
-            ) : (
-                <>
-                    {login?.message &&
-                        ((login.state === "completed" &&
-                            connection?.state === "connected") ||
-                            (login.state === "failed" && needsSignIn)) && (
-                            <output className="block">{login.message}</output>
-                        )}
-                    {needsSignIn && connection?.canManage && (
+        <Modal
+            title="ChatGPT sign-in"
+            icon={KeyRound}
+            onClose={onClose}
+            footer={
+                <ActionGroup>
+                    {auth.active && login && auth.data?.canManage && (
                         <Button
-                            size="sm"
                             variant="secondary"
-                            busy={busy}
-                            disabled={!connection.online}
-                            onClick={() => start.mutate(undefined)}
+                            busy={cancel.isPending}
+                            onClick={() => cancel.mutate(login.requestId)}
                         >
-                            {connection.state === "disconnected"
-                                ? "Sign in to ChatGPT"
-                                : "Sign in again"}
+                            Cancel sign-in
                         </Button>
                     )}
-                    {needsSignIn && connection && !connection.canManage && (
-                        <p>
-                            An operator with worker-control permission can reconnect the
-                            shared ChatGPT account.
-                        </p>
+                    {code?.verificationUrl && (
+                        <a
+                            href={code.verificationUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={buttonStyles()}
+                        >
+                            Open sign-in page{" "}
+                            <ExternalLink size={15} aria-hidden="true" />
+                        </a>
                     )}
-                </>
+                    {!auth.active && auth.canStart && (
+                        <Button busy={start.isPending} onClick={onStart}>
+                            {auth.action}
+                        </Button>
+                    )}
+                    {!auth.active && !auth.canStart && !start.isPending && (
+                        <Button onClick={onClose}>Close</Button>
+                    )}
+                </ActionGroup>
+            }
+        >
+            {code?.userCode ? (
+                <div className="space-y-3">
+                    <p className="text-sm leading-relaxed text-primary-200">
+                        Open the OpenAI sign-in page and enter this code.
+                    </p>
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary-700 bg-surface-card px-4 py-3">
+                        <div className="min-w-0">
+                            <p className="text-xs font-medium text-primary-300">
+                                One-time code
+                            </p>
+                            <p className="mt-1 font-mono text-2xl font-semibold tracking-wider wrap-anywhere text-primary-50 select-all">
+                                {code.userCode}
+                            </p>
+                        </div>
+                        <CopyTextButton text={code.userCode} label="Copy one-time code" />
+                    </div>
+                    <output className="flex items-center gap-2 text-xs text-primary-300">
+                        <LoaderCircle
+                            size={14}
+                            aria-hidden="true"
+                            className="motion-safe:animate-spin"
+                        />{" "}
+                        Waiting for OpenAI
+                    </output>
+                </div>
+            ) : (
+                <output className="flex items-start gap-2 text-sm leading-relaxed text-primary-200">
+                    {preparing && (
+                        <LoaderCircle
+                            size={17}
+                            aria-hidden="true"
+                            className="mt-0.5 shrink-0 text-accent-300 motion-safe:animate-spin"
+                        />
+                    )}
+                    {message}
+                </output>
             )}
             {(start.error || cancel.error) && (
-                <ErrorNotice error={start.error ?? cancel.error} />
+                <div className="mt-3">
+                    <ErrorNotice error={start.error ?? cancel.error} />
+                </div>
             )}
-        </div>
+        </Modal>
     );
 }

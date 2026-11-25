@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { computerChildEnvironment } from "../computer/process";
 import { agentMailReadConfiguration } from "../integrations/agentmail/configuration";
+import { miraDashboardConfiguration } from "../integrations/dashboard/connection";
 import {
     daytonaBinding,
     daytonaExecutionConfiguration,
@@ -41,6 +42,7 @@ export function miraEnvironment() {
         file,
         port,
         filesDirectory: process.env.HOMELAB_MIRA_FILES_DIR,
+        dashboard: miraDashboardConfiguration(process.env),
         agentMail: agentMailReadConfiguration(process.env),
         moltbook: moltbookReadConfiguration(process.env),
         hereNow: hereNowReadConfiguration(process.env),

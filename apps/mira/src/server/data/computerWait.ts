@@ -1,10 +1,12 @@
+import type { MiraComputerScope } from "@homelab/contracts/miraComputers";
+
 import { readComputerAccess } from "./computerAuthority";
 import { type MiraContext, MiraFailure } from "./context";
 
 export interface MiraComputerReadiness {
     state: "waiting" | "pending" | "ready" | "stopped" | "offline" | "unavailable";
     mode?: "view" | "control";
-    scope?: "window" | "desktop";
+    scope?: MiraComputerScope;
 }
 
 /**
@@ -43,7 +45,7 @@ export async function readMiraComputerReadiness(
             ? {
                   state: "ready",
                   mode: access.mode,
-                  ...(access.scope === "desktop" ? { scope: access.scope } : {}),
+                  ...(access.scope === "window" ? {} : { scope: access.scope }),
               }
             : { state: "pending" };
     }

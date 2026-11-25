@@ -33,6 +33,7 @@ export async function buildWindowsConsent(outputRoot?: string) {
         "/reference:System.Web.Extensions.dll",
         ...[
             "NativeWindows.cs",
+            "DisplayLayout.cs",
             "ConsentProtocol.cs",
             "MiraWindow.cs",
             "ConsentForm.cs",

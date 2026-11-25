@@ -25,8 +25,8 @@ No pairing form covers the chat when an already paired app starts.
 Minimizing keeps the app in the system tray. Open Mira and Settings restore the same
 window; Exit shuts down the companion and local controllers. Screen lock/suspend
 stops local access. Chat and automation jobs continue on Main independently of the
-window, network connection and PC power. Per-run local screen/input consent remains
-separate from both dashboard sign-in and computer pairing.
+window, network connection and PC power. Screen and input sharing needs separate
+local approval for the current chat.
 
 Only the dashboard origin can send the fixed, bounded local state/pair/connect/stop/
 forget/update messages. Auth pages and other origins receive no bridge authority.
@@ -221,10 +221,10 @@ private child-process transport. The GUI helper is Windows x64, requires Windows
 10 or newer and runs without elevation. It is a separate product executable,
 not a PowerShell command channel or a PC listener.
 
-The prompt identifies the exact requesting origin and job, distinguishes viewing
-from input control, and requires a local window selection. Input control also
-requires explicit consent to bring that window forward. No window is selected by
-default. Closing or declining the prompt permanently stops that request. Its
+The prompt identifies the requesting origin and distinguishes viewing from input
+control. A window request requires a local selection. A display request
+shows the display scope directly. Input control requires explicit consent to
+foreground input for the chosen scope. Closing or declining the prompt stops that request. Its
 countdown uses the original server consent deadline; approving it cannot renew
 the displayed job-only or retained-consent deadline. The helper does not itself capture pixels or
 send input, and its pipe accepts only initialization, readiness checks and stop.
@@ -320,7 +320,7 @@ local shutdown, and a task that has not completed cleanup blocks replacement.
 `runComputerConsentLoop` supplies the sequential consent lifecycle for that task.
 It creates a local host, checks pending access, and invokes accepted-session work
 only after the existing controller has obtained local consent, server acceptance,
-fresh permits and native readiness. Closing a local window or declining a request
+fresh permits and native readiness. Closing the shared window or declining a request
 retires that attempt, including an in-flight pending/accept/permit request.
 Cancellation is tied to its original signal; an unrelated failure after a signal
 was aborted is not treated as cancellation. Accepted-session work must finish
@@ -337,7 +337,7 @@ routing are still required before production activation.
 
 ## Companion command transport
 
-The installed Windows CLI connects this command client to local consent and the private server queue. Each request still requires a live manual Chat run and a separate local window approval; pairing alone cannot start capture or input.
+The installed Windows CLI connects this command client to local consent and the private server queue. Each new sharing request requires a live manual Chat run and local approval of its scope.
 
 An accepted controller exposes only its access ID, connection generation and opaque target ID. The outbound client claims one command, validates every binding and admits only observation, click or literal text. A command has at most ten seconds, measured conservatively from the start of its claim request. Local consent, OS readiness, one-use observations and the short server permits continue to gate every native operation.
 
@@ -367,9 +367,12 @@ The executor polls for at most fifteen seconds without holding a transaction ope
 
 ## Chat access controls
 
-Chat exposes Computer access from the composer and conversation menu. During a running manual request, the operator selects a connected PC and View only (the default) or Control. The existing human verification flow protects the request. The paired companion must separately ask the operator to select and allow one local window. Chat cannot perform that local approval.
+During a running manual request, **Computer access** lets the operator request a
+display layout or one window. The existing human verification flow protects this manual
+request. The paired Windows companion obtains local approval for the chosen scope.
+See [Explicit desktop sharing](#explicit-desktop-sharing) for the available modes.
 
-The model can use `mira_computer_wait` to read its own run's readiness or wait at most 60 seconds while the operator decides. This tool is read-only, unavailable to automations and incapable of requesting, approving or renewing access. Cancellation ends the wait without recording an uncertain input action. All observation/input commands still enforce the independent server and local authority checks.
+The model can use `mira_computer_wait` to read its own run's readiness or wait at most 60 seconds while the operator decides. Without a requested permission it only reads. With a requested permission it may send one invitation to the paired PC, which must approve locally. Automations cannot use it. Cancellation ends the wait without recording an uncertain input action. All observation/input commands still enforce the independent server and local authority checks.
 
 The status strip and dialog offer Stop access without requiring another verification. Failed or old status reads show unavailable status while retaining an existing stop action. Device selections pin the displayed version, and switching runs clears the selection. Dialogs use the shared bounded, scrollable modal; narrow layouts stack full-width actions.
 
@@ -396,8 +399,8 @@ can rewrite the same user's installed files.
 
 Each presence generation runs the existing consent loop and then the sequential
 command loop. No native process starts while the client merely waits for a Chat
-request. A request opens the local consent window, which requires an explicit
-selection and Allow. Only successful local consent, server acceptance and current
+request. A request opens the local consent window, which identifies the scope and
+requires **Allow viewing** or **Allow control**. Only successful local consent, server acceptance and current
 readiness permits can start the supervised worker. View-only consent cannot send
 input. Ctrl+C, local Stop, expiry or network loss retire the generation and join
 native cleanup before replacement; uncertain input is never replayed. Unconfirmed
@@ -451,8 +454,8 @@ The tray uses the shared Homelab icon, shows connection status in its tooltip,
 and offers Open Mira, Stop connection and Exit. Double-click restores the window.
 Closing the window or choosing Exit stops the connection before exiting.
 Session changes, suspension and resume also stop the connection; reconnecting
-requires the operator to select Connect again. Every Chat request still requires
-separate local window approval. Optional startup at sign-in uses the installer task
+requires the operator to select Connect again. Sharing after reconnecting requires
+new local approval. Optional startup at sign-in uses the installer task
 below; there is no PC listener or new public route.
 
 The manager owns the companion and its descendants in a Windows Job Object.
@@ -553,9 +556,13 @@ update UI and installation handoff are described below; rollback qualification r
 
 ### Updating in the Windows app
 
-Stop the connection, then select **Update app**. The launcher downloads the newer
-verified stable release using the existing private pairing. **Stop** or closing
-Mira cancels the download. No update creates a connection or approves a window.
+Select **Check for updates** in the Windows title bar or tray menu, or **Update app**
+in Settings > Computers. The app checks the verified release using the existing
+private pairing. You can keep using the connected PC while the download runs.
+When the update is ready, **Later** leaves the connection open. **Update and reopen**
+ends local computer access, waits for the companion and its controllers to exit,
+then installs the verified release. Stopping the connection, closing Mira or
+locking the PC during download cancels the update.
 
 The companion transfers a bounded metadata line and exact installer bytes over
 its private launcher pipe, never a credential, URL or local path. The launcher
@@ -567,10 +574,11 @@ still prevent installation.
 After setup starts, Stop/close cannot terminate it mid-write. A separate installer
 job waits for all descendants, with no kill-on-owner-close policy; ordinary
 connection and download workers retain their existing kill-on-close protection.
-The per-user installer keeps pairing and preferences. After successful completion,
-Mira asks you to reopen it from the updated Start-menu shortcut. It does not
-silently reconnect or grant input access. An unconfirmed installer outcome blocks
-new work in the old launcher; let setup finish before reopening Mira.
+The per-user installer keeps pairing, sign-in and preferences. After successful
+setup, the app reopens the installed version and restores the previous connection
+state. An interrupted computer-use session needs fresh approval. If setup reports
+a clean failure, the old app can reconnect after reacquiring its installation
+lease. An unconfirmed installer outcome blocks new work until Mira is reopened.
 
 ### Optional startup at sign-in
 
@@ -618,7 +626,7 @@ Unconfirmed cleanup and interrupted input remain terminal. A later manual Chat
 request can wait for fresh consent after an older retained grant stopped; an
 explicit Stop during the current run still stops that run's computer access.
 For applications that launch a separate game window, select the new window or
-explicitly share the primary desktop. Continuous coaching also requires **Live
+explicitly share all displays. Continuous coaching also requires **Live
 computer assistance** in Chat settings; retaining a grant alone does not enable it.
 
 Control mode uses the same WGC-only image path and the unmodified SDK's public
@@ -636,18 +644,30 @@ and [CreateFreeThreaded](https://learn.microsoft.com/en-us/uwp/api/windows.graph
 
 ## Explicit desktop sharing
 
-Chat offers **One window** (default) or **Entire desktop · primary display**.
-Both choices require a fresh server request and local confirmation. View-only
-remains the default; desktop control additionally requires the unchecked local
-foreground-input checkbox. An existing window grant cannot become a desktop grant.
-The stored scope is immutable and survives replies only when the operator chose
-that duration. Older companions can receive window-only requests but must update
-before accepting desktop sharing.
+When you ask Mira to work on your PC in a manual chat, Mira requests viewing or
+control according to the task. The paired Windows app routes the invitation to
+its own device. From a web chat with one connected Windows PC, the invitation
+goes to that PC. An ambiguous or unavailable device leaves the choice in
+**Computer access**. No routine chat message starts sharing.
 
-Desktop sharing uses the pinned driver's primary-display capture and foreground
-input targets. Other displays are not shared. Its permission manifest allows only
-observation and, for control, click/type; it does not grant process launch,
-clipboard or arbitrary native tools. Each input still requires a fresh one-use
-observation. Local Stop, connection loss, lock, suspend and display changes revoke
-access; starting again requires new local consent. Closing an unrelated window
-does not stop desktop access. The window-only capture adapter remains unchanged.
+On Windows, choose **Allow viewing** or **Allow control** for the displays shown
+in the local prompt. All visible apps and notifications on those displays can
+be seen. To restrict sharing, decline and use **Choose a window** in Chat.
+That local selection limits both capture and input to the selected window.
+
+The grant stays available between manual replies in this chat. **Stop access**
+is available in Chat and locally. A declined, expired or stopped request never
+generates another automatic invitation in the same conversation. Starting over
+requires an explicit operator request. Locking the PC, disconnecting, or changing
+the monitor layout ends access.
+
+The display worker builds one image using physical monitor rectangles under
+Per-Monitor V2 DPI awareness. This preserves relative positions, including
+screens above or left of the primary monitor. Clicks use the image's pixels and
+map into the same physical monitor. Empty areas between displays reject input.
+Each action consumes a recent observation. Text requires the observed foreground
+window to retain its identity. View-only mode cannot send input. Existing
+primary-display-only grants retain their original scope.
+
+See [Windows DPI awareness](https://learn.microsoft.com/en-us/windows/win32/hidpi/high-dpi-desktop-application-development-on-windows)
+and [virtual desktop mouse coordinates](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-mouseinput).

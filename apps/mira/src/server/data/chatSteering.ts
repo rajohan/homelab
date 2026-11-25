@@ -3,7 +3,7 @@ import type { SQL, TransactionSQL } from "bun";
 import type * as v from "valibot";
 
 import { auditMira, type MiraContext, MiraFailure } from "./context";
-import { enqueueTurn } from "./conversations";
+import { enqueueTurn, miraMessageHash } from "./conversations";
 import type { MiraClaim } from "./queue";
 
 /**
@@ -34,9 +34,7 @@ export async function sendMiraMessageInTransaction(
     input: v.InferOutput<typeof miraMessageInputSchema>
 ) {
     const key = `${context.owner}:${input.requestId}`;
-    const hash = new Bun.CryptoHasher("sha256")
-        .update(JSON.stringify(input))
-        .digest("hex");
+    const hash = miraMessageHash(input);
     await query`SELECT pg_advisory_xact_lock(hashtextextended(${`mira:request:${key}`},0))`;
     const [existing] = await query<{ id: string; hash: string }[]>`
         SELECT run_id AS id,request_hash AS hash FROM mira_chat_inputs WHERE request_key=${key}
@@ -113,7 +111,7 @@ export async function sendMiraMessageInTransaction(
     }
     const id = Bun.randomUUIDv7();
     await query`INSERT INTO mira_messages(id,conversation_id,role,content,state,attachment_ids) VALUES (${id},${chat.id},'user',${input.text},'queued',${JSON.stringify(input.attachmentIds)}::text::jsonb)`;
-    await query`INSERT INTO mira_chat_inputs(id,owner,conversation_id,run_id,request_key,request_hash) VALUES (${id},${context.owner},${chat.id},${run.id},${key},${hash})`;
+    await query`INSERT INTO mira_chat_inputs(id,owner,conversation_id,run_id,request_key,request_hash,source_computer) VALUES (${id},${context.owner},${chat.id},${run.id},${key},${hash},${input.sourceComputer ?? null})`;
     await query`UPDATE mira_conversations SET version=version+1,updated_at=clock_timestamp() WHERE id=${chat.id}`;
     await auditMira(query, context, "chat.guidance_queued", id);
     return { id: run.id };
@@ -207,13 +205,14 @@ async function continueChatFollowup(
     const [input] = await query<
         {
             content: string;
+            sourceComputer: string | null;
             attachmentIds: string[];
             state: string;
             runState: string;
             cancelled: boolean;
             available: boolean;
         }[]
-    >`SELECT m.content,m.attachment_ids AS "attachmentIds",i.state,r.state AS "runState",r.cancel_requested AS cancelled,(c.deleted_at IS NULL AND c.archived_at IS NULL) AS available FROM mira_chat_inputs i JOIN mira_messages m ON m.id=i.id JOIN mira_runs r ON r.id=i.run_id AND r.owner=i.owner JOIN mira_conversations c ON c.id=i.conversation_id AND c.owner=i.owner WHERE i.id=${candidate.id} AND i.owner=${candidate.owner} AND i.state IN ('pending','sending') AND i.id=(SELECT older.id FROM mira_chat_inputs older WHERE older.owner=i.owner AND older.conversation_id=i.conversation_id AND older.state IN ('pending','sending') ORDER BY older.id LIMIT 1) FOR UPDATE OF i`;
+    >`SELECT m.content,i.source_computer AS "sourceComputer",m.attachment_ids AS "attachmentIds",i.state,r.state AS "runState",r.cancel_requested AS cancelled,(c.deleted_at IS NULL AND c.archived_at IS NULL) AS available FROM mira_chat_inputs i JOIN mira_messages m ON m.id=i.id JOIN mira_runs r ON r.id=i.run_id AND r.owner=i.owner JOIN mira_conversations c ON c.id=i.conversation_id AND c.owner=i.owner WHERE i.id=${candidate.id} AND i.owner=${candidate.owner} AND i.state IN ('pending','sending') AND i.id=(SELECT older.id FROM mira_chat_inputs older WHERE older.owner=i.owner AND older.conversation_id=i.conversation_id AND older.state IN ('pending','sending') ORDER BY older.id LIMIT 1) FOR UPDATE OF i`;
     if (!input || ["queued", "running"].includes(input.runState)) return null;
     if (
         !input.available ||
@@ -234,6 +233,9 @@ async function continueChatFollowup(
                     conversationId: candidate.conversationId,
                     requestId: candidate.id,
                     text: input.content,
+                    ...(input.sourceComputer
+                        ? { sourceComputer: input.sourceComputer }
+                        : {}),
                     attachmentIds: input.attachmentIds,
                 },
                 { userMessageId: candidate.id }

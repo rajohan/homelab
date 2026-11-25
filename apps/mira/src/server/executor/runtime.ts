@@ -20,6 +20,7 @@ import {
 import { dispatchMiraMail, reconcileMiraMail } from "../integrations/agentmail/outbox";
 import { pollAgentMail } from "../integrations/agentmail/poll";
 import { AgentMailReader } from "../integrations/agentmail/reader";
+import type { MiraDashboardConfiguration } from "../integrations/dashboard/connection";
 import {
     daytonaBindingHash,
     type DaytonaExecutionConfiguration,
@@ -85,6 +86,7 @@ export async function runMiraExecutor(options: {
     github?: GitHubConfiguration | undefined;
     localCode?: LocalCodeBinding | undefined;
     operations?: MiraOperationsConfiguration | undefined;
+    dashboard?: MiraDashboardConfiguration | undefined;
 }): Promise<void> {
     const { client, config, health } = options;
     const failed = new AbortController();
@@ -429,7 +431,8 @@ export async function runMiraExecutor(options: {
                             health.ready = false;
                             inspectionChanged.resolve();
                             inspectNow.resolve();
-                        }
+                        },
+                        options.dashboard
                     );
                 } finally {
                     health.active--;

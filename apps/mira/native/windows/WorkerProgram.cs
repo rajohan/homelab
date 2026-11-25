@@ -7,15 +7,18 @@ internal static class WorkerProgram
     // The product host has no command-line or environment-selected executable.
     private static int Main(string[] args)
     {
-        if (args.Length != 0 || !Environment.Is64BitProcess || Environment.OSVersion.Version.Major < 10 ||
+        if (!Environment.Is64BitProcess || Environment.OSVersion.Version.Major < 10 ||
             !Console.IsInputRedirected || !Console.IsOutputRedirected) return 1;
         try
         {
+            if (args.Length == 1 && args[0] == "--display-driver") return Homelab.Mira.Computer.DisplayWorker.Run();
+            bool displays = args.Length == 1 && args[0] == "--displays";
+            if (!displays && args.Length != 0) return 1;
             string directory = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
-            string executable = Path.Combine(directory, "mira-computer-worker.exe");
+            string executable = Path.Combine(directory, displays ? "mira-computer-worker-host.exe" : "mira-computer-worker.exe");
             if (!File.Exists(executable)) return 1;
             using (var hardDeadline = new Timer(delegate { Environment.Exit(2); }, null, 301000, Timeout.Infinite))
-            using (var worker = new WorkerJob(executable, directory))
+            using (var worker = new WorkerJob(executable, directory, displays ? new [] {"--display-driver"} : new string[0]))
             using (var stopped = new ManualResetEvent(false))
             using (var lifetime = new Timer(delegate { stopped.Set(); }, null, 300000, Timeout.Infinite))
             {

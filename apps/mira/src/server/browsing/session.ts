@@ -175,15 +175,27 @@ export async function openBrowserSession(
     return {
         signal,
         closed: completion.promise,
+        fileGesture: (epoch: string | null, operation: AbortSignal) =>
+            run(epoch === null ? "view" : "control", operation, (s) =>
+                active.fileGesture(epoch, s)
+            ),
         clipboard: (input: unknown, operation: AbortSignal) => {
             const command = structuredClone(input);
             return run("control", operation, (s) => active.clipboard(command, s));
         },
         observe: (operation: AbortSignal, operator = false) =>
             run("view", operation, (s) => active.observe(s, operator)),
+        workspace: (operation: AbortSignal, input?: unknown) => {
+            const command = structuredClone(input);
+            return run(command === undefined ? "view" : "control", operation, (s) =>
+                active.workspace(s, command)
+            );
+        },
         tabs: (input: unknown, operation: AbortSignal, operator = false) => {
             const command = structuredClone(input);
-            return run("view", operation, (s) => active.tabs(command, s, operator));
+            return run(operator ? "control" : "view", operation, (s) =>
+                active.tabs(command, s, operator)
+            );
         },
         navigate: (url: unknown, operation: AbortSignal) =>
             run("view", operation, (s) => active.navigate(url, s)),

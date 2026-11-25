@@ -134,7 +134,7 @@ export async function openWindowsComputerProcess(
         { ...options, cwd: options.directory },
         {
             command: path.join(options.directory, "mira-computer-worker-host.exe"),
-            args: [],
+            args: computerGrant(grantInput).scope === "displays" ? ["--displays"] : [],
             stopViaStdin: true,
             requireCleanExit: true,
         }
@@ -242,7 +242,11 @@ async function openWorker(
         v.parse(
             v.strictObject({
                 version: v.literal(1),
-                driver: v.literal(computerDriverVersion),
+                driver: v.literal(
+                    grant.scope === "displays"
+                        ? "windows-displays-v1"
+                        : computerDriverVersion
+                ),
             }),
             await request("initialize", grant, options.signal)
         );
