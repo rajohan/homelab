@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { mkdir, open, realpath } from "node:fs/promises";
 import path from "node:path";
 
+import { miraBrowserUploadFileSchema } from "@homelab/contracts/miraBrowser";
 import * as v from "valibot";
 
 export const browserUploadLimit = 25 * 1024 * 1024;
@@ -29,6 +30,11 @@ export const browserUploadFileSchema = v.strictObject({
     size: v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(browserUploadLimit)),
     sha256: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
     bytes: v.instance(Uint8Array),
+});
+
+export const browserUploadAttachmentSchema = v.strictObject({
+    ...v.omit(browserUploadFileSchema, ["bytes"]).entries,
+    id: miraBrowserUploadFileSchema.entries.id,
 });
 
 /** Exact immutable attachment bytes selected by the trusted host, never a model path. */

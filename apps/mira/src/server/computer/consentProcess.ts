@@ -110,7 +110,7 @@ export async function openComputerConsentSurface(
                 consentExpiresAt: request.consentExpiresAt,
                 expiresAt: request.expiresAt,
                 ...(request.keepOpen ? { keepOpen: true } : {}),
-                ...(request.scope === "desktop" ? { scope: "desktop" } : {}),
+                ...(request.scope ? { scope: request.scope } : {}),
             })
         );
         const target = await selection;

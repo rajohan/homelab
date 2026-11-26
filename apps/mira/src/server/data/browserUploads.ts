@@ -7,7 +7,7 @@ import {
 import type { TransactionSQL } from "bun";
 import * as v from "valibot";
 
-import { browserUploadFileSchema } from "../browsing/upload";
+import { browserUploadAttachmentSchema } from "../browsing/upload";
 import { lockBrowserOwner, readBrowserAccess } from "./browserAccess";
 import { type MiraContext, MiraFailure } from "./context";
 
@@ -18,14 +18,7 @@ async function choices(query: TransactionSQL, owner: string, runId: string) {
         AND EXISTS(SELECT 1 FROM mira_runs r JOIN mira_messages m ON m.conversation_id=r.conversation_id
             WHERE r.id=${runId} AND r.owner=${owner} AND m.attachment_ids @> jsonb_build_array(f.id::text))
         ORDER BY f.created_at DESC,f.id DESC LIMIT 100`;
-    return rows.filter(
-        (file) =>
-            v.safeParse(v.omit(browserUploadFileSchema, ["bytes"]), {
-                name: file.name,
-                size: file.size,
-                sha256: file.sha256,
-            }).success
-    );
+    return rows.filter((file) => v.is(browserUploadAttachmentSchema, file));
 }
 
 /**

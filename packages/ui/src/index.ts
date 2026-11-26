@@ -24,7 +24,7 @@ export { PageHeader } from "./components/PageHeader/PageHeader";
 
 export { Brand } from "./components/Brand/Brand";
 export { IconButton } from "./components/Button/IconButton";
-export { buttonStyles } from "./components/Button/buttonStyles";
+export { buttonStyles, ghostButtonHover } from "./components/Button/buttonStyles";
 export { AuthFrame } from "./components/AuthFrame/AuthFrame";
 export { SectionHeader } from "./components/SectionHeader/SectionHeader";
 export { HeadingLabel } from "./components/SectionHeader/HeadingLabel";

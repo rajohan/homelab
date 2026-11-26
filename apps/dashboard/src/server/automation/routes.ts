@@ -21,6 +21,13 @@ import {
 } from "./service";
 
 export const automationRouter = trpc.router({
+    access: trpc.procedure.query(({ ctx }) =>
+        runOperation(() => {
+            if (ctx.principal?.kind !== "automation")
+                throw new OperationFailure("FORBIDDEN", "A machine account is required.");
+            return Promise.resolve({ capabilities: ctx.principal.capabilities });
+        })
+    ),
     list: trpc.procedure.input(pageSchema).query(({ ctx, input }) =>
         runOperation(async () => {
             const { operations, principal } = authorizedOperations(ctx, "jobs:read");

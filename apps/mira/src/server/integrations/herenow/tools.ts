@@ -6,6 +6,7 @@ import { type MiraContext, MiraFailure } from "../../data/context";
 import { hereNowBindingCurrent } from "../../data/herenow";
 import { listMiraPublications, saveMiraPublication } from "../../data/publications";
 import type { MiraClaim } from "../../data/queue";
+import { isMiraReportRun } from "../../data/reportAccess";
 import type { RuntimeTool } from "../../runtime/protocol";
 import {
     hereNowBindingHash,
@@ -79,6 +80,7 @@ export function createHereNowTools(
         {
             name: "mira_herenow_publications",
             automatic: true,
+            readOnly: isMiraReportRun(run),
             description:
                 "Read requested publication outcomes in this conversation. This does not publish or repeat an action.",
             inputSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -163,6 +165,7 @@ export function createHereNowTools(
         {
             name: "mira_herenow_account",
             automatic: true,
+            readOnly: isMiraReportRun(run),
             description:
                 "Inspect the configured here.now account. This does not list API keys or billing details, change membership or publish anything.",
             inputSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -174,6 +177,7 @@ export function createHereNowTools(
         {
             name: "mira_herenow_sites",
             automatic: true,
+            readOnly: isMiraReportRun(run),
             description:
                 "List up to fifty sites in the configured here.now account. Truncation is explicit; this never searches other accounts or fetches site contents.",
             inputSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -185,6 +189,7 @@ export function createHereNowTools(
         {
             name: "mira_herenow_site",
             automatic: true,
+            readOnly: isMiraReportRun(run),
             description:
                 "Read an owned here.now site's current version, file metadata and access policy. Email/domain rules show up to 100 each with total counts and truncation flags. These are separate observations, not an atomic snapshot or authorization to overwrite, replace access lists or publish. Does not fetch file bytes or public URLs.",
             inputSchema: {

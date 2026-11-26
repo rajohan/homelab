@@ -66,6 +66,7 @@ interface ActiveTurn {
 export class CodexRuntime {
     private readonly workspace: string;
     private readonly webSearch: boolean;
+    private readonly interactiveChat: boolean;
     private readonly imageGeneration: boolean;
     private readonly connection: RpcProcess;
     private readonly threads = new Map<string, RuntimeTool<RuntimeToolResult>[]>();
@@ -82,11 +83,13 @@ export class CodexRuntime {
         webSearch: boolean,
         nativeSkills: NativeSkills,
         enabledSkills: readonly MiraSkillId[],
-        imageGeneration: boolean
+        imageGeneration: boolean,
+        interactiveChat: boolean
     ) {
         this.nativeSkills = nativeSkills;
         this.nativeGuidance = nativeSkillGuidance(options.command, enabledSkills);
         this.webSearch = webSearch;
+        this.interactiveChat = interactiveChat;
         this.imageGeneration = imageGeneration;
         this.workspace = options.cwd;
         this.home = options.env.CODEX_HOME ?? "";
@@ -100,16 +103,18 @@ export class CodexRuntime {
     /**
      * Initialize the private runtime handshake before accepting any operations.
      * @param options - Isolated child executable, environment and workspace.
-     * @param webSearch - Enable provider web search for a direct manual Chat turn.
+     * @param interactiveChat - Enable interactive chat features such as sleeping and child reviewers.
      * @param enabledSkills - Current owner's enabled release-owned native skills, empty for login and service probes.
      * @param imageGeneration - Enable native images only when this manual run can persist their outputs.
+     * @param webSearch - Enable the provider's read-only web search for chat or reporting.
      * @returns An initialized adapter; initialization failure always reaps the child.
      */
     static async connect(
         options: Omit<RpcProcessOptions, "onRequest">,
-        webSearch = false,
+        interactiveChat = false,
         enabledSkills: readonly MiraSkillId[] = [],
-        imageGeneration = false
+        imageGeneration = false,
+        webSearch = interactiveChat
     ): Promise<CodexRuntime> {
         if (!options.env.CODEX_HOME)
             throw new Error("Mira requires an explicit Codex home.");
@@ -121,7 +126,8 @@ export class CodexRuntime {
             webSearch,
             nativeSkills,
             enabledSkills,
-            imageGeneration
+            imageGeneration,
+            interactiveChat
         );
         try {
             const initialized = v.parse(
@@ -346,10 +352,10 @@ export class CodexRuntime {
                 sandbox: "read-only",
                 config: {
                     web_search: this.webSearch ? "live" : "disabled",
-                    "features.sleep_tool": this.webSearch,
-                    "features.multi_agent": this.webSearch,
-                    "features.multi_agent_v2": this.webSearch,
-                    "features.multi_agent_v2_dynamic_tools": this.webSearch,
+                    "features.sleep_tool": this.interactiveChat,
+                    "features.multi_agent": this.interactiveChat,
+                    "features.multi_agent_v2": this.interactiveChat,
+                    "features.multi_agent_v2_dynamic_tools": this.interactiveChat,
                     "features.image_generation": this.imageGeneration,
                 },
                 approvalPolicy: "untrusted",
@@ -399,10 +405,10 @@ export class CodexRuntime {
                 sandbox: "read-only",
                 config: {
                     web_search: this.webSearch ? "live" : "disabled",
-                    "features.sleep_tool": this.webSearch,
-                    "features.multi_agent": this.webSearch,
-                    "features.multi_agent_v2": this.webSearch,
-                    "features.multi_agent_v2_dynamic_tools": this.webSearch,
+                    "features.sleep_tool": this.interactiveChat,
+                    "features.multi_agent": this.interactiveChat,
+                    "features.multi_agent_v2": this.interactiveChat,
+                    "features.multi_agent_v2_dynamic_tools": this.interactiveChat,
                     "features.image_generation": this.imageGeneration,
                 },
                 approvalPolicy: "untrusted",
@@ -575,7 +581,7 @@ export class CodexRuntime {
             // not be subscribed on this connection, so verify the live turn at dispatch.
             if (
                 options.onReviewerStarted &&
-                this.webSearch &&
+                this.interactiveChat &&
                 (event.method === "item/started" || event.method === "item/completed")
             ) {
                 const activity = v.safeParse(

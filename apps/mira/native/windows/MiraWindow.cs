@@ -21,6 +21,7 @@ internal class MiraWindow : Form
     private readonly CaptionButton minimize;
     private readonly CaptionButton maximize;
     private readonly CaptionButton close;
+    private Button captionAction;
     private int pressed;
     private FormWindowState previousWindowState;
     private bool updatingWindowBounds;
@@ -80,6 +81,13 @@ internal class MiraWindow : Form
 
     private int ScalePixels(int pixels) { return Math.Max(1, (int)Math.Round(pixels * DeviceDpi / 96.0)); }
 
+    protected void SetCaptionAction(Button action)
+    {
+        captionAction = action;
+        caption.Controls.Add(action);
+        LayoutCaption();
+    }
+
     private void LayoutCaption()
     {
         if (caption == null) return;
@@ -92,7 +100,11 @@ internal class MiraWindow : Form
         maximize.Visible = MaximizeBox;
         if (MaximizeBox) { maximize.SetBounds(right - width, 0, width, caption.Height); right -= width; }
         minimize.Visible = MinimizeBox;
-        if (MinimizeBox) minimize.SetBounds(right - width, 0, width, caption.Height);
+        if (MinimizeBox) { minimize.SetBounds(right - width, 0, width, caption.Height); right -= width; }
+        if (captionAction != null) {
+            int actionWidth = ScalePixels(142), margin = ScalePixels(3);
+            captionAction.SetBounds(right - actionWidth - margin, margin, actionWidth, caption.Height - 2 * margin);
+        }
         maximize.AccessibleName = WindowState == FormWindowState.Maximized ? "Restore" : "Maximize";
         caption.Invalidate(); maximize.Invalidate();
     }
@@ -153,6 +165,7 @@ internal class MiraWindow : Form
     {
         if (caption != null && caption.Bounds.Contains(point)) {
             var local = new Point(point.X - caption.Left, point.Y - caption.Top);
+            if (captionAction != null && captionAction.Bounds.Contains(local)) return 1;
             if (close.Bounds.Contains(local)) return 20;
             if (MaximizeBox && maximize.Bounds.Contains(local)) return 9;
             if (MinimizeBox && minimize.Bounds.Contains(local)) return 8;
@@ -264,6 +277,7 @@ internal class MiraWindow : Form
             if (window.Icon != null) args.Graphics.DrawIcon(window.Icon, new Rectangle(left, (Height - iconSize) / 2, iconSize, iconSize));
             int textLeft = left + iconSize + window.ScalePixels(10);
             int right = window.MinimizeBox ? window.minimize.Left : window.MaximizeBox ? window.maximize.Left : window.close.Left;
+            if (window.captionAction != null) right = window.captionAction.Left;
             TextRenderer.DrawText(args.Graphics, window.Text, Font, new Rectangle(textLeft, 0, Math.Max(0, right - textLeft), Height),
                 TextColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
             using (var pen = new Pen(Border)) args.Graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);

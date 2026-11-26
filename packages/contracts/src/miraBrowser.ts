@@ -19,14 +19,35 @@ export function unrestrictedBrowserSites(origins: readonly string[]) {
 
 const id = v.pipe(v.string(), v.uuid());
 const address = v.pipe(v.string(), v.minLength(1), v.maxLength(2048));
+export const browserAddressRejected =
+    "Choose a website within this browser session’s approved scope.";
+export const browserWorkspaceWarning = {
+    changed: "The selected tab changed. Choose the current tab and try again.",
+    limit: "Close a tab before opening another one.",
+    last: "Keep one browser tab open.",
+    history: "There is no permitted history entry in that direction.",
+    load: "Chromium could not open that address. Check the website and its connection.",
+} as const;
 export const miraBrowserTabCommandSchema = v.variant("action", [
     v.strictObject({ action: v.literal("list") }),
     v.strictObject({ action: v.literal("open"), url: address }),
     v.strictObject({ action: v.literal("select"), tabId: id }),
     v.strictObject({ action: v.literal("close"), tabId: id }),
 ]);
+export const miraBrowserWorkspaceCommandSchema = v.variant("action", [
+    v.strictObject({ action: v.literal("open"), url: v.optional(address) }),
+    v.strictObject({ action: v.literal("select"), tabId: id }),
+    v.strictObject({ action: v.literal("close"), tabId: id }),
+    v.strictObject({ action: v.literal("navigate"), tabId: id, url: address }),
+    v.strictObject({ action: v.literal("back"), tabId: id }),
+    v.strictObject({ action: v.literal("forward"), tabId: id }),
+    v.strictObject({ action: v.literal("reload"), tabId: id }),
+]);
 export const miraBrowserTabsSchema = v.strictObject({
     selectedId: id,
+    canGoBack: v.optional(v.boolean()),
+    canGoForward: v.optional(v.boolean()),
+    warning: v.optional(v.picklist(Object.values(browserWorkspaceWarning))),
     items: v.pipe(
         v.array(
             v.strictObject({
@@ -195,6 +216,7 @@ export const miraBrowserActionSchema = v.variant("action", [
     }),
 ]);
 export const miraBrowserConsoleSchema = v.strictObject({ id });
+export const miraBrowserAttachSchema = v.strictObject({ id, epoch: id, fileId: id });
 export const miraBrowserTransferSchema = v.strictObject({
     id,
     epoch: id,
@@ -214,8 +236,23 @@ export const miraBrowserDownloadNameSchema = v.pipe(
     v.maxLength(200),
     v.check((name) => name.isWellFormed() && !/[\p{Cc}/\\]/u.test(name))
 );
+export const miraBrowserFileRequestSchema = v.strictObject({
+    id,
+    kind: v.picklist(["upload", "download"]),
+    observationId: id,
+    ref,
+    origin: address,
+    label: v.pipe(v.string(), v.maxLength(256)),
+    suggestedName: v.nullable(miraBrowserDownloadNameSchema),
+    expiresAt: v.pipe(v.string(), v.isoTimestamp()),
+});
+export type MiraBrowserFileRequest = v.InferOutput<typeof miraBrowserFileRequestSchema>;
 export const miraBrowserHumanOperationSchema = v.variant("method", [
     v.strictObject({ method: v.literal("observe") }),
+    v.strictObject({
+        method: v.literal("tabs"),
+        input: miraBrowserWorkspaceCommandSchema,
+    }),
     v.strictObject({
         method: v.literal("download"),
         input: v.strictObject({ observationId: id, ref }),
@@ -248,6 +285,8 @@ export interface MiraBrowserPreview {
     observedAt: string;
 }
 export interface MiraBrowserConsole {
+    fileRequest?: MiraBrowserFileRequest | null;
+    tabs: MiraBrowserTabs | null;
     epoch: string;
     controller: "mira" | "human";
     busy: boolean;

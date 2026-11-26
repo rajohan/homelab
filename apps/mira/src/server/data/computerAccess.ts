@@ -17,6 +17,7 @@ import {
     requireComputerDevice as device,
 } from "./computerAuthority";
 import { retireComputerCommands } from "./computerCommands";
+import { runComputerGrant } from "./computerWait";
 import { auditMira, type MiraContext, MiraFailure } from "./context";
 
 function human(context: MiraContext) {
@@ -40,7 +41,7 @@ function summary(row: AccessRow): MiraComputerAccessSummary {
         state,
         expiresAt: row.expiresAt.toISOString(),
         ...(row.keepOpen ? { keepOpen: true } : {}),
-        ...(row.scope === "desktop" ? { scope: "desktop" } : {}),
+        ...(row.scope === "window" ? {} : { scope: row.scope }),
     };
 }
 
@@ -58,49 +59,101 @@ export async function requestMiraComputerAccess(
     const request = v.parse(miraComputerAccessRequestSchema, input);
     return context.client.begin(async (query) => {
         await lockOwner(query, context.owner);
-        const [computer] = await query<
-            { connectionId: string; expiresAt: Date; companionVersion: string | null }[]
-        >`
+        return createRequest(query, context, request);
+    });
+}
+
+/**
+ * Invite local consent once for an explicitly requested manual computer workflow.
+ * @param context - Trusted executor run and lease. The model never supplies a PC or chat identity.
+ * @param mode - Capability shown on the PC before any capture or input can start.
+ * @returns Whether a request was created, a prior decision stands, or the operator must choose a PC.
+ */
+export async function inviteMiraComputer(context: MiraContext, mode: "view" | "control") {
+    const run = context.run;
+    if (!run)
+        throw new MiraFailure("FORBIDDEN", "Computer invitations require a manual run.");
+    return context.client.begin(async (query) => {
+        await lockOwner(query, context.owner);
+        const [origin] = await query<{ device: string | null }[]>`
+            SELECT source_computer AS device FROM mira_runs
+            WHERE id=${run.id} AND owner=${context.owner} AND manual AND automation_id IS NULL AND state='running'
+            AND NOT cancel_requested AND lease_token=${run.leaseToken} AND lease_expires_at>clock_timestamp() FOR UPDATE`;
+        if (!origin)
+            throw new MiraFailure("CONFLICT", "This computer request has ended.");
+        if (await runComputerGrant(query, context.owner, run)) return "existing" as const;
+        // A tool call can arrive before the provider has acknowledged its new message.
+        const [routing] = await query<{ id: string }[]>`SELECT id FROM mira_chat_inputs
+            WHERE run_id=${run.id} AND owner=${context.owner} AND state=\'sending\' AND lease_token=${run.leaseToken}
+            AND source_computer IS DISTINCT FROM ${origin.device}::text LIMIT 1`;
+        if (routing)
+            throw new MiraFailure(
+                "CONFLICT",
+                "The latest message is still being delivered. Retry the computer request after delivery."
+            );
+        const pcs = await query<{ id: string; version: number; compatible: boolean }[]>`
+            SELECT id,version,(platform='win32' AND companion_version=${version}) AS compatible FROM mira_computers
+            WHERE owner=${context.owner} AND state='paired' AND expires_at>clock_timestamp() AND connection_expires_at>clock_timestamp()
+            AND (${origin.device}::text IS NULL OR id::text=${origin.device}) ORDER BY id LIMIT 2 FOR UPDATE`;
+        if (pcs.length !== 1 || !pcs[0]!.compatible) return "choose" as const;
+        await createRequest(query, context, {
+            computerId: pcs[0]!.id,
+            computerVersion: pcs[0]!.version,
+            runId: run.id,
+            mode,
+            scope: "displays",
+            keepOpen: true,
+        });
+        return "requested" as const;
+    });
+}
+
+async function createRequest(
+    query: TransactionSQL,
+    context: MiraContext,
+    request: v.InferOutput<typeof miraComputerAccessRequestSchema>
+) {
+    const [computer] = await query<
+        { connectionId: string; expiresAt: Date; companionVersion: string | null }[]
+    >`
             SELECT connection_id AS "connectionId",expires_at AS "expiresAt",companion_version AS "companionVersion" FROM mira_computers
             WHERE id=${request.computerId} AND owner=${context.owner} AND version=${request.computerVersion}
             AND state='paired' AND expires_at>clock_timestamp() AND connection_expires_at>clock_timestamp() FOR UPDATE`;
-        if (!computer)
-            throw new MiraFailure(
-                "CONFLICT",
-                "Computer changed or is offline. Refresh before allowing access."
-            );
-        if (
-            (request.keepOpen || request.scope === "desktop") &&
-            computer.companionVersion !== version
-        )
-            throw new MiraFailure(
-                "PRECONDITION_FAILED",
-                "Update the Windows app before sharing the desktop or keeping access open."
-            );
-        // Retire unusable requests before enforcing the one-computer/one-run ceiling.
-        const previous = await query<
-            { id: string }[]
-        >`SELECT id FROM mira_computer_access WHERE owner=${context.owner} AND state IN ('pending','active')`;
-        for (const item of previous) {
-            const current = await readAccess(query, context.owner, item.id);
-            if (!current?.available) {
-                await retireComputerCommands(query, context.owner, item.id);
-                await query`UPDATE mira_computer_access SET state='stopped',stopped_at=clock_timestamp() WHERE id=${item.id}`;
-            }
+    if (!computer)
+        throw new MiraFailure(
+            "CONFLICT",
+            "Computer changed or is offline. Refresh before allowing access."
+        );
+    if (
+        (request.keepOpen || request.scope !== "window") &&
+        computer.companionVersion !== version
+    )
+        throw new MiraFailure(
+            "PRECONDITION_FAILED",
+            "Update the Windows app before sharing the desktop or keeping access open."
+        );
+    // Retire unusable requests before enforcing the one-computer/one-run ceiling.
+    const previous = await query<
+        { id: string }[]
+    >`SELECT id FROM mira_computer_access WHERE owner=${context.owner} AND state IN ('pending','active')`;
+    for (const item of previous) {
+        const current = await readAccess(query, context.owner, item.id);
+        if (!current?.available) {
+            await retireComputerCommands(query, context.owner, item.id);
+            await query`UPDATE mira_computer_access SET state='stopped',stopped_at=clock_timestamp() WHERE id=${item.id}`;
         }
-        const [limits] = await query<{ busy: boolean; recent: number }[]>`
+    }
+    const [limits] = await query<{ busy: boolean; recent: number }[]>`
             SELECT coalesce(bool_or(state IN ('pending','active') AND (computer_id=${request.computerId} OR run_id=${request.runId}
                 OR (keep_open AND run_id IN (SELECT old.id FROM mira_runs old JOIN mira_runs current ON current.conversation_id=old.conversation_id AND current.owner=old.owner WHERE current.id=${request.runId} AND current.owner=${context.owner})))),false) AS busy,
             count(*) FILTER(WHERE created_at>clock_timestamp()-interval '1 hour')::int AS recent
             FROM mira_computer_access WHERE owner=${context.owner}`;
-        if (limits!.busy || limits!.recent >= 20)
-            throw new MiraFailure(
-                "PRECONDITION_FAILED",
-                "Computer access is already pending or active, or its request limit was reached."
-            );
-        const [run] = await query<
-            { lease: string; expiresAt: Date; controls: unknown }[]
-        >`
+    if (limits!.busy || limits!.recent >= 20)
+        throw new MiraFailure(
+            "PRECONDITION_FAILED",
+            "Computer access is already pending or active, or its request limit was reached."
+        );
+    const [run] = await query<{ lease: string; expiresAt: Date; controls: unknown }[]>`
             SELECT r.lease_token AS lease,CASE WHEN ${request.keepOpen} THEN ${computer.expiresAt}::timestamptz ELSE least(clock_timestamp()+interval '5 minutes',r.started_at+nullif(r.budget_seconds,0)*interval '1 second',${computer.expiresAt}) END AS "expiresAt",
                 jsonb_build_array(coalesce(u.version,1),a.version,s.version,CASE WHEN a.schedule->>'event'='agentmail' THEN i.version END) AS controls
             FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id AND c.owner=r.owner
@@ -114,26 +167,25 @@ export async function requestMiraComputerAccess(
                 AND c.archived_at IS NULL AND (NOT ${request.keepOpen} OR (r.manual AND r.automation_id IS NULL))
                 AND (r.automation_id IS NULL OR (a.deleted_at IS NULL AND s.enabled AND
                     (a.schedule->>'event' IS DISTINCT FROM 'agentmail' OR i.enabled))) FOR SHARE OF r`;
-        if (!run)
-            throw new MiraFailure(
-                "PRECONDITION_FAILED",
-                "The selected run is no longer available for computer access."
-            );
-        const id = Bun.randomUUIDv7();
-        const [inserted] = await query<{ id: string }[]>`
+    if (!run)
+        throw new MiraFailure(
+            "PRECONDITION_FAILED",
+            "The selected run is no longer available for computer access."
+        );
+    const id = Bun.randomUUIDv7();
+    const [inserted] = await query<{ id: string }[]>`
             WITH timing AS MATERIALIZED (SELECT clock_timestamp() AS at)
             INSERT INTO mira_computer_access(id,owner,computer_id,computer_version,connection_id,run_id,run_lease,controls,mode,keep_open,scope,expires_at,created_at)
             SELECT ${id},${context.owner},${request.computerId},${request.computerVersion},${computer.connectionId},${request.runId},${run.lease},${JSON.stringify(run.controls)}::text::jsonb,${request.mode},${request.keepOpen},${request.scope},
                 CASE WHEN ${request.keepOpen} THEN ${run.expiresAt}::timestamptz ELSE least(${run.expiresAt}::timestamptz,timing.at+interval '5 minutes') END,timing.at
             FROM timing WHERE ${run.expiresAt}::timestamptz>timing.at RETURNING id`;
-        if (!inserted)
-            throw new MiraFailure(
-                "PRECONDITION_FAILED",
-                "Computer access expired before it could be requested."
-            );
-        await auditMira(query, context, "computer.access_requested", id);
-        return summary((await readAccess(query, context.owner, id))!);
-    });
+    if (!inserted)
+        throw new MiraFailure(
+            "PRECONDITION_FAILED",
+            "Computer access expired before it could be requested."
+        );
+    await auditMira(query, context, "computer.access_requested", id);
+    return summary((await readAccess(query, context.owner, id))!);
 }
 
 /**

@@ -2,12 +2,16 @@ import {
     browserClipboardCommandSchema,
     browserClipboardResultSchema,
 } from "@homelab/contracts/miraBrowserClipboard";
-import { Button } from "@homelab/ui";
-import { ClipboardPaste, Copy } from "lucide-react";
+import { ActionGroup, Button, FormField, Textarea } from "@homelab/ui";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import * as v from "valibot";
 
 type Command = v.InferOutput<typeof browserClipboardCommandSchema>;
+
+export interface BrowserClipboardControls {
+    readonly copy: () => void;
+    readonly paste: () => void;
+}
 
 /** Connect operator copy/paste gestures to the current browser controller generation.
  * @returns Clipboard controls and a plain-text fallback when local clipboard permission is unavailable.
@@ -16,205 +20,217 @@ export function BrowserClipboard({
     target,
     accessId,
     epoch,
-    enabled,
+    onControlsChange,
 }: {
     readonly target: RefObject<HTMLDivElement | null>;
     readonly accessId: string;
     readonly epoch: string;
-    readonly enabled: boolean;
+    readonly onControlsChange: (controls: BrowserClipboardControls | null) => void;
 }) {
-    const actions = useRef<{
-        copy: () => void;
-        paste: () => void;
-        send: (text: string) => void;
-    } | null>(null);
+    const sendText = useRef<((text: string) => void) | null>(null);
+    const field = useRef<HTMLTextAreaElement>(null);
     const [message, setMessage] = useState("");
-    const [fallback, setFallback] = useState<"copy" | "paste" | null>(null);
+    const [fallback, setFallback] = useState<"copy" | "paste" | "error" | null>(null);
     const [text, setText] = useState("");
     useEffect(() => {
+        field.current?.focus({ preventScroll: true });
+        if (field.current?.readOnly) field.current.select();
+    }, [fallback]);
+    useEffect(() => {
         const element = target.current;
-        if (!enabled || !element) return;
+        if (!element) return;
         const lifetime = new AbortController();
+        let awaitingPaste: ReturnType<typeof setTimeout> | undefined;
         let busy = false;
         const transfer = async (command: Command) => {
-            if (busy) throw new Error("A clipboard transfer is still running.");
+            lifetime.signal.throwIfAborted();
+            const payload = v.parse(browserClipboardCommandSchema, command);
+            const url = new URL("/api/mira/browser/clipboard", location.href);
+            url.searchParams.set("id", accessId);
+            url.searchParams.set("epoch", epoch);
+            const response = await fetch(url, {
+                method: "POST",
+                credentials: "same-origin",
+                cache: "no-store",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+                signal: lifetime.signal,
+            });
+            const result = v.parse(browserClipboardResultSchema, await response.json());
+            lifetime.signal.throwIfAborted();
+            if (!response.ok || !result.ok)
+                throw new Error("Clipboard transfer did not finish.");
+            return result.text;
+        };
+        const perform = async (operation: () => Promise<void>) => {
+            if (lifetime.signal.aborted || busy) return;
             busy = true;
             try {
-                const payload = v.parse(browserClipboardCommandSchema, command);
-                const url = new URL("/api/mira/browser/clipboard", location.href);
-                url.searchParams.set("id", accessId);
-                url.searchParams.set("epoch", epoch);
-                const response = await fetch(url, {
-                    method: "POST",
-                    credentials: "same-origin",
-                    cache: "no-store",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload),
-                    signal: lifetime.signal,
-                });
-                const result = v.parse(
-                    browserClipboardResultSchema,
-                    await response.json()
-                );
-                lifetime.signal.throwIfAborted();
-                if (!response.ok || !result.ok)
-                    throw new Error("Clipboard transfer did not finish.");
-                return result.text;
+                await operation();
+            } catch {
+                if (!lifetime.signal.aborted) {
+                    setText("");
+                    setFallback("error");
+                    setMessage(
+                        "Clipboard transfer did not finish. Check the browser before trying again. Text is limited to 8,192 characters."
+                    );
+                }
             } finally {
                 busy = false;
             }
         };
-        const failed = () => {
-            if (!lifetime.signal.aborted)
-                setMessage(
-                    "Clipboard transfer did not finish. Check the browser before trying again. Text is limited to 8,192 characters."
-                );
+        const send = async (value: string) => {
+            await transfer({ kind: "paste", text: value });
+            if (lifetime.signal.aborted) return;
+            setFallback(null);
+            setText("");
+            setMessage("Pasted into browser.");
+            element.querySelector("canvas")?.focus({ preventScroll: true });
         };
-        const send = (value: string) => {
-            void transfer({ kind: "paste", text: value }).then(() => {
+        const copy = async (kind: "copy" | "read") => {
+            const result = transfer({ kind });
+            try {
+                if (
+                    typeof navigator.clipboard?.write === "function" &&
+                    typeof ClipboardItem !== "undefined"
+                ) {
+                    // Keep the write in the original gesture. A browser may deny permission
+                    // before it ever consumes the promised ClipboardItem.
+                    const data = result.then(
+                        (value) => new Blob([value], { type: "text/plain" })
+                    );
+                    void data.catch(() => {});
+                    await navigator.clipboard.write([
+                        new ClipboardItem({ "text/plain": data }),
+                    ]);
+                } else {
+                    const value = await result;
+                    lifetime.signal.throwIfAborted();
+                    await navigator.clipboard.writeText(value);
+                }
+                if (lifetime.signal.aborted) return;
+                setMessage("Copied to your clipboard.");
                 setFallback(null);
                 setText("");
-                setMessage("Pasted into browser.");
-                element.querySelector("canvas")?.focus();
+            } catch {
+                const value = await result;
+                if (lifetime.signal.aborted) return;
+                setText(value);
+                setFallback("copy");
+                setMessage("Copy the selected text to your clipboard.");
+            }
+        };
+        const offerPaste = () => {
+            if (!lifetime.signal.aborted) {
+                setText("");
+                setFallback("paste");
+                setMessage("Paste plain text to send it to the remote browser.");
+            }
+        };
+        const paste = async () => {
+            let value;
+            try {
+                value = await navigator.clipboard.readText();
+            } catch {
+                offerPaste();
                 return;
-            }, failed);
-        };
-        const copy = (kind: "copy" | "read") => {
-            let copied: string | undefined;
-            const result = transfer({ kind }).then((value) => {
-                copied = value;
-                return value;
-            });
-            // Construct the ClipboardItem during the gesture, before awaiting the server.
-            const written =
-                typeof navigator.clipboard?.write === "function" &&
-                typeof ClipboardItem !== "undefined"
-                    ? navigator.clipboard.write([
-                          new ClipboardItem({
-                              "text/plain": result.then(
-                                  (value) => new Blob([value], { type: "text/plain" })
-                              ),
-                          }),
-                      ])
-                    : result.then((value) => navigator.clipboard.writeText(value));
-            void written
-                .then(() => {
-                    if (!lifetime.signal.aborted) {
-                        setMessage("Copied to your clipboard.");
-                        setFallback(null);
-                        setText("");
-                    }
-                    return;
-                })
-                .catch(async () => {
-                    try {
-                        await result;
-                    } catch {
-                        failed();
-                        return;
-                    }
-                    if (!lifetime.signal.aborted && copied !== undefined) {
-                        setText(copied);
-                        setFallback("copy");
-                        setMessage("Select and copy the text below.");
-                    }
-                });
-        };
-        const paste = () => {
-            void (
-                navigator.clipboard?.readText?.() ??
-                Promise.reject(new Error("Clipboard unavailable."))
-            )
-                .then((value) => {
-                    if (!lifetime.signal.aborted) send(value);
-                    return;
-                })
-                .catch(() => {
-                    if (!lifetime.signal.aborted) {
-                        setText("");
-                        setFallback("paste");
-                        setMessage("Paste your text below, then send it to the browser.");
-                    }
-                });
+            }
+            if (value) await send(value);
+            else offerPaste();
         };
         const key = (event: KeyboardEvent) => {
-            if ((!event.ctrlKey && !event.metaKey) || event.altKey) return;
+            if (!event.isTrusted || (!event.ctrlKey && !event.metaKey) || event.altKey)
+                return;
             const name = event.key.toLowerCase();
-            if (name === "c") {
+            if (name === "c" && !event.shiftKey) {
                 event.preventDefault();
                 event.stopImmediatePropagation();
-                copy("copy");
+                if (!event.repeat) void perform(() => copy("copy"));
             }
             if (name === "v") {
                 // Let the local browser emit its native paste event; noVNC must not consume it.
                 event.stopImmediatePropagation();
+                if (event.repeat) {
+                    event.preventDefault();
+                    return;
+                }
+                // Some browsers do not dispatch paste on a canvas. Only offer manual entry if
+                // this specific paste gesture never produced clipboard text.
+                clearTimeout(awaitingPaste);
+                awaitingPaste = setTimeout(() => {
+                    if (!busy && element.contains(document.activeElement)) offerPaste();
+                }, 1000);
             }
         };
         const pasted = (event: ClipboardEvent) => {
+            if (!event.isTrusted) return;
             event.preventDefault();
             event.stopImmediatePropagation();
+            clearTimeout(awaitingPaste);
             const value = event.clipboardData?.getData("text/plain");
-            if (value !== undefined) send(value);
+            if (value) void perform(() => send(value));
+            else offerPaste();
         };
         element.addEventListener("keydown", key, true);
         element.addEventListener("paste", pasted, true);
-        actions.current = { copy: () => copy("read"), paste, send };
+        sendText.current = (value) => void perform(() => send(value));
+        onControlsChange({
+            copy: () => void perform(() => copy("read")),
+            paste: () => void perform(paste),
+        });
         return () => {
-            actions.current = null;
+            clearTimeout(awaitingPaste);
+            sendText.current = null;
             lifetime.abort();
+            onControlsChange(null);
             element.removeEventListener("keydown", key, true);
             element.removeEventListener("paste", pasted, true);
         };
-    }, [target, accessId, epoch, enabled]);
-    if (!enabled) return null;
+    }, [target, accessId, epoch, onControlsChange]);
+    if (!fallback) return <output className="sr-only">{message}</output>;
+    const close = () => {
+        setFallback(null);
+        setText("");
+        setMessage("");
+        target.current?.querySelector("canvas")?.focus({ preventScroll: true });
+    };
     return (
-        <div className="space-y-2">
-            <div className="flex flex-wrap gap-2">
-                <Button variant="ghost" onClick={() => actions.current?.copy()}>
-                    <Copy size={14} aria-hidden="true" /> Copy from browser
-                </Button>
-                <Button variant="ghost" onClick={() => actions.current?.paste()}>
-                    <ClipboardPaste size={14} aria-hidden="true" /> Paste into browser
-                </Button>
-            </div>
-            {message && (
-                <output className="block text-sm text-primary-300">{message}</output>
-            )}
-            {fallback && (
-                <div className="space-y-2">
-                    <label className="block text-sm text-primary-200">
-                        Clipboard text
-                        <textarea
-                            className="mt-1 min-h-24 w-full rounded-lg border border-primary-600 bg-primary-950 p-3 text-primary-100"
-                            maxLength={8192}
-                            value={text}
-                            readOnly={fallback === "copy"}
-                            onChange={(event) => setText(event.target.value)}
-                            onFocus={(event) => {
-                                if (fallback === "copy") event.target.select();
-                            }}
-                        />
-                    </label>
-                    {fallback === "paste" && (
-                        <Button
-                            variant="secondary"
-                            onClick={() => actions.current?.send(text)}
-                        >
-                            Paste into browser
-                        </Button>
-                    )}
-                    <Button
-                        variant="ghost"
-                        onClick={() => {
-                            setFallback(null);
-                            setText("");
-                            setMessage("");
+        <section
+            aria-label="Browser clipboard"
+            className="pointer-events-auto absolute inset-x-2 bottom-2 mx-auto max-h-full max-w-sm space-y-3 overflow-y-auto rounded-lg border border-primary-700 bg-surface-panel p-3 shadow-xl shadow-black/40"
+        >
+            <output className="block text-sm text-primary-200">{message}</output>
+            {fallback !== "error" && (
+                <FormField label="Clipboard text">
+                    <Textarea
+                        ref={field}
+                        maxLength={8192}
+                        value={text}
+                        readOnly={fallback === "copy"}
+                        onChange={(event) => setText(event.target.value)}
+                        onKeyDown={(event) => {
+                            if (event.key === "Escape") {
+                                event.stopPropagation();
+                                close();
+                            }
                         }}
-                    >
-                        Close clipboard
-                    </Button>
-                </div>
+                    />
+                </FormField>
             )}
-        </div>
+            <ActionGroup>
+                <Button size="sm" variant="secondary" onClick={close}>
+                    Close
+                </Button>
+                {fallback === "paste" && (
+                    <Button
+                        size="sm"
+                        disabled={!text}
+                        onClick={() => sendText.current?.(text)}
+                    >
+                        Paste into browser
+                    </Button>
+                )}
+            </ActionGroup>
+        </section>
     );
 }

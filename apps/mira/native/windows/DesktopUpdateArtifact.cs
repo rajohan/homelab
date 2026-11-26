@@ -35,7 +35,12 @@ internal sealed class DesktopUpdateArtifact : IDisposable
         }
         // The receipt follows the completed network download. Its remaining lifetime starts here.
         var clock = Stopwatch.StartNew();
-        var data = ConsentProtocol.Object(line.ToString());
+        string header = line.ToString();
+        if (header == "{\"status\":\"current\"}") {
+            if (input.ReadByte() != -1) throw new InvalidDataException();
+            return null;
+        }
+        var data = ConsentProtocol.Object(header);
         ConsentProtocol.Keys(data, "repository", "version", "revision", "size", "sha256", "validForMs");
         string version = ConsentProtocol.Text(data, "version", 14);
         string hash = ConsentProtocol.Text(data, "sha256", 64);

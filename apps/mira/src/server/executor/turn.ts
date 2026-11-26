@@ -21,9 +21,11 @@ import {
     saveMiraDelta,
 } from "../data/queue";
 import { readMiraRecallContext, readMiraRecallPolicy } from "../data/recall";
+import { isMiraReportRun } from "../data/reportAccess";
 import { listMiraSkills, miraSkillsRepositoryOnly } from "../data/skills";
 import { acknowledgeTaskSteering, readTaskSteering } from "../data/taskSteering";
 import type { AgentMailReadConfiguration } from "../integrations/agentmail/configuration";
+import type { MiraDashboardConfiguration } from "../integrations/dashboard/connection";
 import type { DaytonaBinding } from "../integrations/daytona/configuration";
 import type {
     GitHubBinding,
@@ -67,6 +69,7 @@ export { miraInstructionsHash } from "../persona/instructions";
  * @param github - Optional GitHub mapping and dedicated read credential, retained only in the service closure.
  * @param localCode - Optional Main mapping; the run freezes its target before inference.
  * @param operations - Explicit owner-bound host administration settings.
+ * @param dashboard - Owner-bound dashboard machine credential for operational tools.
  * @param onConnectionFailure - Refresh provider health when preflight cannot verify ChatGPT.
  * @param daytona - Nonsecret cloud mapping for local drafts and result reads.
  * @returns Completion after recording the observed terminal outcome and reaping the child.
@@ -84,7 +87,8 @@ export async function executeMiraTurn(
     github?: GitHubBinding | GitHubConfiguration,
     localCode?: LocalCodeBinding,
     operations?: MiraOperationsConfiguration,
-    onConnectionFailure?: (status: MiraChatgptStatus) => void
+    onConnectionFailure?: (status: MiraChatgptStatus) => void,
+    dashboard?: MiraDashboardConfiguration
 ): Promise<void> {
     const controller = new AbortController();
     const deadline = new AbortController();
@@ -214,6 +218,7 @@ export async function executeMiraTurn(
         const automaticModel = config.model;
         const chatSearch = run.manual && !run.automationId && !run.taskId;
         const nativeImages = chatSearch && Boolean(filesDirectory);
+        const webSearch = chatSearch || isMiraReportRun(run);
         const skillContext = {
             client,
             owner: run.owner,
@@ -237,7 +242,8 @@ export async function executeMiraTurn(
             },
             chatSearch,
             nativeSkills,
-            nativeImages
+            nativeImages,
+            webSearch
         );
         const verified = await inspectChatgpt(runtime, false);
         if (verified.status.state !== "connected") {
@@ -286,7 +292,7 @@ export async function executeMiraTurn(
             .update(miraSkillCatalogHash)
             .update(JSON.stringify(nativeSkills))
             .update(
-                `native-images:${nativeImages}:sleep:${chatSearch}:read-only-reviewers:1`
+                `native-images:${nativeImages}:web-search:${webSearch}:sleep:${chatSearch}:read-only-reviewers:1`
             )
             .digest("hex");
 
@@ -321,7 +327,8 @@ export async function executeMiraTurn(
                     daytona,
                     github,
                     localCode,
-                    operations
+                    operations,
+                    dashboard
                 ),
                 ...(computerAssistance
                     ? [

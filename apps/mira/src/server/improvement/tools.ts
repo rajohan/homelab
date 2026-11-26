@@ -5,6 +5,7 @@ import * as v from "valibot";
 
 import { auditMira, MiraFailure } from "../data/context";
 import type { MiraClaim } from "../data/queue";
+import { isMiraReportRun } from "../data/reportAccess";
 import type { createGitHubTools } from "../integrations/github/tools";
 import { parseImprovement } from "./plan";
 import {
@@ -30,6 +31,7 @@ export function createImprovementTools(
     return [
         {
             name: "mira_improvement_status",
+            readOnly: isMiraReportRun(run),
             automatic: true,
             description:
                 "Read this run's bounded coding permission and any accepted improvement. A submitted change is queued work, not tested or published. Only improvement automations with explicit operator coding permission can submit; ordinary chat, brief and summary cannot. Use existing task, GitHub and source tools to inspect work before proposing edits.",

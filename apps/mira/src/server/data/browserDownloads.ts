@@ -5,6 +5,7 @@ import * as v from "valibot";
 import type { BrowserDownloadFile } from "../browsing/downloadTransfer";
 import { type BrowserCommandClaim, browserHostContext } from "./browserCommands";
 import { requireBrowserDownload } from "./browserDownloadAccess";
+import { linkBrowserAttachment } from "./browserFileAttachments";
 import { auditMira, type MiraContext, MiraFailure } from "./context";
 import { saveMiraFile } from "./files";
 
@@ -83,19 +84,12 @@ export async function saveBrowserDownload(
             )
                 throw new Error("The browser download owner changed.");
             await auditMira(query, context, "file.browser_downloaded", command.id);
-            const linked = await query<{ id: string }[]>`
-            UPDATE mira_messages m SET attachment_ids=CASE WHEN attachment_ids @> ${JSON.stringify([command.id])}::text::jsonb
-                THEN attachment_ids ELSE attachment_ids||${JSON.stringify([command.id])}::text::jsonb END
-            FROM mira_runs r JOIN mira_conversations c ON c.id=r.conversation_id
-            WHERE r.id=${context.run!.id} AND r.owner=${context.owner} AND c.owner=${context.owner} AND c.deleted_at IS NULL
-            AND m.id=r.assistant_message_id AND m.conversation_id=c.id
-            AND (jsonb_array_length(m.attachment_ids)<100 OR m.attachment_ids @> ${JSON.stringify([command.id])}::text::jsonb)
-            RETURNING m.id`;
-            if (linked.length !== 1)
-                throw new MiraFailure(
-                    "CONFLICT",
-                    "This response is unavailable or already contains 100 files."
-                );
+            await linkBrowserAttachment(
+                query,
+                context.owner,
+                context.run!.id,
+                command.id
+            );
             requireSignal(signal);
             const settled = await query<{ id: string }[]>`
             UPDATE mira_browser_consoles SET state='idle',method=NULL,expires_at=NULL,payload=NULL

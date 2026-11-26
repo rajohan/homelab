@@ -1,12 +1,10 @@
 import { miraDefaultChatSettings } from "@homelab/contracts/mira";
-import type { MiraAttachment } from "@homelab/contracts/mira";
 import {
     Card,
     ConfirmDialog,
     DropdownMenu,
     ErrorNotice,
     FieldsForm,
-    IconButton,
     LoadingState,
     Modal,
 } from "@homelab/ui";
@@ -15,32 +13,35 @@ import { useNavigate } from "@tanstack/react-router";
 import {
     Archive,
     Brain,
-    ChevronDown,
     Files,
     MessageSquare,
     Monitor,
-    PanelLeftOpen,
     Pencil,
     Settings2,
+    SquarePen,
     Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { BrowserAccessPanel } from "./BrowserAccessPanel";
+import { BrowserWorkspace } from "./BrowserWorkspace";
 import { ChatComposer } from "./ChatComposer";
 import { readChatDisplay, saveChatDisplay } from "./chatDisplay";
-import { ChatgptConnection } from "./ChatgptConnection";
+import { ChatModelControl } from "./ChatModelControl";
 import { ChatSettings } from "./ChatSettings";
 import { ChatTranscript } from "./ChatTranscript";
 import { ComputerAccessDialog } from "./ComputerAccessDialog";
 import { ComputerAccessPanel } from "./ComputerAccessPanel";
+import { chatMessageSource } from "./desktopClient";
 import { FileLibrary } from "./FileLibrary";
 import { LiveChatActivity } from "./LiveChatActivity";
 import { ProposedChanges } from "./ProposedChanges";
 import { ProviderQuota } from "./ProviderQuota";
 import { readChatUpdate } from "./readChatUpdate";
+import { useBrowserAccess } from "./useBrowserAccess";
+import { useChatDraft } from "./useChatDraft";
 import { MiraVoiceConnection } from "./voiceConnection";
 
 /**
@@ -50,24 +51,29 @@ import { MiraVoiceConnection } from "./voiceConnection";
 export function ChatPanel({
     id,
     onChooseConversation,
+    historyControl,
+    connectionControl,
+    connectionNotice,
+    settingsOpen,
     onLibrary,
 }: {
     readonly id: string;
+    readonly settingsOpen: boolean;
+    readonly historyControl: ReactNode;
+    readonly connectionControl: ReactNode;
+    readonly connectionNotice: ReactNode;
     readonly onLibrary: (library: "files" | "memory") => void;
     readonly onChooseConversation: () => void;
 }) {
     const client = useQueryClient();
-    const [text, setText] = useState(
-        () => client.getQueryData<string>(["mira-draft", id]) ?? ""
-    );
-    useEffect(() => {
-        client.removeQueries({ queryKey: ["mira-draft", id], exact: true });
-    }, [client, id]);
+    const { text, attachments, setText, setAttachments, addFile, clear } =
+        useChatDraft(id);
     const [display, setDisplay] = useState(readChatDisplay);
-    const [attachments, setAttachments] = useState<MiraAttachment[]>([]);
     const [uploading, setUploading] = useState(false);
     const [selectingFile, setSelectingFile] = useState(false);
-    const [dialog, setDialog] = useState<"rename" | "delete" | "settings" | "computer">();
+    const [dialog, setDialog] = useState<
+        "rename" | "delete" | "settings" | "model" | "computer"
+    >();
     const request = useRef<{ text: string; id: string } | null>(null);
     const navigate = useNavigate();
     const [voice] = useState(
@@ -79,7 +85,6 @@ export function ChatPanel({
             })
     );
     const voiceState = useSyncExternalStore(voice.subscribe, voice.snapshot);
-    const [showStatus, setShowStatus] = useState(false);
     const [expanded, setExpanded] = useState(false);
     const queryKey = ["operations", "mira", "conversation", id];
     const query = useQuery({
@@ -93,6 +98,13 @@ export function ChatPanel({
                 : 5000,
     });
     const latest = query.data;
+    const browserQuery = useBrowserAccess(latest?.run ?? null);
+    const [viewingBrowser, setViewingBrowser] = useState<string>();
+    const browser = browserQuery.data?.[0];
+    const openBrowser =
+        browser?.id === viewingBrowser && browser?.state === "active"
+            ? browser
+            : undefined;
     const archived = Boolean(latest?.conversation.archivedAt);
     useEffect(() => {
         if (latest?.messages && !archived) voice.messages(latest.messages);
@@ -113,31 +125,30 @@ export function ChatPanel({
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
     });
-    const status = useQuery({
-        queryKey: ["operations", "mira", "status"],
-        queryFn: () => api.mira.status.query(),
-        refetchInterval: 15_000,
-    });
     const catalog = useQuery({
         queryKey: ["operations", "mira", "models"],
         queryFn: () => api.mira.models.query(),
         refetchInterval: 30_000,
     });
-    const send = useOperation(async () => {
+    const send = useOperation(async (_input: undefined, signal) => {
         const contentKey = JSON.stringify({
             text,
             attachmentIds: attachments.map((file) => file.id),
         });
         if (request.current?.text !== contentKey)
             request.current = { text: contentKey, id: crypto.randomUUID() };
-        await api.mira.conversations.send.mutate({
-            conversationId: id,
-            requestId: request.current.id,
-            text,
-            attachmentIds: attachments.map((file) => file.id),
-        });
-        setText("");
-        setAttachments([]);
+        const source = await chatMessageSource(signal);
+        await api.mira.conversations.send.mutate(
+            {
+                ...source,
+                conversationId: id,
+                requestId: request.current.id,
+                text,
+                attachmentIds: attachments.map((file) => file.id),
+            },
+            { signal }
+        );
+        clear();
         request.current = null;
     });
     const cancel = useOperation((runId: string) =>
@@ -187,279 +198,299 @@ export function ChatPanel({
             ].map((message) => [message.id, message])
         ).values(),
     ];
-    const modelId = active ? run?.model : conversation.settings?.model;
-    const selectedModel =
-        catalog.data?.models.find(
-            (model) => model.model === (modelId ?? catalog.data?.defaultModel)
-        ) ??
-        (modelId ? undefined : catalog.data?.models.find((model) => model.isDefault));
-    const waitingLabel = status.data?.online ? "Waiting" : "Offline";
+    const settings = conversation.settings ?? miraDefaultChatSettings;
+    const runSettings = active && run ? run : settings;
+    const modelId =
+        runSettings.model ??
+        catalog.data?.defaultModel ??
+        catalog.data?.models.find((model) => model.isDefault)?.model ??
+        null;
+    const selectedModel = catalog.data?.models.find((model) => model.model === modelId);
+    const fresh = !catalog.isError && !!catalog.data?.fresh;
     const supportsImages = Boolean(
         catalog.data?.fresh && selectedModel?.inputModalities.includes("image")
     );
     return (
-        <Card className="flex min-h-0 min-w-0 flex-col overflow-y-auto rounded-none border-0 bg-transparent p-0 shadow-none sm:p-0">
-            <header className="flex shrink-0 items-center gap-2 border-b border-primary-700 px-2 py-1 sm:px-4 sm:py-2">
-                <IconButton
-                    icon={PanelLeftOpen}
-                    label="Choose conversation"
-                    onClick={onChooseConversation}
-                    className="chat-split:hidden"
-                />
-                <h1
-                    title={conversation.title}
-                    className="min-w-0 flex-1 truncate text-base font-semibold tracking-tight text-primary-50 sm:text-lg"
-                >
-                    {conversation.title}
-                </h1>
-                <button
-                    type="button"
-                    aria-label={`Connection status: ${status.data?.ready ? "Ready" : waitingLabel}`}
-                    aria-controls="mira-connection-details"
-                    aria-expanded={showStatus}
-                    onClick={() => setShowStatus(!showStatus)}
-                    className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-primary-300 hover:bg-primary-800"
-                >
-                    <span
-                        aria-hidden="true"
-                        className={`size-2 rounded-full ${status.data?.ready ? "bg-emerald-400" : "bg-amber-400"}`}
-                    />
-                    {status.data?.ready ? "Ready" : waitingLabel}
-                    <ChevronDown
-                        size={14}
-                        aria-hidden="true"
-                        className={showStatus ? "rotate-180" : ""}
-                    />
-                </button>
-                <DropdownMenu
-                    label="Conversation actions"
-                    disabled={change.isPending || rename.isPending}
-                    actions={[
-                        {
-                            id: "settings",
-                            label: "Chat settings",
-                            icon: Settings2,
-                            disabled: archived,
-                            onSelect: () => setDialog("settings"),
-                        },
-                        {
-                            id: "computer",
-                            label: "Computer access",
-                            icon: Monitor,
-                            onSelect: () => setDialog("computer"),
-                        },
-                        {
-                            id: "files",
-                            label: "Files",
-                            icon: Files,
-                            onSelect: () => onLibrary("files"),
-                        },
-                        {
-                            id: "memory",
-                            label: "Memory",
-                            icon: Brain,
-                            onSelect: () => onLibrary("memory"),
-                        },
-                        {
-                            id: "conversations",
-                            label: "Conversations",
-                            icon: MessageSquare,
-                            onSelect: onChooseConversation,
-                        },
-                        {
-                            id: "rename",
-                            label: "Rename",
-                            icon: Pencil,
-                            onSelect: () => setDialog("rename"),
-                        },
-                        {
-                            id: "archive",
-                            label: conversation.archivedAt ? "Restore" : "Archive",
-                            icon: Archive,
-                            disabled: Boolean(active),
-                            onSelect: () =>
-                                change.mutate(
-                                    conversation.archivedAt ? "restore" : "archive"
-                                ),
-                        },
-                        {
-                            id: "delete",
-                            label: "Delete conversation",
-                            icon: Trash2,
-                            danger: true,
-                            disabled: Boolean(active),
-                            onSelect: () => setDialog("delete"),
-                        },
-                    ]}
-                />
-            </header>
-            <div
-                id="mira-connection-details"
-                className="max-h-[36dvh] shrink-0 overflow-y-auto bg-surface-panel"
+        <>
+            <section
+                aria-label="Chat"
+                className={`min-h-0 min-w-0 flex-1 flex-col overflow-y-auto ${openBrowser ? "chat-split:flex hidden" : "flex"}`}
             >
-                <ChatgptConnection alertsOnly={!showStatus} />
-                {showStatus && (
-                    <>
-                        <ProviderQuota
-                            quotas={catalog.data?.quotas ?? []}
-                            fresh={!catalog.isError && (catalog.data?.fresh ?? false)}
-                        />
-                        {(!status.data?.ready || status.data.message) && (
-                            <p className="shrink-0 border-b border-primary-700 px-4 py-2 text-xs text-primary-400">
-                                {status.data?.message ?? "Checking Mira connection…"}
-                            </p>
-                        )}
-                    </>
+                <header className="@container/chat-header shrink-0 border-b border-primary-700">
+                    <div className="grid min-h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 px-2 py-1 @min-[34rem]/chat-header:gap-x-2 @min-[34rem]/chat-header:px-4">
+                        <div className="col-start-1 row-start-1 flex @min-[34rem]/chat-header:row-span-2">
+                            {historyControl}
+                        </div>
+                        <h1
+                            title={conversation.title}
+                            className="col-start-2 row-start-1 min-w-0 truncate text-base font-semibold tracking-tight text-primary-50 @min-[34rem]/chat-header:self-end @min-[34rem]/chat-header:text-lg"
+                        >
+                            {conversation.title}
+                        </h1>
+                        <div className="col-span-full row-start-2 flex min-w-0 flex-wrap items-center justify-between gap-x-1 @min-[34rem]/chat-header:col-span-1 @min-[34rem]/chat-header:col-start-2 @min-[34rem]/chat-header:justify-start @min-[34rem]/chat-header:gap-x-3">
+                            <ChatModelControl
+                                model={selectedModel}
+                                modelId={modelId}
+                                settings={runSettings}
+                                active={active}
+                                resolved={active && run?.settingsResolved === true}
+                                archived={archived}
+                                fresh={fresh}
+                                loading={catalog.isPending}
+                                onEdit={() => setDialog("model")}
+                            />
+                            <ProviderQuota
+                                quotas={catalog.data?.quotas ?? []}
+                                fresh={fresh}
+                            />
+                        </div>
+                        <div className="col-start-3 row-start-1 flex items-center @min-[34rem]/chat-header:row-span-2">
+                            {connectionControl}
+                            <DropdownMenu
+                                label="Conversation actions"
+                                disabled={change.isPending || rename.isPending}
+                                actions={[
+                                    {
+                                        id: "new",
+                                        label: "New chat",
+                                        icon: SquarePen,
+                                        onSelect: () => void navigate({ to: "/mira" }),
+                                    },
+                                    {
+                                        id: "settings",
+                                        label: "Chat settings",
+                                        icon: Settings2,
+                                        disabled: archived,
+                                        onSelect: () => setDialog("settings"),
+                                    },
+                                    {
+                                        id: "computer",
+                                        label: "Computer access",
+                                        icon: Monitor,
+                                        onSelect: () => setDialog("computer"),
+                                    },
+                                    {
+                                        id: "files",
+                                        label: "Files",
+                                        icon: Files,
+                                        onSelect: () => onLibrary("files"),
+                                    },
+                                    {
+                                        id: "memory",
+                                        label: "Memory",
+                                        icon: Brain,
+                                        onSelect: () => onLibrary("memory"),
+                                    },
+                                    {
+                                        id: "conversations",
+                                        label: "Conversations",
+                                        icon: MessageSquare,
+                                        onSelect: onChooseConversation,
+                                    },
+                                    {
+                                        id: "rename",
+                                        label: "Rename",
+                                        icon: Pencil,
+                                        onSelect: () => setDialog("rename"),
+                                    },
+                                    {
+                                        id: "archive",
+                                        label: conversation.archivedAt
+                                            ? "Restore"
+                                            : "Archive",
+                                        icon: Archive,
+                                        disabled: Boolean(active),
+                                        onSelect: () =>
+                                            change.mutate(
+                                                conversation.archivedAt
+                                                    ? "restore"
+                                                    : "archive"
+                                            ),
+                                    },
+                                    {
+                                        id: "delete",
+                                        label: "Delete conversation",
+                                        icon: Trash2,
+                                        danger: true,
+                                        disabled: Boolean(active),
+                                        onSelect: () => setDialog("delete"),
+                                    },
+                                ]}
+                            />
+                        </div>
+                    </div>
+                </header>
+                {connectionNotice}
+                {error && (
+                    <div className="shrink-0 px-4 py-2">
+                        <ErrorNotice error={error} />
+                    </div>
                 )}
-            </div>
-            {error && (
-                <div className="shrink-0 px-4 py-2">
-                    <ErrorNotice error={error} />
-                </div>
-            )}
-            <ChatTranscript
-                key={`transcript:${id}`}
-                messages={messages}
-                onReadAloud={
-                    conversation.archivedAt ? undefined : (message) => voice.read(message)
-                }
-                readingId={voiceState.readingId}
-                continuation={{
-                    hasMore: history.data ? history.hasNextPage : !!latest.nextCursor,
-                    loading: history.isFetching,
-                    error: history.error ?? undefined,
-                    onLoadMore: () => {
-                        if (history.isError) void history.refetch();
-                        else {
-                            setExpanded(true);
-                            if (history.data) void history.fetchNextPage();
-                        }
-                    },
-                }}
-                activity={
-                    run ? (
-                        <LiveChatActivity
-                            key={`${run.id}:${display.expandTools}`}
-                            run={run}
-                            display={display}
-                        />
-                    ) : null
-                }
-            />
-            <div className="max-h-[32dvh] shrink-0 overflow-y-auto">
-                {run?.message && (
-                    <p className="shrink-0 px-4 py-2 text-xs text-primary-300">
-                        {run.message}
-                    </p>
-                )}
-                <BrowserAccessPanel run={run} />
-                <ComputerAccessPanel
-                    run={run}
-                    waiting={
-                        run?.state === "running" &&
-                        !run.cancelRequested &&
-                        (latest.tools ?? []).some(
-                            (tool) =>
-                                tool.tool === "mira_computer_wait" &&
-                                tool.state === "running"
-                        )
+                <ChatTranscript
+                    key={`transcript:${id}`}
+                    messages={messages}
+                    onReadAloud={
+                        conversation.archivedAt
+                            ? undefined
+                            : (message) => voice.read(message)
                     }
-                    onManage={() => setDialog("computer")}
-                />
-                <ProposedChanges key={`proposals:${id}`} conversationId={id} />
-            </div>
-            {!conversation.archivedAt && (
-                <ChatComposer
-                    voice={voice}
-                    text={text}
-                    onText={setText}
-                    attachments={attachments}
-                    onAttachments={setAttachments}
-                    uploading={uploading}
-                    onUploading={setUploading}
-                    sending={send.isPending}
-                    active={Boolean(active)}
-                    steerable={run?.manual === true && !run.automationId}
-                    stopping={run?.cancelRequested ?? false}
-                    stopPending={cancel.isPending}
-                    onStop={() => {
-                        if (run) cancel.mutate(run.id);
+                    readingId={voiceState.readingId}
+                    continuation={{
+                        hasMore: history.data ? history.hasNextPage : !!latest.nextCursor,
+                        loading: history.isFetching,
+                        error: history.error ?? undefined,
+                        onLoadMore: () => {
+                            if (history.isError) void history.refetch();
+                            else {
+                                setExpanded(true);
+                                if (history.data) void history.fetchNextPage();
+                            }
+                        },
                     }}
-                    onSend={() => send.mutate(undefined)}
-                    onBrowse={() => setSelectingFile(true)}
+                    activity={
+                        run ? (
+                            <LiveChatActivity key={run.id} run={run} display={display} />
+                        ) : null
+                    }
                 />
-            )}
-            {selectingFile && (
-                <FileLibrary
-                    onClose={() => setSelectingFile(false)}
-                    onSelect={(file) => {
-                        setAttachments((current) =>
-                            current.some((entry) => entry.id === file.id) ||
-                            current.length >= 8
-                                ? current
-                                : [...current, file]
-                        );
-                        setSelectingFile(false);
-                    }}
-                />
-            )}
-            {dialog === "computer" && (
-                <ComputerAccessDialog
-                    key={run?.id ?? "no-run"}
-                    run={run}
-                    supportsImages={supportsImages}
-                    onClose={() => setDialog(undefined)}
-                />
-            )}
-            {dialog === "settings" && (
-                <ChatSettings
-                    voice={voice}
-                    id={id}
-                    version={conversation.version}
-                    settings={conversation.settings ?? miraDefaultChatSettings}
-                    models={catalog.data?.models ?? []}
-                    defaultModel={catalog.data?.defaultModel ?? null}
-                    fresh={!catalog.isError && (catalog.data?.fresh ?? false)}
-                    display={display}
-                    onDisplayChange={(next) => {
-                        setDisplay(next);
-                        saveChatDisplay(next);
-                    }}
-                    onClose={() => setDialog(undefined)}
-                />
-            )}
-            {dialog === "rename" && (
-                <Modal title="Rename conversation" onClose={() => setDialog(undefined)}>
-                    <FieldsForm
-                        fields={[
-                            {
-                                name: "title",
-                                label: "Title",
-                                initial: conversation.title,
-                                maximum: 160,
-                            },
-                        ]}
-                        submitLabel="Save"
-                        onCancel={() => setDialog(undefined)}
-                        onSubmit={async (values) => {
-                            await rename.mutateAsync(values.title ?? "");
-                            setDialog(undefined);
+                <div className="max-h-[32dvh] shrink-0 overflow-y-auto">
+                    {run?.message && (
+                        <p className="shrink-0 px-4 py-2 text-xs text-primary-300">
+                            {run.message}
+                        </p>
+                    )}
+                    <div hidden={Boolean(openBrowser)}>
+                        <BrowserAccessPanel
+                            run={run}
+                            query={browserQuery}
+                            onView={setViewingBrowser}
+                        />
+                    </div>
+                    <ComputerAccessPanel
+                        run={run}
+                        waiting={
+                            run?.state === "running" &&
+                            !run.cancelRequested &&
+                            (latest.tools ?? []).some(
+                                (tool) =>
+                                    tool.tool === "mira_computer_wait" &&
+                                    tool.state === "running"
+                            )
+                        }
+                        onManage={() => setDialog("computer")}
+                    />
+                    <ProposedChanges key={`proposals:${id}`} conversationId={id} />
+                </div>
+                {!conversation.archivedAt && (
+                    <ChatComposer
+                        voice={voice}
+                        text={text}
+                        onText={setText}
+                        attachments={attachments}
+                        onAttachments={setAttachments}
+                        uploading={uploading}
+                        onUploading={setUploading}
+                        sending={send.isPending}
+                        active={Boolean(active)}
+                        steerable={run?.manual === true && !run.automationId}
+                        stopping={run?.cancelRequested ?? false}
+                        stopPending={cancel.isPending}
+                        onStop={() => {
+                            if (run) cancel.mutate(run.id);
+                        }}
+                        onSend={() => send.mutate(undefined)}
+                        onBrowse={() => setSelectingFile(true)}
+                    />
+                )}
+                {selectingFile && (
+                    <FileLibrary
+                        onClose={() => setSelectingFile(false)}
+                        onSelect={(file) => {
+                            addFile(file);
+                            setSelectingFile(false);
                         }}
                     />
-                </Modal>
-            )}
-            {dialog === "delete" && (
-                <ConfirmDialog
-                    title="Delete conversation"
-                    description="Remove this conversation and its messages. Execution audit records are retained."
-                    confirmLabel="Delete conversation"
-                    onClose={() => setDialog(undefined)}
-                    onConfirm={async () => {
-                        await change.mutateAsync("delete");
-                        await navigate({ to: "/mira" });
-                    }}
+                )}
+                {dialog === "computer" && (
+                    <ComputerAccessDialog
+                        key={run?.id ?? "no-run"}
+                        run={run}
+                        supportsImages={supportsImages}
+                        onClose={() => setDialog(undefined)}
+                    />
+                )}
+                {!archived &&
+                    (dialog === "settings" || dialog === "model" || settingsOpen) && (
+                        <ChatSettings
+                            modelOnly={dialog === "model" && !settingsOpen}
+                            activeRun={active}
+                            voice={voice}
+                            id={id}
+                            version={conversation.version}
+                            settings={settings}
+                            models={catalog.data?.models ?? []}
+                            defaultModel={catalog.data?.defaultModel ?? null}
+                            fresh={fresh}
+                            display={display}
+                            onDisplayChange={(next) => {
+                                setDisplay(next);
+                                saveChatDisplay(next);
+                            }}
+                            onClose={() => {
+                                setDialog(undefined);
+                                if (settingsOpen)
+                                    void navigate({
+                                        to: "/mira/$conversationId",
+                                        params: { conversationId: id },
+                                        search: {},
+                                        replace: true,
+                                    });
+                            }}
+                        />
+                    )}
+                {dialog === "rename" && (
+                    <Modal
+                        title="Rename conversation"
+                        onClose={() => setDialog(undefined)}
+                    >
+                        <FieldsForm
+                            fields={[
+                                {
+                                    name: "title",
+                                    label: "Title",
+                                    initial: conversation.title,
+                                    maximum: 160,
+                                },
+                            ]}
+                            submitLabel="Save"
+                            onCancel={() => setDialog(undefined)}
+                            onSubmit={async (values) => {
+                                await rename.mutateAsync(values.title ?? "");
+                                setDialog(undefined);
+                            }}
+                        />
+                    </Modal>
+                )}
+                {dialog === "delete" && (
+                    <ConfirmDialog
+                        title="Delete conversation"
+                        description="Remove this conversation and its messages. Execution audit records are retained."
+                        confirmLabel="Delete conversation"
+                        onClose={() => setDialog(undefined)}
+                        onConfirm={async () => {
+                            await change.mutateAsync("delete");
+                            await navigate({ to: "/mira" });
+                        }}
+                    />
+                )}
+            </section>
+            {openBrowser && (
+                <BrowserWorkspace
+                    key={openBrowser.id}
+                    access={openBrowser}
+                    onClose={() => setViewingBrowser(undefined)}
                 />
             )}
-        </Card>
+        </>
     );
 }

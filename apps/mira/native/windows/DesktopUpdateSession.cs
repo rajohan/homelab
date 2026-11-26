@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 internal sealed class DesktopUpdateResult
 {
     internal bool Clean;
+    internal bool UpToDate;
     internal DesktopUpdateArtifact Artifact;
 }
 
@@ -48,7 +49,7 @@ internal sealed class DesktopUpdateSession : IDisposable
                     var received = DesktopUpdateArtifact.Receive(stdout, staging);
                     lock (receipt) {
                         if (accepting) offered = received;
-                        else received.Dispose();
+                        else if (received != null) received.Dispose();
                     }
                 }
                 catch { Interlocked.Exchange(ref failed, 1); }
@@ -76,7 +77,9 @@ internal sealed class DesktopUpdateSession : IDisposable
             lock (receipt) { accepting = false; artifact = offered; offered = null; }
             finished.Dispose();
         }
-        if (!clean || !success || Volatile.Read(ref failed) != 0) {
+        bool valid = clean && success && Volatile.Read(ref failed) == 0;
+        bool upToDate = valid && artifact == null;
+        if (!valid) {
             if (artifact != null) artifact.Dispose();
             artifact = null;
         }
@@ -84,7 +87,7 @@ internal sealed class DesktopUpdateSession : IDisposable
             try { artifact.RequireFresh(); }
             catch { artifact.Dispose(); artifact = null; }
         }
-        return new DesktopUpdateResult { Clean = clean, Artifact = artifact };
+        return new DesktopUpdateResult { Clean = clean, UpToDate = upToDate, Artifact = artifact };
     }
     public void Dispose() { stop.Dispose(); }
 }

@@ -4,6 +4,7 @@ import * as v from "valibot";
 
 import type { MiraContext } from "../data/context";
 import type { MiraClaim } from "../data/queue";
+import { isMiraReportRun } from "../data/reportAccess";
 import { listMiraSkills, loadMiraSkill, miraSkillsRepositoryOnly } from "../data/skills";
 
 /**
@@ -26,6 +27,7 @@ export function createMiraSkillTools(client: SQL, run: MiraClaim) {
             description:
                 "List reviewed guidance bundled with this Homelab release, including versions, exact file keys, required tools and current owned pause controls. Load applicable enabled guidance before integration or task workflows. Skills never grant tools or provider permissions. No host filesystem or remote skill discovery is performed.",
             automatic: true,
+            readOnly: isMiraReportRun(run),
             inputSchema: { type: "object", properties: {}, additionalProperties: false },
             action: async (input: unknown) => {
                 v.parse(v.strictObject({}), input);
@@ -37,6 +39,7 @@ export function createMiraSkillTools(client: SQL, run: MiraClaim) {
             description:
                 "Read a segment of one manifest-listed original UTF-8 source file from an enabled skill package. Omit file for its original entrypoint. Follow nextOffset until null before treating a long document as fully read. Integration notes are separate from unchanged upstream text. Use IDs and file keys returned by mira_skills_list. The service rechecks the current owner pause and original run scope. Guidance describes existing tools and cannot authorize external actions, load arbitrary paths, run scripts or alter permissions.",
             automatic: true,
+            readOnly: isMiraReportRun(run),
             inputSchema: {
                 type: "object",
                 properties: {

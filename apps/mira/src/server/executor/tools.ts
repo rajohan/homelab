@@ -21,6 +21,7 @@ import {
     MiraFailure,
     requireTask,
 } from "../data/context";
+import { readDashboardObservations } from "../data/dashboardObservations";
 import {
     createReport,
     deleteMemory,
@@ -33,6 +34,7 @@ import { listMiraMail, saveMiraMail } from "../data/mail";
 import { createMiraQuestionTools, parseMiraProposal } from "../data/proposals";
 import type { MiraClaim } from "../data/queue";
 import { readMiraRecallPolicy } from "../data/recall";
+import { isMiraReportRun, miraReportRunAllowed } from "../data/reportAccess";
 import {
     addTaskProgress,
     listTasks,
@@ -44,6 +46,8 @@ import { readMiraPdf } from "../files/content";
 import { createImprovementTools } from "../improvement/tools";
 import type { AgentMailReadConfiguration } from "../integrations/agentmail/configuration";
 import { createAgentMailTools } from "../integrations/agentmail/tools";
+import type { MiraDashboardConfiguration } from "../integrations/dashboard/connection";
+import { createMiraDashboardTools } from "../integrations/dashboard/tools";
 import type { DaytonaBinding } from "../integrations/daytona/configuration";
 import { createDaytonaTools } from "../integrations/daytona/tools";
 import { readDependencyPackage } from "../integrations/dependencyPackage";
@@ -133,6 +137,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
  * @param moltbook - Optional social read settings, retained only by the service.
  * @param github - Optional GitHub mapping and dedicated read credential, retained only in the service closure.
  * @param operations - Explicit host administration, separate from sandbox execution.
+ * @param dashboard - Scoped dashboard machine credential, retained only in the executor.
  * @param localCode - Optional Main mapping; the run freezes its target before inference.
  * @param daytona - Nonsecret cloud job mapping; model tools cannot execute or approve.
  * @returns The fixed tool declarations for this conversation and their checked handlers.
@@ -147,7 +152,8 @@ export function createMiraTools(
     daytona?: DaytonaBinding,
     github?: GitHubBinding | GitHubConfiguration,
     localCode?: LocalCodeBinding,
-    operations?: MiraOperationsConfiguration
+    operations?: MiraOperationsConfiguration,
+    dashboard?: MiraDashboardConfiguration
 ): RuntimeTool<RuntimeToolResult>[] {
     const context: MiraContext = {
         client,
@@ -155,9 +161,14 @@ export function createMiraTools(
         actor: `mira:${run.id}`,
         run: { id: run.id, leaseToken: run.leaseToken },
     };
+    const report = isMiraReportRun(run);
+    const operationalRead =
+        report ||
+        (run.manual && !run.automationId && !run.calendarEventId && !run.taskAssessment);
     let uncertain = false;
     const definitions: MiraToolDefinition[] = [
         ...createMiraOperationsTools(client, run, operations),
+        ...createMiraDashboardTools(run, dashboard),
         ...createMiraQuestionTools(run),
         ...createMiraRecallTools(client, run),
         ...createMiraComputerTools(),
@@ -416,15 +427,26 @@ export function createMiraTools(
             inputSchema: object(
                 {
                     title: string,
-                    kind: { enum: ["brief", "summary", "improvement", "task", "other"] },
+                    kind: {
+                        enum: report
+                            ? [run.automationKind]
+                            : ["brief", "summary", "improvement", "task", "other"],
+                    },
                     markdown: string,
                     taskId: { type: ["string", "null"] },
                 },
                 ["title", "kind", "markdown"]
             ),
             automatic: true,
-            action: (input, _signal, scoped) =>
-                createReport(scoped, v.parse(miraReportInputSchema, input), run.id),
+            action: (input, _signal, scoped) => {
+                const value = v.parse(miraReportInputSchema, input);
+                if (report && (value.kind !== run.automationKind || value.taskId))
+                    throw new MiraFailure(
+                        "BAD_REQUEST",
+                        "Save this automation’s own report with its scheduled kind."
+                    );
+                return createReport(scoped, value, run.id);
+            },
         },
         {
             name: "mira_memory_list",
@@ -500,8 +522,9 @@ export function createMiraTools(
         {
             name: "mira_dashboard_state",
             readOnly: true,
-            description:
-                "Read recorded incidents and recent infrastructure job outcomes. Timestamps describe stored observations, not a fresh host probe.",
+            description: operationalRead
+                ? "Read stored host states, backup health and last success per task, observed installed Homelab container versions, active incidents and recent jobs. Use the source timestamps and stale flags. A successful backup is not a restore test."
+                : "Read recorded incidents, recent infrastructure job outcomes and snapshot timestamps.",
             inputSchema: object({}),
             automatic: true,
             action: async (input) => {
@@ -520,6 +543,7 @@ export function createMiraTools(
                     incidents,
                     jobs,
                     snapshots,
+                    ...(operationalRead ? await readDashboardObservations(client) : {}),
                 };
             },
         },
@@ -606,6 +630,12 @@ export function createMiraTools(
         available = direct.filter((definition) =>
             taskAssessmentTools.has(definition.name)
         );
+    else if (report)
+        available = direct.filter(
+            (definition) =>
+                definition.automatic &&
+                (definition.readOnly || definition.name === "mira_report_create")
+        );
     return available.map(
         ({
             action,
@@ -644,6 +674,11 @@ export function createMiraTools(
                                 "An earlier action has an uncertain outcome. Read-only inspection and browser closure remain available; new changes are blocked until this run is reviewed.",
                         });
                 }
+                if (report && !(await miraReportRunAllowed(client, run)))
+                    return JSON.stringify({
+                        ok: false,
+                        message: "This report no longer has access.",
+                    });
                 if (run.automationId && !automatic)
                     return JSON.stringify({
                         ok: false,

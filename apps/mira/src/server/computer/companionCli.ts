@@ -138,7 +138,7 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
                 );
             }
             if (command === "download-update") {
-                await withComputerUpdate(
+                const result = await withComputerUpdate(
                     {
                         installedVersion: version,
                         getUpdate: (signal) =>
@@ -148,6 +148,7 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
                     (file, update, signal) =>
                         writeComputerUpdate(file, update, process.stdout, signal)
                 );
+                if (result === null) print('{"status":"current"}');
                 return;
             }
             if (supervised) print(`Paired: ${existing.id}`);

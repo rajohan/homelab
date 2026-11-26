@@ -5,10 +5,9 @@ import path from "node:path";
 import {
     connectedBrowserScope,
     internetBrowserScope,
-    miraBrowserTabCommandSchema,
     unrestrictedBrowserSites,
 } from "@homelab/contracts/miraBrowser";
-import { type CDPSession, launch, type Page } from "puppeteer-core";
+import { launch } from "puppeteer-core";
 import * as v from "valibot";
 
 import { publicBrowserNetwork } from "../config/environment";
@@ -19,7 +18,9 @@ import {
 } from "./desktop";
 import { type BrowserGrant, browserUrl } from "./policy";
 import { browserProfileDirectory } from "./profile";
+import { browserFileGestures } from "./publicFileGestures";
 import { publicDocument, publicInput, publicOutline } from "./publicPage";
+import { createBrowserTabs } from "./publicTabs";
 import { publicDownload, publicUpload } from "./publicTransfers";
 import {
     browserUploadActionSchema,
@@ -65,6 +66,7 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
         headless: false,
         ignoreDefaultArgs: ["--enable-automation"],
         pipe: true,
+        waitForInitialPage: false,
         timeout: 30_000,
         protocolTimeout: 10_000,
         args: [
@@ -74,6 +76,9 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
             "--disable-background-networking",
             "--window-size=1280,800",
             "--start-maximized",
+            "--kiosk",
+            // The session owner closes Chromium. A site can close its last window.
+            "--no-startup-window",
         ],
         defaultViewport: null,
         signal,
@@ -86,8 +91,6 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
             await browser.close();
             if (directory) await rm(directory, { recursive: true, force: true });
         })());
-    const tabs = new Map<string, { page: Page; cdp: CDPSession }>();
-    let selected = "";
     let observation:
         | {
               id: string;
@@ -96,6 +99,12 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
               loader: string | null;
               url: string | null;
               tabId: string;
+              gesture?: {
+                  id: string;
+                  epoch: string;
+                  href: string | null;
+                  field: "label" | "chooser";
+              };
               width: number;
               height: number;
               nodes: Map<string, number>;
@@ -112,66 +121,10 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
         await control.send("Browser.setDownloadBehavior", { behavior: "deny" });
         await control.detach();
         const initialPages = await context.pages();
-        const synchronizeTabs = async () => {
-            for (const [id, tab] of tabs)
-                if (tab.page.isClosed()) {
-                    tabs.delete(id);
-                    await tab.cdp.detach().catch(() => {});
-                }
-            for (const page of await context.pages()) {
-                if ([...tabs.values()].some((tab) => tab.page === page)) continue;
-                tabs.set(crypto.randomUUID(), {
-                    page,
-                    cdp: await page.createCDPSession(),
-                });
-            }
-            let focused: string | undefined;
-            const visible: string[] = [];
-            for (const [id, tab] of tabs) {
-                try {
-                    const focus = await tab.cdp.send("Runtime.evaluate", {
-                        expression:
-                            "({focused: document.hasFocus(), visible: document.visibilityState === 'visible'})",
-                        returnByValue: true,
-                    });
-                    const state = v.parse(
-                        v.object({ focused: v.boolean(), visible: v.boolean() }),
-                        focus.result.value
-                    );
-                    if (state.focused) focused = id;
-                    if (state.visible) visible.push(id);
-                } catch {
-                    /* A closing tab is reconciled on the next observation. */
-                }
-            }
-            if (focused) selected = focused;
-            else if (!visible.includes(selected) && visible.length > 0)
-                selected = visible.at(-1)!;
-            if (!tabs.has(selected)) selected = tabs.keys().next().value ?? "";
-        };
-        const current = () => {
-            const tab = tabs.get(selected);
-            if (!tab) throw new Error("Open a website in the browser first.");
-            return tab;
-        };
-        const add = async (value: unknown) => {
-            const url = browserUrl(value, sites);
-            if (tabs.size >= 8) throw new Error("Close a browser tab first.");
-            const page = await context.newPage();
-            const id = crypto.randomUUID();
-            tabs.set(id, { page, cdp: await page.createCDPSession() });
-            selected = id;
-            await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
-            await page.bringToFront();
-            await publicDocument(current().cdp, sites);
-        };
-        const webUrl = (value: string) => {
-            try {
-                return browserUrl(value, sites);
-            } catch {
-                return null;
-            }
-        };
+        const { current, add, synchronizeTabs, tabInventory, webUrl, command } =
+            createBrowserTabs(context, grant);
+        const sampleFile = browserFileGestures(grant);
+        let publishedFileRequest: string | null = null;
         const capture = async (
             operation: AbortSignal,
             operator: boolean,
@@ -200,26 +153,15 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
             };
             const { data, width, height, mediaType } =
                 await browserDesktopFrame(operation);
-            const visibleTabs = [
-                [selected, current()] as const,
-                ...[...tabs].filter(([id]) => id !== selected),
-            ].slice(0, 8);
-            const items = await Promise.all(
-                visibleTabs.map(async ([id, tab]) => {
-                    const title = await tab.page.title().catch(() => "");
-                    return {
-                        id,
-                        url: webUrl(tab.page.url()),
-                        title: title.slice(0, 2048),
-                    };
-                })
-            );
+            const strip = await tabInventory();
+            const selected = strip.selectedId;
+            const activeTab = strip.items.find((tab) => tab.id === selected)!;
             const end = webUrl(page.url()) ? await publicDocument(cdp, sites) : null;
             operation.throwIfAborted();
             const stable =
                 end?.loader === doc?.loader &&
                 end?.url === doc?.url &&
-                items[0]?.url === (doc?.url ?? null);
+                activeTab.url === (doc?.url ?? null);
             if (!stable && retry) return null;
             const observationId = crypto.randomUUID();
             if (stable)
@@ -237,8 +179,8 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
                 };
             return {
                 observationId,
-                url: items[0]!.url,
-                title: items[0]!.title,
+                url: activeTab.url,
+                title: activeTab.title,
                 outline: stable
                     ? outline
                     : "The page is navigating. Observe again before using input.",
@@ -246,7 +188,7 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
                 refs: stable ? refs : [],
                 width,
                 height,
-                tabs: { selectedId: selected, items },
+                tabs: strip,
                 content: {
                     content: [{ type: "image" as const, mediaType, data }],
                 },
@@ -276,7 +218,7 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
                 grant.mode !== "control" ||
                 !grant[kind === "upload" ? "uploads" : "downloads"] ||
                 !seen?.operator ||
-                selected !== seen.tabId ||
+                current().id !== seen.tabId ||
                 !node ||
                 seen.id !== action.observationId ||
                 performance.now() >= seen.until ||
@@ -289,13 +231,103 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
                 throw new Error(
                     "File transfer requires a fresh operator observation of this website."
                 );
-            return { cdp, doc, node, until: seen.until };
+            return { cdp, doc, node, until: seen.until, gesture: seen.gesture };
         };
         await add(grant.initialUrl);
         for (const page of initialPages) await page.close();
         return {
             close,
             observe,
+            fileGesture: async (epoch: string | null, operation: AbortSignal) => {
+                operation.throwIfAborted();
+                if (!grant.uploads && !grant.downloads) return null;
+                const tab = await synchronizeTabs()
+                    .then(current)
+                    .catch(() => null);
+                const doc =
+                    tab && webUrl(tab.page.url())
+                        ? await publicDocument(tab.cdp, sites).catch(() => null)
+                        : null;
+                const previous = observation?.gesture;
+                const cleared =
+                    publishedFileRequest &&
+                    (!doc ||
+                        previous?.id !== publishedFileRequest ||
+                        previous.epoch !== epoch ||
+                        !observation ||
+                        observation.tabId !== tab?.id ||
+                        observation.loader !== doc.loader ||
+                        observation.url !== doc.url ||
+                        performance.now() >= observation.until)
+                        ? publishedFileRequest
+                        : null;
+                if (cleared) {
+                    if (previous?.id === cleared) observation = undefined;
+                    publishedFileRequest = null;
+                }
+                // Navigation can destroy the isolated context during any CDP read.
+                const click = await sampleFile(tab?.cdp, doc, epoch).catch(() => null);
+                if (!tab || !click || !doc || !epoch) return cleared ? { cleared } : null;
+                const observationId = crypto.randomUUID();
+                const ref = "p1:1";
+                const fileRequest = {
+                    id: crypto.randomUUID(),
+                    kind: click.kind,
+                    observationId,
+                    ref,
+                    origin: new URL(doc.url).origin,
+                    label: click.label,
+                    suggestedName: click.name,
+                    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+                };
+                const refs = [
+                    {
+                        ref,
+                        role: click.kind === "download" ? "link" : "button",
+                        label: click.label,
+                        actions:
+                            click.kind === "download"
+                                ? ["click" as const]
+                                : ["upload" as const],
+                    },
+                ];
+                observation = {
+                    id: observationId,
+                    operator: true,
+                    until: performance.now() + 60_000,
+                    loader: doc.loader,
+                    url: doc.url,
+                    tabId: tab.id,
+                    width: 0,
+                    height: 0,
+                    nodes: new Map([[ref, click.node]]),
+                    refs,
+                    gesture: {
+                        id: fileRequest.id,
+                        epoch,
+                        href: click.href,
+                        field: click.native ? "chooser" : "label",
+                    },
+                };
+                publishedFileRequest = fileRequest.id;
+                return { observationId, url: doc.url, title: "", refs, fileRequest };
+            },
+            workspace: async (operation: AbortSignal, input?: unknown) => {
+                operation.throwIfAborted();
+                let warning: Awaited<ReturnType<typeof command>> = null;
+                if (input !== undefined) {
+                    observation = undefined;
+                    warning = await command(input, true);
+                }
+                try {
+                    await synchronizeTabs();
+                    return { ...(await tabInventory()), ...(warning ? { warning } : {}) };
+                } catch {
+                    operation.throwIfAborted();
+                    // Chromium can replace a target between enumeration and inspection.
+                    return null;
+                }
+            },
             clipboard: (input: unknown, operation: AbortSignal) => {
                 observation = undefined;
                 return browserDesktopClipboard(input, operation);
@@ -303,23 +335,7 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
             tabs: async (input: unknown, operation: AbortSignal, operator = false) => {
                 operation.throwIfAborted();
                 observation = undefined;
-                await synchronizeTabs();
-                const cmd = v.parse(miraBrowserTabCommandSchema, input);
-                if (cmd.action === "open") await add(cmd.url);
-                else if (cmd.action === "select" || cmd.action === "close") {
-                    const tab = tabs.get(cmd.tabId);
-                    if (!tab) throw new Error("Unknown browser tab.");
-                    if (cmd.action === "select") {
-                        selected = cmd.tabId;
-                        await tab.page.bringToFront();
-                    } else {
-                        if (tabs.size === 1)
-                            throw new Error("Keep one browser tab open.");
-                        tabs.delete(cmd.tabId);
-                        await tab.page.close();
-                        if (selected === cmd.tabId) selected = tabs.keys().next().value!;
-                    }
-                }
+                await command(input, operator);
                 return observe(operation, operator);
             },
             navigate: async (value: unknown, operation: AbortSignal) => {
@@ -346,9 +362,10 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
                 if (
                     grant.mode !== "control" ||
                     !seen ||
+                    seen.gesture ||
                     seen.id !== action.observationId ||
                     performance.now() >= seen.until ||
-                    selected !== seen.tabId ||
+                    current().id !== seen.tabId ||
                     (doc?.loader ?? null) !== seen.loader ||
                     (doc?.url ?? null) !== seen.url
                 )
@@ -391,13 +408,14 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
                     target.doc.id,
                     target.node,
                     staged,
-                    new URL(target.doc.url).origin
+                    new URL(target.doc.url).origin,
+                    target.gesture?.field
                 );
                 operation.throwIfAborted();
                 return { effect: "unverified" as const };
             },
             download: async (input: unknown, operation: AbortSignal) => {
-                const { cdp, doc, node } = await transferTarget(
+                const { cdp, doc, node, gesture } = await transferTarget(
                     input,
                     "download",
                     operation
@@ -407,7 +425,8 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
                     doc.id,
                     node,
                     new URL(doc.url).origin,
-                    operation
+                    operation,
+                    gesture?.href
                 );
             },
         };

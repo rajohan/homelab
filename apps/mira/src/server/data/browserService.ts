@@ -14,6 +14,7 @@ import {
 import {
     claimBrowserHumanCommand,
     finishBrowserHumanCommand,
+    publishBrowserFileGesture,
 } from "./browserConsoleHost";
 import { saveBrowserDownload } from "./browserDownloads";
 import {
@@ -87,6 +88,17 @@ export async function runMiraBrowserHost(
                     owner: candidate.owner,
                     signal: current.signal,
                     clipboard: current.clipboard,
+                    workspace: current.workspace,
+                    sampleFiles: async (epoch, previousEpoch, signal) => {
+                        const event = await current.fileGesture(epoch, signal);
+                        if (event)
+                            await publishBrowserFileGesture(
+                                client,
+                                current.claim,
+                                previousEpoch,
+                                event
+                            );
+                    },
                 });
             const running = AbortSignal.any([lifetime, current.signal]);
             while (!running.aborted) {
@@ -107,7 +119,7 @@ export async function runMiraBrowserHost(
                 }
                 // Claiming holds modelBusy, so control cannot change between this
                 // final display shutdown and dispatch of a model command.
-                if (await display?.synchronize(candidate.id))
+                if (await display?.synchronize(candidate.id, true))
                     await current.observe(running);
                 const remaining = command.validForMs - (performance.now() - started);
                 if (remaining <= 0)
@@ -117,9 +129,18 @@ export async function runMiraBrowserHost(
                     AbortSignal.timeout(Math.max(1, Math.floor(remaining))),
                 ]);
                 let result: unknown;
+                let workspaceResult: Awaited<ReturnType<typeof current.workspace>> = null;
+                if (command.operation.method !== "observe")
+                    display?.invalidateWorkspace(candidate.id);
                 if (command.operation.method === "observe")
                     result = await current.observe(operation, Boolean(humanCommand));
-                else if (command.operation.method === "tabs")
+                else if (humanCommand?.operation.method === "tabs") {
+                    workspaceResult = await current.workspace(
+                        operation,
+                        humanCommand.operation.input
+                    );
+                    result = workspaceResult;
+                } else if (command.operation.method === "tabs")
                     result = await current.tabs(
                         command.operation.input,
                         operation,
@@ -190,6 +211,12 @@ export async function runMiraBrowserHost(
                           ))
                 )
                     throw new Error("Browser result lost its authority.");
+                if (humanCommand && workspaceResult)
+                    display?.workspaceCompleted(
+                        candidate.id,
+                        humanCommand.epoch,
+                        workspaceResult
+                    );
             }
         } finally {
             // Revocation and cleanup are independent: a failed database write must

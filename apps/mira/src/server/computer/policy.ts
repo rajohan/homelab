@@ -23,7 +23,14 @@ const desktopGrantSchema = v.strictObject({
 });
 export type ComputerGrant =
     | ComputerWindowGrant
-    | v.InferOutput<typeof desktopGrantSchema>;
+    | v.InferOutput<typeof desktopGrantSchema>
+    | v.InferOutput<typeof displaysGrantSchema>;
+const displaysGrantSchema = v.strictObject({
+    scope: v.literal("displays"),
+    layout: v.pipe(v.string(), v.regex(/^[0-9a-f]{64}$/)),
+    delivery: v.literal("foreground"),
+    mode: v.optional(v.picklist(["view", "control"])),
+});
 
 /**
  * Validate the immutable target selected by the local consent host.
@@ -31,8 +38,13 @@ export type ComputerGrant =
  * @returns A window or desktop grant without silently widening its scope.
  */
 export function computerGrant(input: unknown): ComputerGrant {
-    const parsed = v.parse(v.union([grantSchema, desktopGrantSchema]), input);
-    return parsed.scope === "desktop" ? parsed : computerWindowGrant(parsed);
+    const parsed = v.parse(
+        v.union([grantSchema, desktopGrantSchema, displaysGrantSchema]),
+        input
+    );
+    return !parsed.scope || parsed.scope === "window"
+        ? computerWindowGrant(parsed)
+        : parsed;
 }
 
 /**
@@ -83,6 +95,8 @@ export function computerWindowManifest(input: unknown) {
  */
 export function computerManifest(input: unknown) {
     const grant = computerGrant(input);
+    if (grant.scope === "displays")
+        throw new Error("All displays require the Windows display worker.");
     if (grant.scope !== "desktop") return computerWindowManifest(grant);
     return {
         version: 3,

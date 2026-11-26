@@ -1,4 +1,5 @@
 import {
+    browserAddressRejected,
     type MiraBrowserConsole,
     miraBrowserConsoleSchema,
     miraBrowserHumanCommandSchema,
@@ -89,6 +90,15 @@ export async function readMiraBrowserConsole(
         if (frame?.url) browserUrl(frame.url, access.policy!.origins);
         return {
             epoch: console.epoch,
+            fileRequest:
+                console.controller === "human" &&
+                console.state === "idle" &&
+                console.fresh &&
+                frame?.fileRequest &&
+                Date.parse(frame.fileRequest.expiresAt) > Date.now()
+                    ? frame.fileRequest
+                    : null,
+            tabs: null,
             controller: console.controller,
             busy: console.state !== "idle" || (await modelBusy(query, id)),
             preview: frame?.url
@@ -157,7 +167,13 @@ export async function requireBrowserObservation(
     const [row] = await query<
         { frame: Frame }[]
     >`SELECT frame FROM mira_browser_consoles WHERE access_id=${id} AND frame IS NOT NULL AND frame_at>clock_timestamp()-(CASE WHEN controller='human' THEN interval '60 seconds' ELSE interval '10 seconds' END)`;
-    if (!row || row.frame.observationId !== operation.input.observationId)
+    if (
+        !row ||
+        row.frame.observationId !== operation.input.observationId ||
+        (row.frame.fileRequest &&
+            (Date.parse(row.frame.fileRequest.expiresAt) <= Date.now() ||
+                operation.method !== row.frame.fileRequest.kind))
+    )
         throw new MiraFailure(
             "PRECONDITION_FAILED",
             "Request a fresh browser observation."
@@ -207,6 +223,17 @@ export async function enqueueMiraBrowserHumanCommand(
             throw unavailable();
         if (operation.method !== "observe" && access.mode !== "control")
             throw unavailable();
+        if (
+            operation.method === "tabs" &&
+            "url" in operation.input &&
+            operation.input.url
+        ) {
+            try {
+                browserUrl(operation.input.url, access.policy!.origins);
+            } catch {
+                throw new MiraFailure("BAD_REQUEST", browserAddressRejected);
+            }
+        }
         if (operation.method === "download")
             await requireBrowserDownload(query, context.owner, request.id, operation);
         if (operation.method === "upload")

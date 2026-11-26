@@ -10,6 +10,7 @@ import {
     type MiraComputerAccessSummary,
     type MiraComputerConsentRequest,
     miraComputerEnrollmentSchema,
+    miraComputerScopeSchema,
 } from "@homelab/contracts/miraComputers";
 import { miraComputerUpdateReceiptSchema } from "@homelab/contracts/miraComputerUpdates";
 import * as v from "valibot";
@@ -43,7 +44,7 @@ const accessSummary = v.strictObject({
     state: v.picklist(["pending", "active"]),
     expiresAt: v.pipe(v.string(), v.isoTimestamp()),
     keepOpen: v.exactOptional(v.boolean()),
-    scope: v.exactOptional(v.picklist(["window", "desktop"])),
+    scope: v.exactOptional(miraComputerScopeSchema),
 });
 export const computerConsentRequestSchema = v.strictObject({
     ...accessSummary.entries,

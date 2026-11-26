@@ -1,6 +1,7 @@
 import {
     miraBrowserAccessListSchema,
     miraBrowserAccessStopSchema,
+    miraBrowserAttachSchema,
     miraBrowserConsoleSchema,
     miraBrowserHumanCommandSchema,
     miraBrowserProfileDeleteSchema,
@@ -15,6 +16,7 @@ import {
     readMiraBrowserConsole,
     transferMiraBrowserControl,
 } from "@homelab/mira/data/browserConsole";
+import { attachMiraBrowserFile } from "@homelab/mira/data/browserFileAttachments";
 import {
     deleteMiraBrowserProfile,
     listMiraBrowserProfiles,
@@ -29,6 +31,7 @@ import {
 } from "../operations/authorization";
 import type { OperationsContext } from "../operations/context";
 import { OperationFailure } from "../operations/errors";
+import { browserWorkspace } from "./browserWorkspace";
 
 function execute<T>(
     context: OperationsContext,
@@ -71,10 +74,22 @@ export const miraBrowserRouter = trpc.router({
         .query(({ ctx, input }) =>
             execute(ctx, false, (mira) => listMiraBrowserUploads(mira, input))
         ),
+    attach: trpc.procedure
+        .input(miraBrowserAttachSchema)
+        .mutation(({ ctx, input }) =>
+            execute(ctx, true, (mira) => attachMiraBrowserFile(mira, input))
+        ),
     console: trpc.procedure
         .input(miraBrowserConsoleSchema)
         .query(({ ctx, input }) =>
-            execute(ctx, false, (mira) => readMiraBrowserConsole(mira, input))
+            execute(ctx, false, async (mira) =>
+                browserWorkspace(
+                    mira,
+                    input.id,
+                    await readMiraBrowserConsole(mira, input),
+                    ctx.operations?.miraFilesDirectory
+                )
+            )
         ),
     transfer: trpc.procedure
         .input(miraBrowserTransferSchema)

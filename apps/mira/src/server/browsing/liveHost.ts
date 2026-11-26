@@ -2,6 +2,7 @@ import { chmod, lstat, mkdir, unlink } from "node:fs/promises";
 import { connect, createServer, type Socket } from "node:net";
 import path from "node:path";
 
+import type { MiraBrowserTabs } from "@homelab/contracts/miraBrowser";
 import {
     type browserClipboardCommandSchema,
     browserClipboardResultSchema,
@@ -24,6 +25,20 @@ type Entry = {
     processId: string;
     containerId: string;
     signal: AbortSignal;
+    workspace: (signal: AbortSignal) => Promise<MiraBrowserTabs | null>;
+    sampleFiles: (
+        epoch: string | null,
+        previousEpoch: string,
+        signal: AbortSignal
+    ) => Promise<void>;
+    fileControl?: { epoch: string; sampled: number };
+    strip?: {
+        epoch: string;
+        requestedAt: number;
+        readAt: number;
+        tabs: MiraBrowserTabs | null;
+        warning?: { text: NonNullable<MiraBrowserTabs["warning"]>; until: number };
+    };
     clipboard: (
         input: unknown,
         signal: AbortSignal
@@ -34,6 +49,8 @@ type Viewer = {
     control: boolean;
     socket: Socket;
     abort: AbortController;
+    connected: boolean;
+    filesReady: ReturnType<typeof Promise.withResolvers<void>>;
     clipboard?: Promise<void>;
     stop: () => Promise<void>;
 };
@@ -127,9 +144,12 @@ export async function serveBrowserLive(options: {
             control: row.control,
             socket,
             abort,
+            connected: false,
+            filesReady: Promise.withResolvers<void>(),
             stop: () =>
                 (stopping ??= Promise.resolve().then(async () => {
                     abort.abort();
+                    viewer.filesReady.resolve();
                     socket.destroy();
                     try {
                         display ??= await opening;
@@ -161,6 +181,12 @@ export async function serveBrowserLive(options: {
             const current = await authority(identity);
             if (current.row.control !== row.control)
                 throw new Error("Browser control changed.");
+            viewer.connected = true;
+            if (row.control) {
+                // Arm the page before forwarding the first RFB click to Chromium.
+                await viewer.filesReady.promise;
+                signal.throwIfAborted();
+            }
             display.stream.on("error", stop);
             display.stream.on("close", stop);
             socket.pipe(display.stream).pipe(socket);
@@ -200,9 +226,31 @@ export async function serveBrowserLive(options: {
                     owner: request.owner,
                     accessId: request.accessId,
                     epoch: request.epoch,
-                    ...(request.inputOnly ? { inputOnly: true as const } : {}),
+                    ...("inputOnly" in request && request.inputOnly
+                        ? { inputOnly: true as const }
+                        : {}),
                 };
-                if ("clipboard" in request) {
+                if ("workspace" in request) {
+                    void authority(identity)
+                        .then(({ entry }) => {
+                            if (socket.destroyed) return;
+                            const now = performance.now();
+                            if (entry.strip?.epoch !== request.epoch)
+                                entry.strip = {
+                                    epoch: request.epoch,
+                                    requestedAt: now,
+                                    readAt: -Infinity,
+                                    tabs: null,
+                                };
+                            entry.strip.requestedAt = now;
+                            const { readAt, tabs, warning } = entry.strip;
+                            let current = now - readAt < 3000 ? tabs : null;
+                            if (current && warning && now < warning.until)
+                                current = { ...current, warning: warning.text };
+                            return socket.end(JSON.stringify(current) + "\n");
+                        })
+                        .catch(() => socket.destroy());
+                } else if ("clipboard" in request) {
                     const viewer = controls.get(identity.accessId);
                     if (
                         !viewer?.control ||
@@ -263,7 +311,7 @@ export async function serveBrowserLive(options: {
         register: (accessId: string, entry: Entry) => {
             entries.set(accessId, entry);
         },
-        synchronize: async (accessId: string) => {
+        synchronize: async (accessId: string, takingCommand = false) => {
             for (const viewers of [views, controls]) {
                 const viewer = viewers.get(accessId);
                 if (!viewer) continue;
@@ -325,7 +373,58 @@ export async function serveBrowserLive(options: {
                 await work;
                 if (currentViewer) delete currentViewer.clipboard;
             }
+            // Sample only while the signed-in console is polling, on the host's serial
+            // command loop. Reading tab metadata never captures pixels or consumes refs.
+            const entry = entries.get(accessId);
+            const strip = entry?.strip;
+            const now = performance.now();
+            const human = controls.get(accessId);
+            const epoch =
+                human?.control && human.connected && !human.socket.destroyed
+                    ? human.identity.epoch
+                    : null;
+            if (entry && !epoch && entry.fileControl) {
+                await entry.sampleFiles(null, entry.fileControl.epoch, entry.signal);
+                delete entry.fileControl;
+            } else if (
+                entry &&
+                epoch &&
+                !takingCommand &&
+                (entry.fileControl?.epoch !== epoch ||
+                    now - entry.fileControl.sampled > 300)
+            ) {
+                await entry.sampleFiles(epoch, epoch, entry.signal);
+                entry.fileControl = { epoch, sampled: performance.now() };
+                human?.filesReady.resolve();
+            }
+            if (entry && strip) {
+                if (now - strip.requestedAt >= 3000) delete entry.strip;
+                else if (now - strip.readAt > 700) {
+                    strip.tabs = await entry.workspace(entry.signal);
+                    strip.readAt = performance.now();
+                }
+            }
             return invalidated.delete(accessId);
+        },
+        invalidateWorkspace: (accessId: string) => {
+            const strip = entries.get(accessId)?.strip;
+            if (strip) {
+                strip.tabs = null;
+                strip.readAt = -Infinity;
+                delete strip.warning;
+            }
+        },
+        workspaceCompleted: (
+            accessId: string,
+            epoch: string,
+            result: MiraBrowserTabs
+        ) => {
+            const strip = entries.get(accessId)?.strip;
+            if (strip?.epoch !== epoch) return;
+            const { warning, ...tabs } = result;
+            strip.tabs = tabs;
+            strip.readAt = performance.now();
+            if (warning) strip.warning = { text: warning, until: strip.readAt + 12_000 };
         },
         unregister: async (accessId: string) => {
             entries.delete(accessId);

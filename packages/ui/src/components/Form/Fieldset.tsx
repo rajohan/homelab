@@ -12,12 +12,14 @@ import { fieldLabelStyles } from "./fieldLabelStyles";
 export function Fieldset({
     legend,
     children,
+    hideLegend = false,
     description,
     error,
     disabled = false,
     className,
 }: {
     readonly legend: ReactNode;
+    readonly hideLegend?: boolean;
     readonly children: ReactNode;
     readonly description?: ReactNode;
     readonly error?: string;
@@ -39,7 +41,9 @@ export function Fieldset({
             aria-invalid={error !== undefined || undefined}
             className={cn("m-0 min-w-0 border-0 p-0", className)}
         >
-            <Legend className={fieldLabelStyles}>{legend}</Legend>
+            <Legend className={hideLegend ? "sr-only" : fieldLabelStyles}>
+                {legend}
+            </Legend>
             <div className="min-w-0 space-y-3">
                 {description && (
                     <p id={descriptionId} className="text-sm leading-6 text-primary-400">

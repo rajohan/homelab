@@ -3,6 +3,7 @@ import { type MiraVoiceName, miraVoiceNames } from "@homelab/contracts/miraVoice
 import * as v from "valibot";
 
 import { api } from "../../api/client";
+import { chatMessageSource } from "./desktopClient";
 
 const responseMetadata = v.object({ speechId: v.optional(v.string()) });
 const turnDetection = v.object({
@@ -638,16 +639,20 @@ export class MiraVoiceConnection {
         if (!next) return;
         this.sending = true;
         try {
-            await api.mira.conversations.send.mutate({
-                conversationId: this.conversationId,
-                requestId: next.id,
-                text: next.text,
-                attachmentIds: [],
-            });
-            this.outbox = this.outbox.filter((item) => item.id !== next.id);
-            this.persist();
-            if (this.value.transcript === next.text) this.update({ transcript: "" });
-            this.changed();
+            const source = await chatMessageSource();
+            if (!this.destroyed && this.outbox[0]?.id === next.id) {
+                await api.mira.conversations.send.mutate({
+                    ...source,
+                    conversationId: this.conversationId,
+                    requestId: next.id,
+                    text: next.text,
+                    attachmentIds: [],
+                });
+                this.outbox = this.outbox.filter((item) => item.id !== next.id);
+                this.persist();
+                if (this.value.transcript === next.text) this.update({ transcript: "" });
+                this.changed();
+            }
         } catch {
             this.update({
                 error: "A voice transcript is waiting to send. Retry or discard it below; retrying cannot duplicate an accepted message.",

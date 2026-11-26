@@ -5,7 +5,11 @@ import { Monitor, Square } from "lucide-react";
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { accessStatusTone } from "./statusTone";
-import { computerAccessLabel, useComputerAccess } from "./useComputerAccess";
+import {
+    computerAccessLabel,
+    computerScopeLabel,
+    useComputerAccess,
+} from "./useComputerAccess";
 
 /**
  * Keep pending/active computer authority and its direct stop visible outside the dialog.
@@ -28,6 +32,14 @@ export function ComputerAccessPanel({
     const stoppable = access && !["stopped", "expired"].includes(access.state);
     if (!waiting && !stoppable) return null;
     const fresh = query.fresh;
+    const scope = computerScopeLabel(access?.scope);
+    let description = "";
+    if (access?.state === "pending" && fresh)
+        description = "Approve the request on your PC.";
+    else if (access?.state === "active" && fresh && access.keepOpen)
+        description = "Shared between replies in this chat.";
+    else if (waiting && !stoppable)
+        description = "Mira is waiting for you to share your PC.";
     return (
         <section
             className="@container/computer-access shrink-0 space-y-3 border-t border-primary-700 px-4 py-3"
@@ -35,7 +47,7 @@ export function ComputerAccessPanel({
         >
             <div className="grid gap-3 @min-[36rem]/computer-access:grid-cols-[minmax(0,1fr)_auto] @min-[36rem]/computer-access:items-center">
                 <SectionHeader
-                    title="Computer access"
+                    title={stoppable ? scope : "Computer access"}
                     icon={Monitor}
                     badge={
                         <Badge
@@ -46,16 +58,11 @@ export function ComputerAccessPanel({
                             {computerAccessLabel(access, run, fresh)}
                         </Badge>
                     }
-                    {...(waiting && !access
-                        ? {
-                              description:
-                                  "Choose a computer while Mira waits for your permission.",
-                          }
-                        : {})}
+                    description={description}
                 />
                 <div className="flex flex-col gap-2 @min-[36rem]/computer-access:flex-row">
                     <Button variant="secondary" size="sm" onClick={onManage}>
-                        Manage access
+                        {stoppable ? "Manage access" : "Share computer"}
                     </Button>
                     {stoppable && (
                         <Button

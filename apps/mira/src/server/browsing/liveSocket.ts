@@ -14,6 +14,12 @@ export const browserLiveIdentitySchema = v.strictObject({
 export const browserLiveRequestSchema = v.union([
     browserLiveIdentitySchema,
     v.strictObject({
+        owner: uuid,
+        accessId: uuid,
+        epoch: uuid,
+        workspace: v.literal(true),
+    }),
+    v.strictObject({
         ...browserLiveIdentitySchema.entries,
         clipboard: browserClipboardCommandSchema,
     }),

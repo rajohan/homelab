@@ -305,6 +305,7 @@ export const miraRuns = pgTable(
         requestKey: text("request_key").notNull().unique(),
         requestHash: text("request_hash").notNull(),
         approvalRevokedAt: time("approval_revoked_at"),
+        sourceComputer: text("source_computer"),
         reviewedRunId: uuid("reviewed_run_id").references((): AnyPgColumn => miraRuns.id),
         followupResolution: jsonb("followup_resolution").$type<MiraRunResolution>(),
         taskChangeId: uuid("task_change_id"),
@@ -369,6 +370,7 @@ export const miraRuns = pgTable(
 export const miraChatInputs = pgTable(
     "mira_chat_inputs",
     {
+        sourceComputer: text("source_computer"),
         id: uuid()
             .primaryKey()
             .references(() => miraMessages.id),
@@ -1055,7 +1057,10 @@ export const miraComputerAccess = pgTable(
             .on(t.runId)
             .where(sql`${t.state} IN ('pending','active')`),
         check("mira_computer_access_mode", sql`${t.mode} IN ('view','control')`),
-        check("mira_computer_access_scope", sql`${t.scope} IN ('window','desktop')`),
+        check(
+            "mira_computer_access_scope",
+            sql`${t.scope} IN ('window','desktop','displays')`
+        ),
         check(
             "mira_computer_access_state",
             sql`(${t.state}='pending' AND ${t.targetId} IS NULL AND ${t.acceptedAt} IS NULL AND ${t.stoppedAt} IS NULL) OR (${t.state}='active' AND ${t.targetId} IS NOT NULL AND ${t.acceptedAt} IS NOT NULL AND ${t.stoppedAt} IS NULL) OR (${t.state}='stopped' AND ${t.stoppedAt} IS NOT NULL)`

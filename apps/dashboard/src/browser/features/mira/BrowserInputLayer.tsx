@@ -1,8 +1,9 @@
 import { Button } from "@homelab/ui";
 import RFB from "@novnc/novnc";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
-import { BrowserClipboard } from "./BrowserClipboard";
+import { BrowserClipboard, type BrowserClipboardControls } from "./BrowserClipboard";
 
 /** Attach native keyboard, touch and pointer input to the current operator control period.
  * @returns An input surface aligned to the framebuffer and the current clipboard controls.
@@ -10,7 +11,11 @@ import { BrowserClipboard } from "./BrowserClipboard";
 export function BrowserInputLayer({
     accessId,
     epoch,
+    overlay,
+    onControlsChange,
 }: {
+    readonly overlay: HTMLDivElement | null;
+    readonly onControlsChange: (controls: BrowserClipboardControls | null) => void;
     readonly accessId: string;
     readonly epoch: string;
 }) {
@@ -29,6 +34,8 @@ export function BrowserInputLayer({
         url.searchParams.set("input", "1");
         const input = new RFB(element, url.href);
         input.scaleViewport = true;
+        const canvas = element.querySelector("canvas");
+        if (canvas) canvas.tabIndex = 0;
         const connected = () => setState("connected");
         const disconnected = () => setState("disconnected");
         const credentials = () => input.disconnect();
@@ -49,7 +56,7 @@ export function BrowserInputLayer({
     }, [accessId, epoch, attempt]);
     return (
         <>
-            <div className="relative col-start-1 row-start-1 overflow-hidden rounded-lg border border-transparent">
+            <div className="relative col-start-1 row-start-1 overflow-hidden">
                 <div
                     role="application"
                     aria-label="Control remote Chromium"
@@ -57,27 +64,37 @@ export function BrowserInputLayer({
                     className="absolute inset-0 opacity-0"
                 />
             </div>
-            <div className="col-start-1 row-start-2">
-                {state === "connecting" && <output>Connecting controls…</output>}
-                {state === "disconnected" && (
-                    <Button
-                        variant="secondary"
-                        onClick={() => {
-                            setState("connecting");
-                            setAttempt((value) => value + 1);
-                        }}
-                    >
-                        Reconnect controls
-                    </Button>
+            {overlay &&
+                createPortal(
+                    <>
+                        {state === "connecting" && (
+                            <output className="absolute inset-x-0 top-3 mx-auto w-fit rounded-md bg-surface-panel px-3 py-1 text-xs text-primary-200 shadow">
+                                Connecting controls…
+                            </output>
+                        )}
+                        {state === "disconnected" && (
+                            <Button
+                                variant="secondary"
+                                className="pointer-events-auto absolute inset-x-0 top-3 mx-auto w-fit shadow"
+                                onClick={() => {
+                                    setState("connecting");
+                                    setAttempt((value) => value + 1);
+                                }}
+                            >
+                                Reconnect controls
+                            </Button>
+                        )}
+                        {state === "connected" && (
+                            <BrowserClipboard
+                                accessId={accessId}
+                                epoch={epoch}
+                                target={target}
+                                onControlsChange={onControlsChange}
+                            />
+                        )}
+                    </>,
+                    overlay
                 )}
-                <BrowserClipboard
-                    key={state}
-                    accessId={accessId}
-                    epoch={epoch}
-                    target={target}
-                    enabled={state === "connected"}
-                />
-            </div>
         </>
     );
 }

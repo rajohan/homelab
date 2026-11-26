@@ -5,6 +5,7 @@ import { useState } from "react";
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import type { ChatDisplaySettings } from "./chatDisplay";
+import { CodeTargetSettings } from "./CodeTargetSettings";
 import { ModelSettings } from "./ModelSettings";
 import { RecallSettings } from "./RecallSettings";
 import type { MiraVoiceConnection } from "./voiceConnection";
@@ -25,6 +26,8 @@ export function ChatSettings({
     onClose,
     display,
     onDisplayChange,
+    modelOnly = false,
+    activeRun = false,
 }: {
     readonly voice: MiraVoiceConnection;
     readonly id: string;
@@ -36,6 +39,8 @@ export function ChatSettings({
     readonly onClose: () => void;
     readonly display: ChatDisplaySettings;
     readonly onDisplayChange: (display: ChatDisplaySettings) => void;
+    readonly modelOnly?: boolean;
+    readonly activeRun?: boolean;
 }) {
     const [original] = useState({ settings, version });
     const [draft, setDraft] = useState(settings);
@@ -43,9 +48,19 @@ export function ChatSettings({
         draft.model !== original.settings.model ||
         draft.effort !== original.settings.effort ||
         draft.serviceTier !== original.settings.serviceTier;
-    const selected =
-        models.find((model) => model.model === (draft.model ?? defaultModel)) ??
-        (draft.model ? undefined : models.find((model) => model.isDefault));
+    const selectedId =
+        draft.model ?? defaultModel ?? models.find((model) => model.isDefault)?.model;
+    const selected = models.find((model) => model.model === selectedId);
+    const supported =
+        selected &&
+        (!draft.effort ||
+            selected.supportedReasoningEfforts.some(
+                (entry) => entry.reasoningEffort === draft.effort
+            )) &&
+        (!draft.serviceTier ||
+            selected.serviceTiers.some((entry) => entry.id === draft.serviceTier));
+    const canSave =
+        (!modelOnly || modelChanged) && (!modelChanged || (fresh && supported));
     const save = useOperation(() =>
         api.mira.conversations.settings.mutate({
             id,
@@ -54,25 +69,32 @@ export function ChatSettings({
         })
     );
     return (
-        <Modal title="Chat settings" onClose={onClose} dismissible={!save.isPending}>
+        <Modal
+            title={modelOnly ? "Model settings" : "Chat settings"}
+            onClose={onClose}
+            dismissible={!save.isPending}
+        >
             <form
-                className="space-y-4"
+                className="grid grid-cols-1 gap-4"
                 onSubmit={(event) => {
                     event.preventDefault();
+                    if (!canSave || save.isPending) return;
                     void save
                         .mutateAsync(undefined)
                         .then(onClose)
                         .catch(() => {});
                 }}
             >
-                <p className="text-sm text-primary-300">
-                    Model, thinking and code target choices apply to the next run. Display
-                    changes apply immediately.
-                </p>
+                {modelOnly && activeRun && (
+                    <p className="text-sm text-primary-300">
+                        Changes apply to the next run. The current run keeps its settings.
+                    </p>
+                )}
                 {!fresh && (
                     <p className="text-sm text-primary-300">
-                        Reconnect Mira to change model choices. Other settings remain
-                        available.
+                        {modelOnly
+                            ? "Reconnect Mira to change model choices."
+                            : "Reconnect Mira to change model choices. Other settings remain available."}
                     </p>
                 )}
                 <ModelSettings
@@ -83,36 +105,40 @@ export function ChatSettings({
                     fresh={fresh}
                     disabled={save.isPending}
                 />
-                <RecallSettings
-                    settings={draft}
-                    onChange={setDraft}
-                    disabled={save.isPending}
-                />
-                <VoiceSettings voice={voice} />
-                <div className="space-y-3 border-t border-primary-700 pt-4">
-                    <Switch
-                        label="Show work notes"
-                        checked={display.showThinking}
-                        onChange={(showThinking) =>
-                            onDisplayChange({ ...display, showThinking })
-                        }
-                    />
-                    <Switch
-                        label="Show tools"
-                        checked={display.showTools}
-                        onChange={(showTools) =>
-                            onDisplayChange({ ...display, showTools })
-                        }
-                    />
-                    <Switch
-                        label="Expand tool details"
-                        checked={display.expandTools}
-                        disabled={!display.showTools}
-                        onChange={(expandTools) =>
-                            onDisplayChange({ ...display, expandTools })
-                        }
-                    />
-                </div>
+                {!modelOnly && (
+                    <>
+                        <VoiceSettings voice={voice} />
+                        <CodeTargetSettings
+                            value={draft.executionTarget}
+                            disabled={save.isPending}
+                            onChange={(executionTarget) =>
+                                setDraft({ ...draft, executionTarget })
+                            }
+                        />
+                        <RecallSettings
+                            hideLegend
+                            settings={draft}
+                            onChange={setDraft}
+                            disabled={save.isPending}
+                        />
+                        <div className="space-y-3">
+                            <Switch
+                                label="Show work notes"
+                                checked={display.showThinking}
+                                onChange={(showThinking) =>
+                                    onDisplayChange({ ...display, showThinking })
+                                }
+                            />
+                            <Switch
+                                label="Show tools"
+                                checked={display.showTools}
+                                onChange={(showTools) =>
+                                    onDisplayChange({ ...display, showTools })
+                                }
+                            />
+                        </div>
+                    </>
+                )}
                 {save.error && <ErrorNotice error={save.error} />}
                 <ActionGroup>
                     <Button
@@ -122,11 +148,7 @@ export function ChatSettings({
                     >
                         Cancel
                     </Button>
-                    <Button
-                        type="submit"
-                        busy={save.isPending}
-                        disabled={modelChanged && (!fresh || !selected)}
-                    >
+                    <Button type="submit" busy={save.isPending} disabled={!canSave}>
                         Save settings
                     </Button>
                 </ActionGroup>

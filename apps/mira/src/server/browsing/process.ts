@@ -1,4 +1,7 @@
-import { miraBrowserTabCommandSchema } from "@homelab/contracts/miraBrowser";
+import {
+    miraBrowserTabCommandSchema,
+    miraBrowserWorkspaceCommandSchema,
+} from "@homelab/contracts/miraBrowser";
 import {
     browserClipboardCommandSchema,
     browserClipboardResultSchema,
@@ -22,8 +25,10 @@ import { browserUploadParts } from "./uploadTransfer";
 import {
     browserActionSchema,
     browserDriverVersion,
+    browserGestureResult,
     browserWorkerFrame,
     browserWorkerGrant,
+    browserWorkerTabs,
 } from "./wire";
 
 /**
@@ -63,6 +68,7 @@ export async function openBrowserWorker(
               time: number;
               maxAge: number;
               downloads: Set<string>;
+              request?: string;
           }
         | undefined;
     const close = () => {
@@ -90,11 +96,15 @@ export async function openBrowserWorker(
             busy = false;
         }
     };
-    await run(owner, async () =>
+    const initialized = await run(owner, async () =>
         v.parse(
             v.strictObject({
                 version: v.literal(1),
-                driver: v.literal(browserDriverVersion),
+                driver: v.picklist([
+                    "chromium-live-1",
+                    "chromium-live-2",
+                    browserDriverVersion,
+                ]),
             }),
             await connection.request(
                 { method: "initialize", params: grant },
@@ -133,6 +143,46 @@ export async function openBrowserWorker(
     };
     return {
         signal: connection.signal,
+        fileGesture: (epoch: string | null, operation: AbortSignal) =>
+            run(operation, async () => {
+                if (
+                    initialized.driver !== browserDriverVersion ||
+                    grant.mode !== "control" ||
+                    (!grant.uploads && !grant.downloads)
+                )
+                    return null;
+                const result = browserGestureResult(
+                    await connection.request(
+                        { method: "fileGesture", params: { epoch } },
+                        operation
+                    ),
+                    grant
+                );
+                if (result && "cleared" in result) {
+                    if (observed?.request === result.cleared) observed = undefined;
+                } else if (result) {
+                    const { fileRequest } = result;
+                    observed = {
+                        request: fileRequest.id,
+                        id: result.observationId,
+                        time: now(),
+                        maxAge: Math.max(
+                            0,
+                            Math.min(
+                                60_000,
+                                Date.parse(fileRequest.expiresAt) - Date.now()
+                            )
+                        ),
+                        refs: new Map(
+                            result.refs.map((target) => [target.ref, target.actions])
+                        ),
+                        downloads: new Set(
+                            fileRequest.kind === "download" ? [fileRequest.ref] : []
+                        ),
+                    };
+                }
+                return result;
+            }),
         clipboard: (input: unknown, operation: AbortSignal) =>
             run(operation, async () => {
                 if (grant.mode !== "control")
@@ -152,10 +202,39 @@ export async function openBrowserWorker(
                     operator
                 );
             }),
+        workspace: (operation: AbortSignal, input?: unknown) =>
+            run(operation, async () => {
+                // Older images present Chromium's native toolbar and continue normal Mira work.
+                if (initialized.driver === "chromium-live-1") return null;
+                const command = v.parse(
+                    v.optional(miraBrowserWorkspaceCommandSchema),
+                    input
+                );
+                if (command) {
+                    observed = undefined;
+                    if (grant.mode !== "control")
+                        throw new Error("Browser access is view-only.");
+                    if ("url" in command && command.url)
+                        browserUrl(command.url, grant.origins);
+                }
+                const tabs = await connection.request(
+                    { method: "workspace", params: command ? { input: command } : {} },
+                    operation
+                );
+                return tabs === null ? null : browserWorkerTabs(tabs, grant.origins);
+            }),
         tabs: (input: unknown, operation: AbortSignal, operator = false) =>
             run(operation, async () => {
-                const command = v.parse(miraBrowserTabCommandSchema, input);
-                if (command.action === "open") browserUrl(command.url, grant.origins);
+                const command = v.parse(
+                    operator
+                        ? miraBrowserWorkspaceCommandSchema
+                        : miraBrowserTabCommandSchema,
+                    input
+                );
+                if (operator && grant.mode !== "control")
+                    throw new Error("Browser access is view-only.");
+                if ("url" in command && command.url)
+                    browserUrl(command.url, grant.origins);
                 return observe(
                     { method: "tabs", params: { input: command, operator } },
                     operation,
@@ -186,6 +265,7 @@ export async function openBrowserWorker(
                     grant.mode !== "control" ||
                     !previous ||
                     previous.id !== action.observationId ||
+                    previous.request ||
                     now() - previous.time < 0 ||
                     now() - previous.time >= previous.maxAge ||
                     ("ref" in action &&

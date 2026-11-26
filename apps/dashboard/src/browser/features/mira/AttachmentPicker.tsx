@@ -9,20 +9,12 @@ import {
 } from "@homelab/ui";
 import { Paperclip } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
-import * as v from "valibot";
 
 import { useOperation } from "../operations/useOperation";
 import { AttachmentDialog } from "./AttachmentDialog";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { AttachmentRow } from "./AttachmentRow";
-
-const uploaded = v.object({
-    id: v.pipe(v.string(), v.uuid()),
-    name: v.string(),
-    mediaType: v.string(),
-    bytes: v.number(),
-    createdAt: v.string(),
-});
+import { chatAttachmentAccept, uploadChatAttachment } from "./uploadChatAttachment";
 
 /**
  * Upload selected files independently, preserving accepted attachments if another upload fails.
@@ -65,23 +57,7 @@ export function AttachmentPicker({
             setRemaining(files);
             for (const [index, entry] of files.entries()) {
                 const { file, id } = entry;
-                if (file.size === 0 || file.size > 26_214_400)
-                    throw new Error("Each file must be between 1 byte and 25 MiB.");
-                const response = await fetch("/api/mira/files", {
-                    method: "POST",
-                    body: file,
-                    signal,
-                    headers: {
-                        "x-file-id": id,
-                        "x-file-name": encodeURIComponent(file.name),
-                        "content-type": "application/octet-stream",
-                    },
-                });
-                if (!response.ok)
-                    throw new Error(
-                        "The file could not be uploaded. Use PNG, JPEG, WebP, PDF or UTF-8 text and check your connection."
-                    );
-                accepted.push(v.parse(uploaded, await response.json()));
+                accepted.push(await uploadChatAttachment(file, id, signal));
                 onChange([...accepted]);
                 setRemaining(files.slice(index + 1));
             }
@@ -168,7 +144,7 @@ export function AttachmentPicker({
                 ref={input}
                 type="file"
                 multiple
-                accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv,application/json,.txt,.json,.csv,.md,.yaml,.yml,.ts,.tsx,.js,.py,.sh,.log"
+                accept={chatAttachmentAccept}
                 className="hidden"
                 aria-label="Choose local attachments"
                 onChange={(event) => {

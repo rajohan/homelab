@@ -3,11 +3,14 @@ import { cn } from "../../lib/classNames";
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md" | "lg" | "field";
 
+/** Shared hover colours for ghost buttons and button-like surfaces. */
+export const ghostButtonHover = "hover:bg-primary-700 hover:text-primary-50";
+
 const variants: Record<ButtonVariant, string> = {
     primary: "bg-accent-700 text-white hover:bg-accent-800 active:bg-accent-900",
     secondary:
         "bg-primary-700 text-primary-50 hover:bg-primary-600 active:bg-primary-800",
-    ghost: "bg-transparent text-primary-300 hover:bg-primary-700 hover:text-primary-50 active:bg-primary-600",
+    ghost: `bg-transparent text-primary-300 ${ghostButtonHover} active:bg-primary-600`,
     danger: "bg-red-700 text-white hover:bg-red-600 active:bg-red-800",
 };
 const sizes: Record<ButtonSize, string> = {

@@ -18,7 +18,7 @@ For development on Main, optionally set `HOMELAB_MIRA_BROWSER_DEV_HOST` to the g
 
 ## Interactive Chromium
 
-**View browser** opens a live Chromium window inside Chat. **Take control** enables direct mouse, keyboard and scrolling. Chromium supplies its own address bar, back/forward navigation, menus and tabs. **Return to Mira** hands control back; closing the viewer alone does not do so. The old screenshot refresh, element picker and text-entry forms are removed. The viewer keeps its connecting state until the first framebuffer arrives and offers explicit reconnection after a disconnect; input is never replayed.
+The **Browser** row opens live Chromium beside the conversation on wide screens. On smaller screens the browser fills the chat workspace. Closing the pane returns to the same draft. **Take control** enables the shared address bar, tab strip, navigation controls, keyboard and pointer. **Return to Mira** hands the same browser back to Mira. The read-only viewer stays connected across controller changes. The browser menu (⋯) shares the navigation bar with the address and history controls. Use **Zoom in**, **Zoom out** or **Fit to pane** there to adjust the local view.
 
 The shared React viewer uses the root-pinned noVNC client. It connects to the dashboard's same-origin WebSocket through the existing signed-in identity. The dashboard rechecks central identity throughout the connection and never receives the Docker socket. The browser host accepts display routing over a mode-0600 Unix socket in the existing shared attachment directory, checks owner, process, run lease and controller generation, and attaches a fixed x11vnc process to the existing Chromium display. A small Python standard-library relay gives inetd the duplex socket it requires; there is no VNC TCP port, public CDP endpoint, new service, credential or environment variable.
 
@@ -28,7 +28,11 @@ Websites and development are the primary use. The viewport carries video frames 
 
 ## Browser tabs
 
-The operator uses Chromium's native tab bar. Mira uses `mira_browser_tabs` with the IDs from its latest observation. The worker reconciles tabs opened, closed or selected in Chromium before observing. Model observations contain at most eight web tabs including the selected one, and model tab creation stops at eight. Native new-tab pages are not model targets; open an HTTP(S) page before returning control. Saved profiles retain site data, not the previous tab list.
+The workspace tab strip reflects actual Chromium pages, including tabs opened or selected within a website. Sessions with the workspace driver display the page in Chromium kiosk mode. Older browser images retain their native toolbar. The operator can open a blank tab, switch or close tabs, enter an approved URL, reload or follow the selected tab's own history. Mira continues using its existing `mira_browser_tabs` tool with the same stable IDs. The last tab stays open.
+
+Both controllers can create up to eight tabs. If Chromium has additional native pages, the tab inventory includes the selected page and up to seven others. Saved profiles retain site data between sessions. Each new browser session starts with its approved initial page.
+
+Tab metadata is sampled on demand while the owner views the workspace. The host sends it through the authenticated private display socket and keeps the latest sample in memory for the current process and controller generation. A passive read does not capture pixels or replace observation references. Tab actions use the human command queue with the existing owner, epoch, lease and control checks. Navigation validates the destination against the grant, including the exact Chromium history entry selected for back or forward. Tabs outside the approved website scope expose neither their URL nor title.
 
 **Deployment is explicit and independent of the account switch.** Configured sessions use the existing isolated Docker slots and verified Squid/nft proxies. Provision and verify the live host before enabling the account switch. A website scope is not a network firewall.
 
@@ -71,7 +75,7 @@ The origin ceiling limits observation and input, not subresource requests or pag
 
 ## Confirmed attachment uploads
 
-Browser uploads are private, operator-only operations for a trusted host that has already authorized exact attachment bytes. They require Control, an unused observed main-document file-input ref, and a verified filename, size and SHA-256 digest. In the unified browser, each confirmation binds the transfer to the observed page origin; a separate one-site session is unnecessary. The signed-in operator takes control in Chat, selects an existing attachment from this conversation and a freshly observed file input, then confirms its name, size and exact destination origin. View-only sessions cannot upload. The selected page and file input are rechecked after staging, including the form destination origin. Confirmation is tied to the current controller generation and observation, immutable file ID and SHA-256 digest. Admission and claim recheck ownership, conversation membership and all metadata. The model input schema still rejects uploads and never selects file paths or confirms disclosure.
+Browser uploads are private, operator-only operations for a trusted host that has already authorized exact attachment bytes. They require Control, an unused observed main-document file-input ref, and a verified filename, size and SHA-256 digest. In the unified browser, each confirmation binds the transfer to the observed page origin; a separate one-site session is unnecessary. In Chat, select **Take control**, click a file field on the website, then choose **This device** or **Chat attachments**. For manual selection, open **⋯ → Upload file…** and select a current file field. Review the destination and filename, then choose **Send to website**. A local file is added to the current conversation after confirmation. View-only sessions cannot upload. The selected page and file input are rechecked after staging, including the form destination origin. Confirmation is tied to the current controller generation and observation, immutable file ID and SHA-256 digest. Admission and claim recheck ownership, conversation membership and all metadata. The model input schema still rejects uploads and never selects file paths or confirms disclosure.
 
 The browser host alone receives the shared attachment volume with read/write access (`HOMELAB_MIRA_FILES_DIR`), with a 512 MiB memory ceiling for two bounded transfers. Chromium never mounts this store. The host reopens and verifies the selected file, copies it into contiguous 24 KiB binary chunks and sends only bounded private messages. The worker rejects gaps, duplicate offsets, invalid encoding, interleaved commands, incomplete files and digest changes before native assignment. A transfer consumes the existing 25-second operator deadline and observation lifetime; interruption permanently retires the session without replay. Database commands contain only approved metadata, never bytes, and are scrubbed on claim/completion. Files in an active conversation remain protected by the existing deletion guard.
 
@@ -87,7 +91,7 @@ Completed downloads are limited to **25 MiB each, 100 MiB and 16 files per sessi
 
 ## Download to Chat
 
-With Control access, the operator takes control, opens **Files → Choose file controls on this page**, selects a visible link and provides a display filename. The confirmation freezes that filename, website and observation. The server rechecks the signed-in human, fresh link, controller generation, grant, process and run lease at admission, claim and import. Downloads use the existing 25-second operator deadline and are never replayed after uncertainty.
+Select **Take control** and click a recognized download link, or select a visible link through **⋯ → Download file…**. Review the website and filename, then choose **Save to chat**. Once the verified attachment is ready, use **Preview** or **Download** to open it or save a copy on your device. The confirmation records the filename, website and observation. The server rechecks the signed-in human, fresh link, controller generation, grant, process and run lease at admission, claim and import. Downloads use the existing 25-second operator deadline and are never replayed after uncertainty.
 
 The trusted host validates the bytes using the same file types, 25 MiB limit and account/global quotas as normal attachments. The user filename never selects a filesystem path. File readiness, linking to the current assistant response (maximum 100 files per run), and console completion commit atomically. Revocation, expiry, cancellation or a deleted conversation cannot publish a ready attachment. Website filenames, URLs and file bytes are absent from the command journal. The host alone can write the shared store; Chromium cannot mount it.
 
@@ -133,7 +137,9 @@ Takeover atomically changes the controller generation under the account lock. Qu
 
 Ordinary human interaction uses the private live stream. It is not recorded in Chat, tool receipts, audit content or a React Query mutation cache. Neither stream reconnection nor a control change replays input. Password values remain excluded from model page outlines.
 
-File transfer retains the explicit confirmation workflow. The **Files** section obtains a fresh operator observation of file inputs and download links. Confirmed bytes, destination origin, controller generation and the live document are checked again before delivery. The old screenshot/element controls, exact-site start endpoint, native CUA browser adapters and their deadline branches have been removed; historical profile metadata remains available for deletion without broadening its scope.
+While you control the live page, clicking a file field, its label, or a button that opens Chromium’s file chooser opens the dashboard upload confirmation. A download link on the same website opens the save confirmation when the link has a download attribute or Chromium recognizes the response as a download. The browser menu also provides explicit upload and download selection for older workers.
+
+The host monitors the selected top-level document only while an authenticated input connection owns it. A click creates one target that expires after 60 seconds. Navigation, tab changes and handing control back invalidate that target. Each transfer checks the live document, controller generation and origin again. A clicked download must still point to the same HTTP address. Cross-origin frames, blob downloads and redirected downloads are outside this transfer path.
 
 ### Display and observation retention
 
@@ -156,7 +162,7 @@ the network healthy; a healthy container alone does not verify external routing.
 ### Model control of the same window
 
 Model observations capture the full isolated Chromium desktop with scrot directly
-to memory, including tabs, menus and the address bar. Native model input uses
+to memory. In kiosk mode the image shows the active page. Tab identities and the current address arrive as separate validated metadata. Native model input uses
 xdotool with fixed executables and validated argument arrays: pointer movement,
 single/double/right clicks, dragging, wheel input, key combinations and literal
 text at the current caret. Text goes through stdin to a short-lived clipboard owner inside the isolated desktop, never shell interpolation. Native paste supports Unicode and releases that private selection after delivery; model input never reads the operator's PC clipboard.
@@ -172,7 +178,7 @@ unconfirmed file transfers remain outside the model tool contract.
 
 ### Operator clipboard
 
-While the operator has control, Ctrl/Cmd+C and Ctrl/Cmd+V transfer plain text between their PC and Chromium. Explicit copy/paste buttons provide the same bridge; a text field is available if the local browser refuses clipboard permission. Transfer is limited to 8,192 characters, preserves Unicode, and requires an explicit user gesture. View-only sessions cannot transfer text. The authenticated same-origin endpoint and private host socket recheck owner, process and console epoch. The host serializes clipboard work with browser commands and waits for in-flight input before handing control back. Text is held in memory only: it is not a chat attachment, tool result, database command or log entry. No automatic clipboard synchronization, file transfer or credential extraction is exposed.
+While the operator has control, Ctrl/Cmd+C and Ctrl/Cmd+V transfer plain text between their PC and Chromium. The browser menu also offers **Paste** and **Copy**. The latter can retrieve text copied using the remote Chromium context menu. If the local browser cannot transfer clipboard text, a small text field opens in the viewport. Ctrl/Cmd with + or − magnifies or reduces the local view, and Ctrl/Cmd+0 fits it to the pane. Transfer is limited to 8,192 characters, preserves Unicode, and requires an explicit user gesture. View-only sessions cannot transfer text. The authenticated same-origin endpoint and private host socket recheck owner, process and console epoch. The host serializes clipboard work with browser commands and waits for in-flight input before handing control back. Text is held in memory only: it is not a chat attachment, tool result, database command or log entry. No automatic clipboard synchronization, file transfer or credential extraction is exposed.
 
 The development server bundles the installed noVNC dependency into one module to avoid Bun HMR initialization cycles. Application HMR remains enabled and production uses the normal root dependency and build.
 

@@ -105,6 +105,7 @@ export const miraStateChangeSchema = v.strictObject({
     action: v.picklist(["archive", "restore", "delete"]),
 });
 export const miraMessageInputSchema = v.strictObject({
+    sourceComputer: v.exactOptional(v.union([idSchema, v.literal("unavailable")])),
     conversationId: idSchema,
     requestId: idSchema,
     text: v.pipe(body, v.minLength(1)),

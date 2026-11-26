@@ -95,6 +95,7 @@ export async function main(): Promise<void> {
                         github: configuration.github,
                         localCode: configuration.localCode,
                         operations: configuration.operations,
+                        dashboard: configuration.dashboard,
                     }),
                 catch: () => new Error("Mira executor failed."),
             })

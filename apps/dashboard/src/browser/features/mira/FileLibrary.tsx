@@ -68,7 +68,6 @@ export function FileLibrary({
     return (
         <Modal title="Mira files" onClose={onClose} size="wide">
             <div className="space-y-4">
-                <p className="text-sm text-primary-400">Newest files first</p>
                 {query.isPending && <LoadingState label="Loading files…" />}
                 {query.data?.pages
                     .flatMap((page) => page.rows)

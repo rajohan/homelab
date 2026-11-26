@@ -3,12 +3,56 @@ import type { SQL } from "bun";
 import * as v from "valibot";
 
 import { browserCommandResult } from "../browsing/command";
+import {
+    browserGestureResult,
+    type browserWorkerFrame,
+    browserWorkerTabs,
+} from "../browsing/wire";
 import { readBrowserAccess } from "./browserAccess";
 import { type BrowserCommandClaim, browserHostContext } from "./browserCommands";
 import { saveBrowserPreview } from "./browserConsole";
 import { requireBrowserDownload } from "./browserDownloadAccess";
 import { requireBrowserUpload } from "./browserUploads";
 import { MiraFailure } from "./context";
+
+/** Publish one clicked target only to the still-active human control generation.
+ * @param client - Privileged local browser host database.
+ * @param claim - Process and run lease that produced the gesture.
+ * @param epoch - Operator generation from the authenticated live input connection.
+ * @param event - A clicked page control or a document change invalidating that target.
+ * @returns Completion after rechecking the fixed website and active grant.
+ */
+export async function publishBrowserFileGesture(
+    client: SQL,
+    claim: BrowserCommandClaim,
+    epoch: string,
+    event: NonNullable<ReturnType<typeof browserGestureResult>>
+) {
+    await client.begin(async (query) => {
+        const { context, accessId } = await browserHostContext(client, query, claim);
+        const access = await readBrowserAccess(query, context.owner, accessId);
+        if (
+            !access?.available ||
+            access.state !== "active" ||
+            access.controller !== "human" ||
+            access.mode !== "control" ||
+            access.policy?.origins.length !== 1
+        )
+            return;
+        if ("cleared" in event) {
+            await query`UPDATE mira_browser_consoles SET frame=NULL,frame_at=NULL WHERE access_id=${accessId}
+                AND controller='human' AND epoch=${epoch} AND state='idle' AND frame->'fileRequest'->>'id'=${event.cleared}`;
+            return;
+        }
+        browserGestureResult(event, {
+            origins: access.policy.origins,
+            uploads: true,
+            downloads: true,
+        });
+        await query`UPDATE mira_browser_consoles SET frame=${JSON.stringify(event)}::text::jsonb,frame_at=clock_timestamp()
+            WHERE access_id=${accessId} AND controller='human' AND epoch=${epoch} AND state='idle'`;
+    });
+}
 
 /**
  * Claim one operator operation for the already running, exclusively held browser.
@@ -80,19 +124,24 @@ export async function finishBrowserHumanCommand(
             !access.policy
         )
             return false;
-        const parsed = browserCommandResult(
-            method === "upload" ? "act" : method,
-            result,
-            access.policy.origins
-        );
+        let frame: ReturnType<typeof browserWorkerFrame> | undefined;
+        if (method === "tabs") {
+            if (result !== null) browserWorkerTabs(result, access.policy.origins);
+        } else {
+            const parsed = browserCommandResult(
+                method === "upload" ? "act" : method,
+                result,
+                access.policy.origins
+            );
+            if ("content" in parsed) frame = parsed;
+        }
         const updated = await query<
             { accessId: string }[]
         >`UPDATE mira_browser_consoles SET state='idle',method=NULL,expires_at=NULL,payload=NULL
             WHERE access_id=${accessId} AND controller='human' AND epoch=${command.epoch} AND command_id=${command.id} AND state='claimed' AND expires_at>clock_timestamp()
             RETURNING access_id AS "accessId"`;
         if (updated.length !== 1) return false;
-        if (command.operation.method === "observe" && "content" in parsed)
-            await saveBrowserPreview(query, accessId, parsed);
+        if (frame) await saveBrowserPreview(query, accessId, frame);
         return true;
     });
 }

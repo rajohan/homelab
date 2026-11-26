@@ -15,10 +15,12 @@ export interface BrowserWorkerProfile {
 }
 import {
     browserDriverVersion,
+    browserGestureResult,
     browserWorkerExecutable,
     browserWorkerFrame,
     browserWorkerGrant,
     browserWorkerRequestSchema,
+    browserWorkerTabs,
 } from "./wire";
 
 /**
@@ -196,6 +198,21 @@ export function serveBrowserWorker(
                         selected.file,
                         owner.signal
                     );
+                    break;
+                }
+                case "fileGesture": {
+                    result = browserGestureResult(
+                        await port.fileGesture(command.params.epoch, owner.signal),
+                        grant
+                    );
+                    break;
+                }
+                case "workspace": {
+                    if (command.params.input && grant.mode !== "control")
+                        throw new Error("Browser access is view-only.");
+                    const tabs = await port.workspace(owner.signal, command.params.input);
+                    result =
+                        tabs === null ? null : browserWorkerTabs(tabs, grant.origins);
                     break;
                 }
                 case "tabs":
