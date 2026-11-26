@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.5](https://github.com/rajohan/homelab/compare/v0.30.4...v0.30.5) (2026-11-26)
+
+
+### Bug Fixes
+
+* **dashboard:** improve notifications and worker activity ([#292](https://github.com/rajohan/homelab/issues/292)) ([7c7caa7](https://github.com/rajohan/homelab/commit/7c7caa7daeb776b9030bd90c2a84f79a01c02eee))
+
 ## [0.30.4](https://github.com/rajohan/homelab/compare/v0.30.3...v0.30.4) (2026-11-26)
 
 
