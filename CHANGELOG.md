@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.4](https://github.com/rajohan/homelab/compare/v0.30.3...v0.30.4) (2026-11-26)
+
+
+### Bug Fixes
+
+* **updates:** track the maintained IT-Tools image ([#290](https://github.com/rajohan/homelab/issues/290)) ([e81d42b](https://github.com/rajohan/homelab/commit/e81d42ba870b52f020f98b4aa9e9c2b2c3aa717a))
+
 ## [0.30.3](https://github.com/rajohan/homelab/compare/v0.30.2...v0.30.3) (2026-11-26)
 
 
