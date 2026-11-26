@@ -1,4 +1,4 @@
-import { AppErrorBoundary, useOverlayScrollbars } from "@homelab/ui";
+import { AppErrorBoundary } from "@homelab/ui";
 import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 
@@ -16,7 +16,6 @@ export function DashboardApp({
     router: ReturnType<typeof createDashboardRouter>;
     queryClient: QueryClient;
 }) {
-    useOverlayScrollbars();
     return (
         <AppErrorBoundary>
             <QueryClientProvider client={queryClient}>

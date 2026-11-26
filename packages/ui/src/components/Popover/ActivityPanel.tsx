@@ -1,7 +1,6 @@
 import { type LucideIcon, X } from "lucide-react";
-import { type ReactNode, useRef } from "react";
+import type { ReactNode } from "react";
 
-import { useOverlayScrollbars } from "../../hooks/useOverlayScrollbars";
 import { IconButton } from "../Button/IconButton";
 
 /** Give the header activity feeds the same title, dismissal control and bounded content area.
@@ -21,11 +20,8 @@ export function ActivityPanel({
     readonly onClose: () => void;
     readonly children: ReactNode;
 }) {
-    const scrollRef = useRef<HTMLElement>(null);
-    useOverlayScrollbars(scrollRef);
     return (
         <section
-            ref={scrollRef}
             aria-label={title}
             className="flex min-h-0 flex-col overflow-y-auto overscroll-contain"
         >

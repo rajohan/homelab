@@ -56,7 +56,6 @@ export {
     ScrollList,
     ScrollList as VirtualList,
 } from "./components/ScrollList/ScrollList";
-export { useOverlayScrollbars } from "./hooks/useOverlayScrollbars";
 export {
     InfiniteScrollTrigger,
     type InfiniteScrollContinuation,

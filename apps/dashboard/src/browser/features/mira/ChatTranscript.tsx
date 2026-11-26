@@ -3,7 +3,6 @@ import {
     Button,
     type InfiniteScrollContinuation,
     InfiniteScrollTrigger,
-    useOverlayScrollbars,
 } from "@homelab/ui";
 import { ArrowDown } from "lucide-react";
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
@@ -28,7 +27,6 @@ export function ChatTranscript({
     readonly continuation: InfiniteScrollContinuation;
 }) {
     const viewport = useRef<HTMLDivElement>(null);
-    useOverlayScrollbars(viewport);
     const content = useRef<HTMLDivElement>(null);
     const following = useRef(true);
     const [showJump, setShowJump] = useState(false);

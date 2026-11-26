@@ -33,7 +33,6 @@
         "oidc-provider": "9.15.0",
         "openid-client": "6.9.0",
         "otpauth": "9.6.0",
-        "overlayscrollbars": "2.17.1",
         "puppeteer-core": "25.18.1",
         "qrcode.react": "4.2.0",
         "re2js": "2.10.0",
@@ -984,8 +983,6 @@
     "optionator": ["optionator@0.9.4", "", { "dependencies": { "deep-is": "^0.1.3", "fast-levenshtein": "^2.0.6", "levn": "^0.4.1", "prelude-ls": "^1.2.1", "type-check": "^0.4.0", "word-wrap": "^1.2.5" } }, "sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g=="],
 
     "otpauth": ["otpauth@9.6.0", "", { "dependencies": { "@noble/hashes": "2.4.0" } }, "sha512-qQXHTxcXohDhQjF1ZEbUVEpTIssFL2rd+2kHfw/McIVCbTLD6qAsbTCQxpXRLyeyUw6Ipjpykw4dWZL/zfIVqA=="],
-
-    "overlayscrollbars": ["overlayscrollbars@2.17.1", "", {}, "sha512-EVBOsCB/BhvdP4WMLvIej8jHikJtGCxrWRBC8qX8xj3QmvSuY+PJgOr02du9Y2ad9dn9T8c7vp4MiMDQNWT9RQ=="],
 
     "oxlint-tailwindcss": ["oxlint-tailwindcss@1.17.2", "", { "dependencies": { "@tailwindcss/node": "^4.3.5", "tailwindcss": "^4.3.5" } }, "sha512-L19t/iFDQgEvwoje2H4eC1ClSe/Pr4V824eejb0FmQB14kixJ+0+Ed6diY2G/1qILHX6vXPHovf0XFvr1shTQQ=="],
 
