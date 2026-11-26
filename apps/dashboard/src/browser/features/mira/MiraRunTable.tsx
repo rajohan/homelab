@@ -13,6 +13,7 @@ import { ListChecks, MessageSquare, Square } from "lucide-react";
 import { useState } from "react";
 
 import { MiraRunDetails } from "./MiraRunDetails";
+import { miraStatusTone } from "./statusTone";
 
 function runSource(run: MiraRunSummary) {
     if (run.automationName) return run.automationName;
@@ -20,7 +21,16 @@ function runSource(run: MiraRunSummary) {
     return run.taskId ? "Task" : "Chat";
 }
 
-import { miraStatusTone } from "./statusTone";
+function RunContext({ run, className }: { run: MiraRunSummary; className: string }) {
+    return (
+        <div className={className}>
+            <p className="text-xs text-primary-400">{runSource(run)}</p>
+            {run.message && (
+                <p className="mt-1 text-xs text-primary-300">{run.message}</p>
+            )}
+        </div>
+    );
+}
 
 /**
  * Present agent runs with the same responsive table and scroll behavior as infrastructure jobs.
@@ -62,14 +72,7 @@ export function MiraRunTable({
                                 <p className="font-medium text-primary-100">
                                     {run.title}
                                 </p>
-                                <p className="text-xs text-primary-400">
-                                    {runSource(run)}
-                                </p>
-                                {run.message && (
-                                    <p className="text-xs text-primary-300">
-                                        {run.message}
-                                    </p>
-                                )}
+                                <RunContext run={run} className="hidden @3xl:block" />
                             </div>
                         ),
                     },
@@ -80,19 +83,22 @@ export function MiraRunTable({
                         mobile: "status",
                         width: "w-36",
                         render: (run) => (
-                            <div className="flex flex-wrap gap-1.5">
-                                <Badge tone={miraStatusTone(run.state)}>
-                                    <span className="capitalize">
-                                        {run.cancelRequested &&
-                                        ["queued", "running"].includes(run.state)
-                                            ? "Stopping"
-                                            : run.state.replaceAll("_", " ")}
-                                    </span>
-                                </Badge>
-                                {run.followupResolution && (
-                                    <Badge tone="info">Follow-up closed</Badge>
-                                )}
-                            </div>
+                            <>
+                                <div className="flex flex-wrap gap-1.5">
+                                    <Badge tone={miraStatusTone(run.state)}>
+                                        <span className="capitalize">
+                                            {run.cancelRequested &&
+                                            ["queued", "running"].includes(run.state)
+                                                ? "Stopping"
+                                                : run.state.replaceAll("_", " ")}
+                                        </span>
+                                    </Badge>
+                                    {run.followupResolution && (
+                                        <Badge tone="info">Follow-up closed</Badge>
+                                    )}
+                                </div>
+                                <RunContext run={run} className="mt-2 @3xl:hidden" />
+                            </>
                         ),
                     },
                     {
