@@ -1,0 +1,8 @@
+@import "../../../../../packages/ui/src/styles/index.css";
+@source "./DesktopDialog.tsx";
+@source "./ComputerConsentDialog.tsx";
+
+:root {
+    background: transparent;
+    overflow: clip;
+}

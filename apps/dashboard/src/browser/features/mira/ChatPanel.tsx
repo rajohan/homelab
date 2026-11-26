@@ -10,17 +10,7 @@ import {
 } from "@homelab/ui";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import {
-    Archive,
-    Brain,
-    Files,
-    MessageSquare,
-    Monitor,
-    Pencil,
-    Settings2,
-    SquarePen,
-    Trash2,
-} from "lucide-react";
+import { Archive, Brain, Files, Monitor, Pencil, Settings2, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { api } from "../../api/client";
@@ -53,7 +43,6 @@ import { VoiceStatus } from "./VoiceStatus";
  */
 export function ChatPanel({
     id,
-    onChooseConversation,
     renderHistoryControl,
     connectionControl,
     connectionNotice,
@@ -66,7 +55,6 @@ export function ChatPanel({
     readonly connectionControl: ReactNode;
     readonly connectionNotice: ReactNode;
     readonly onLibrary: (library: "files" | "memory") => void;
-    readonly onChooseConversation: () => void;
 }) {
     const client = useQueryClient();
     const { text, attachments, setText, setAttachments, addFile, clear } =
@@ -256,12 +244,6 @@ export function ChatPanel({
                         disabled={change.isPending || rename.isPending}
                         actions={[
                             {
-                                id: "new",
-                                label: "New chat",
-                                icon: SquarePen,
-                                onSelect: () => void navigate({ to: "/mira" }),
-                            },
-                            {
                                 id: "settings",
                                 label: "Chat settings",
                                 icon: Settings2,
@@ -285,12 +267,6 @@ export function ChatPanel({
                                 label: "Memory",
                                 icon: Brain,
                                 onSelect: () => onLibrary("memory"),
-                            },
-                            {
-                                id: "conversations",
-                                label: "Conversations",
-                                icon: MessageSquare,
-                                onSelect: onChooseConversation,
                             },
                             {
                                 id: "rename",

@@ -101,7 +101,6 @@ export function Mira() {
                         connectionControl={connectionControl}
                         connectionNotice={connectionNotice}
                         settingsOpen={settingsOpen}
-                        onChooseConversation={() => setChoosingConversation(true)}
                         onLibrary={setLibrary}
                     />
                 ) : (

@@ -4,6 +4,9 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.IO;
+using System.Linq;
+using System.Web.Script.Serialization;
 using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -22,14 +25,12 @@ namespace Homelab.Mira.Computer
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private readonly double consentDeadline;
         private readonly double sessionDeadline;
-        private readonly ListView windows = new ListView();
-        private readonly Button allow = new DesktopButton { Primary = true };
-        private readonly Button stop = new DesktopButton();
-        private readonly CheckBox foreground = new CheckBox();
-        private readonly Label status = new Label();
-        private readonly Label selection = new Label();
-        private readonly Label heading = new Label();
-        private readonly Label detail = new Label();
+        private readonly List<NativeWindows.WindowIdentity> windows = new List<NativeWindows.WindowIdentity>();
+        private readonly DesktopDialogView dialog;
+        private ConsentRecoveryView recovery;
+        private string ForegroundLabel { get { return request.Mode != "control" || AllDisplays ? "" : WholeDesktop
+            ? "Allow Mira to click and type across apps on my primary display." : "Allow Mira to bring this window forward while clicking or typing."; } }
+        private int lastPresented = -1;
         private readonly System.Windows.Forms.Timer monitor = new System.Windows.Forms.Timer();
         private readonly object stateLock = new object();
         private readonly HashSet<IntPtr> candidates = new HashSet<IntPtr>();
@@ -50,7 +51,7 @@ namespace Homelab.Mira.Computer
         [DllImport("user32.dll")]
         private static extern bool UnhookWinEvent(IntPtr hook);
 
-        internal ConsentForm(ConsentRequest input)
+        internal ConsentForm(ConsentRequest input, string directory)
         {
             request = input;
             desktop = NativeWindows.ReadyDesktop();
@@ -68,7 +69,7 @@ namespace Homelab.Mira.Computer
                     retire = selected != null && selected.Handle == window;
                 }
                 if (retire) Retire();
-                else UpdateAllow();
+                else lastPresented = -1;
             };
             destroyedHook = WholeDesktop ? IntPtr.Zero : SetWinEventHook(0x8001, 0x8001, IntPtr.Zero, destroyedCallback, 0, 0, 2);
             if (!WholeDesktop && destroyedHook == IntPtr.Zero) throw new InvalidOperationException("Window lifetime monitoring is unavailable.");
@@ -76,82 +77,23 @@ namespace Homelab.Mira.Computer
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             Font = new Font("Segoe UI", 10);
             ForeColor = TextColor;
-            Size = WholeDesktop ? new Size(600, 365) : new Size(720, 590);
-            MinimumSize = WholeDesktop ? new Size(500, 345) : new Size(580, 480);
+            Size = WholeDesktop ? new Size(680, 470) : new Size(720, 590);
+            MinimumSize = new Size(380, 360);
             StartPosition = FormStartPosition.CenterScreen;
             MaximizeBox = false;
             AutoScaleMode = AutoScaleMode.Dpi;
-            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(20), ColumnCount = 1, RowCount = 6 };
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(WholeDesktop ? new RowStyle(SizeType.AutoSize) : new RowStyle(SizeType.Percent, 100));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(WholeDesktop ? new RowStyle(SizeType.Percent, 100) : new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            heading.AutoSize = true;
-            heading.Text = "Allow Mira to " + (input.Mode == "view" ? "view " : "control ") + (WholeDesktop ? DisplayLabel : "one window");
-            heading.Font = new Font(Font.FontFamily, 16, FontStyle.Bold);
-            heading.Margin = new Padding(0, 0, 0, 12);
-            detail.AutoSize = true; detail.MaximumSize = new Size(640, 0); detail.ForeColor = Muted;
-            detail.Text = input.Origin + (WholeDesktop
-                ? "\nEverything visible on " + DisplayLabel + " is shared, including other apps and notifications." + (AllDisplays && input.Mode == "control" ? " Allow control lets Mira click and type across these displays." : "")
-                : "\nChoose a window to share. Its contents, including tabs, may be visible to Mira.") +
-                (input.KeepOpen ? " Access stays open between replies until you stop it, lock the PC or disconnect." : " Access ends with this run, within five minutes.");
-            detail.Margin = new Padding(0, 0, 0, 16);
-            windows.Dock = DockStyle.Fill;
-            windows.View = View.Details;
-            windows.FullRowSelect = true;
-            windows.MultiSelect = false;
-            windows.HideSelection = false;
-            windows.BackColor = MiraWindow.Raised;
-            windows.ForeColor = ForeColor;
-            windows.BorderStyle = BorderStyle.None;
-            windows.HeaderStyle = ColumnHeaderStyle.None;
-            windows.Columns.Add("Window", 380);
-            windows.Columns.Add("Application", 220);
-            windows.Resize += delegate {
-                int available = Math.Max(0, windows.ClientSize.Width - SystemInformation.VerticalScrollBarWidth);
-                windows.Columns[0].Width = (int)(available * .68);
-                windows.Columns[1].Width = available - windows.Columns[0].Width;
+            dialog = new DesktopDialogView(Path.Combine(directory, "WebView2.LocalUI"));
+            dialog.Decision += LocalDecision;
+            dialog.Unavailable += delegate {
+                if (dialog.HasPresented || announced) { Retire(); return; }
+                if (recovery != null || stopped != 0 || IsDisposed) return;
+                dialog.Hide();
+                recovery = new ConsentRecoveryView(!WholeDesktop, windows.Select(WindowLabel).ToArray(), ForegroundLabel,
+                    request.Mode == "control", index => index >= 0 && index < windows.Count && !destroyed.Contains(windows[index].Handle), LocalDecision);
+                Content.Controls.Add(recovery); recovery.BringToFront();
+                lastPresented = -1; Tick();
             };
-            windows.SelectedIndexChanged += delegate { UpdateAllow(); };
-            foreground.AutoSize = true;
-            foreground.MaximumSize = new Size(640, 0);
-            foreground.Text = WholeDesktop ? "Allow Mira to click and type across apps on my primary display." : "Allow Mira to bring this window forward while clicking or typing.";
-            foreground.Visible = input.Mode == "control" && !AllDisplays;
-            foreground.Margin = new Padding(0, 14, 0, 10);
-            foreground.CheckedChanged += delegate { UpdateAllow(); };
-            status.AutoSize = true;
-            status.Margin = new Padding(0, 8, 0, 14);
-            var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, WrapContents = false };
-            allow.Text = input.Mode == "view" ? "Allow viewing" : "Allow control";
-            allow.AutoSize = true;
-            allow.Enabled = false;
-            allow.Padding = new Padding(12, 5, 12, 5);
-            allow.Click += delegate { ApproveSelected(); };
-            stop.Text = "Decline";
-            stop.AutoSize = true;
-            stop.Padding = new Padding(12, 5, 12, 5);
-            stop.Click += delegate { Retire(); };
-            actions.Controls.Add(allow);
-            actions.Controls.Add(stop);
-            layout.Controls.Add(heading, 0, 0);
-            layout.Controls.Add(detail, 0, 1);
-            var choicePanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0), BackColor = Raised, Visible = !WholeDesktop };
-            selection.Dock = DockStyle.Fill; selection.Padding = new Padding(20);
-            selection.ForeColor = TextColor; selection.Visible = false;
-            windows.Visible = !WholeDesktop;
-            choicePanel.Controls.Add(windows); choicePanel.Controls.Add(selection);
-            layout.Controls.Add(choicePanel, 0, 2);
-            layout.Controls.Add(foreground, 0, 3);
-            layout.Controls.Add(status, 0, 4);
-            layout.Controls.Add(actions, 0, 5);
-            Content.Controls.Add(layout);
-            Content.Resize += delegate {
-                int width = Math.Max(120, Content.ClientSize.Width - 48);
-                heading.MaximumSize = detail.MaximumSize = foreground.MaximumSize = status.MaximumSize = new Size(width, 0);
-            };
-            CancelButton = stop;
+            Content.Controls.Add(dialog);
             FormClosing += delegate { Retire(); };
             Shown += delegate { if (stopped != 0) Retire(); else LoadWindows(); };
             monitor.Interval = 250;
@@ -215,33 +157,32 @@ namespace Homelab.Mira.Computer
                 if (!WholeDesktop) foreach (var window in NativeWindows.Windows())
                 {
                     candidates.Add(window.Handle);
-                    var item = new ListViewItem(window.Title);
-                    item.SubItems.Add(System.IO.Path.GetFileName(window.Executable));
-                    item.Tag = window;
-                    windows.Items.Add(item);
+                    windows.Add(window);
                 }
                 Tick();
             }
             catch (Exception) { Retire(); }
         }
 
-        private void UpdateAllow()
+        private void LocalDecision(string action)
         {
-            allow.Enabled = stopped == 0 && !announced && (WholeDesktop || windows.SelectedItems.Count == 1) &&
-                (request.Mode == "view" || AllDisplays || foreground.Checked) &&
-                clock.Elapsed.TotalMilliseconds < consentDeadline &&
-                (WholeDesktop || !destroyed.Contains(((NativeWindows.WindowIdentity)windows.SelectedItems[0].Tag).Handle));
-        }
-
-        private void ApproveSelected()
-        {
+            if (action == "stop") { Retire(); return; }
+            // The local document can select only an entry from this request's OS enumeration.
+            string[] parts = action.Split(':');
+            if (parts.Length != 3 || parts[0] != "allow" || (parts[2] != "yes" && parts[2] != "no")) return;
+            if (request.Mode == "control" && !AllDisplays && parts[2] != "yes") return;
+            NativeWindows.WindowIdentity picked = null;
+            if (WholeDesktop) { if (parts[1] != "screen") return; }
+            else {
+                int index;
+                if (!int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out index) || index < 0 || index >= windows.Count) return;
+                picked = windows[index];
+            }
             try
             {
                 lock (stateLock)
                 {
-                    if (!allow.Enabled || stopped != 0 || announced ||
-                        clock.Elapsed.TotalMilliseconds >= consentDeadline || (!WholeDesktop && windows.SelectedItems.Count != 1))
-                        throw new InvalidOperationException("Local consent is unavailable.");
+                    if (stopped != 0 || announced || clock.Elapsed.TotalMilliseconds >= consentDeadline) return;
                     CheckDesktop();
                     object target;
                     if (AllDisplays) {
@@ -249,7 +190,7 @@ namespace Homelab.Mira.Computer
                     } else if (WholeDesktop) {
                         target = new { scope = "desktop", displayId = "primary", delivery = "foreground" };
                     } else {
-                        var choice = (NativeWindows.WindowIdentity)windows.SelectedItems[0].Tag;
+                        var choice = picked;
                         if (destroyed.Contains(choice.Handle) || !NativeWindows.SameWindow(choice, NativeWindows.Identity(choice.Handle)))
                             throw new InvalidOperationException("The selected window changed.");
                         selected = choice;
@@ -260,24 +201,16 @@ namespace Homelab.Mira.Computer
                     Interlocked.Exchange(ref lastCheck, (long)clock.Elapsed.TotalMilliseconds);
                     Volatile.Write(ref announced, true);
                 }
-                allow.Visible = false;
-                windows.Visible = false;
-                if (!WholeDesktop) {
-                    selection.Text = "Connected window\n\n" + selected.Title + "\n" + System.IO.Path.GetFileName(selected.Executable) +
-                        (request.Mode == "view" ? "\n\nMira can view this window." : "\n\nMira can view, click and type in this window.");
-                    selection.Visible = true; selection.BringToFront();
-                }
-                foreground.Visible = false;
-                heading.Text = WholeDesktop
-                    ? (request.Mode == "view" ? "Mira is viewing " : "Mira can control ") + DisplayLabel
-                    : "Computer access is active";
+                lastPresented = -1;
                 Text = "Homelab · " + (WholeDesktop ? "Sharing " + DisplayLabel : "Sharing one window");
-                detail.Text = request.Origin + (WholeDesktop ? "\nVisible apps and notifications are shared." : "\nOnly the selected window is shared.");
-                status.ForeColor = Color.FromArgb(110, 231, 183);
-                stop.Text = "Stop access";
                 Tick();
             }
             catch (Exception) { Retire(); }
+        }
+
+        private static string WindowLabel(NativeWindows.WindowIdentity window)
+        {
+            return window.Title + " · " + Path.GetFileName(window.Executable);
         }
 
         private void Tick()
@@ -292,10 +225,30 @@ namespace Homelab.Mira.Computer
                 if (!WholeDesktop && selected != null && (destroyed.Contains(selected.Handle) || !NativeWindows.SameWindow(selected, NativeWindows.Identity(selected.Handle))))
                     throw new InvalidOperationException("The selected window changed.");
                 int seconds = (int)Math.Ceiling(remaining / 1000);
-                status.Text = announced
+                if (lastPresented == seconds) return;
+                lastPresented = seconds;
+                bool control = request.Mode == "control";
+                string title = announced
+                    ? (WholeDesktop ? (control ? "Mira can control " : "Mira is viewing ") + DisplayLabel : "Computer access is active")
+                    : "Allow Mira to " + (control ? "control " : "view ") + (WholeDesktop ? DisplayLabel : "one window") + "?";
+                string detail = announced
+                    ? (WholeDesktop ? "Visible apps and notifications are shared." : "Only the selected window is shared.")
+                    : (WholeDesktop ? "Everything visible on " + DisplayLabel + " is shared, including other apps and notifications." +
+                          (AllDisplays && control ? " Allow control lets Mira click and type across these displays." : "")
+                      : "Choose a window to share. Its contents, including tabs, may be visible to Mira.") +
+                      (request.KeepOpen ? " Access stays open between replies until you stop it, lock the PC or disconnect." : " Access ends with this run, within five minutes.");
+                string status = announced
                     ? (request.KeepOpen ? "Access stays open between replies. Use Stop access to take over." : "Access allowed · " + seconds + " seconds remaining. Use Stop access to take over.")
                     : "This request expires in " + seconds + " seconds.";
-                UpdateAllow();
+                string selection = selected == null ? "" : WindowLabel(selected) + (control ? " · View and control" : " · View only");
+                if (recovery != null) { recovery.Present(announced, title, request.Origin + "\n" + detail +
+                    (selection.Length == 0 ? "" : "\n" + selection), status); return; }
+                dialog.Render(new JavaScriptSerializer().Serialize(new {
+                    kind = "consent", active = announced, title, origin = request.Origin, detail, status, control, pickWindow = !WholeDesktop,
+                    foregroundLabel = ForegroundLabel,
+                    windows = windows.Select((entry, index) => new { value = index.ToString(CultureInfo.InvariantCulture),
+                        label = WindowLabel(entry), disabled = destroyed.Contains(entry.Handle) }).ToArray(), selected = selection
+                }));
             }
             catch (Exception) { Retire(); }
         }

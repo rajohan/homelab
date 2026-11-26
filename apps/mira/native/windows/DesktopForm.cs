@@ -30,7 +30,7 @@ internal sealed class DesktopForm : MiraWindow
             try { if (!IsDisposed && IsHandleCreated) BeginInvoke(action); } catch (InvalidOperationException) { }
         });
         web = new DesktopWebView(settings, Receive); Content.Controls.Add(web);
-        updateDialog = new DesktopUpdateDialog(Content, web);
+        updateDialog = new DesktopUpdateDialog(Content, web, settings);
         updateButton.IconGlyph = DesktopGlyph.Download;
         updateButton.Visible = false;
         updateButton.Click += delegate { Observe(connection.UpdateApp(updateDialog)); };

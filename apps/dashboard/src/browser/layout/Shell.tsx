@@ -13,6 +13,7 @@ import { JobActivityContext } from "../features/jobs/JobActivityContext";
 import { NotificationCenter } from "../features/notifications/NotificationCenter";
 import { MobileNavigation } from "./MobileNavigation";
 import { Sidebar } from "./Sidebar";
+import { SkipToContent } from "./SkipToContent";
 
 /**
  * Render responsive dashboard navigation and the active child route.
@@ -68,20 +69,7 @@ export function Shell() {
             <div
                 className={`${viewportWorkspace ? "h-dvh overflow-hidden" : "min-h-dvh"} bg-primary-950 text-primary-50`}
             >
-                <a
-                    className="fixed top-3 left-3 z-50 -translate-y-24 rounded-lg bg-accent-700 px-4 py-3 text-sm font-semibold text-white focus:translate-y-0"
-                    href="#main-content"
-                    onClick={(event) => {
-                        const main = document.querySelector<HTMLElement>("#main-content");
-                        if (main) {
-                            event.preventDefault();
-                            main.focus({ preventScroll: true });
-                            main.scrollIntoView({ block: "start" });
-                        }
-                    }}
-                >
-                    Skip to content
-                </a>
+                <SkipToContent />
                 <aside
                     className={`fixed inset-y-0 left-0 hidden flex-col border-r border-primary-700 bg-primary-900 lg:flex ${compactNavigation ? "w-18" : "w-52"}`}
                 >
