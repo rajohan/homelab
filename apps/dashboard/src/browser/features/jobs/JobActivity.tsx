@@ -10,8 +10,7 @@ import {
     VirtualList,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { ArrowRight, Cog } from "lucide-react";
+import { Cog } from "lucide-react";
 import { type Ref, useState } from "react";
 
 import { api } from "../../api/client";
@@ -177,58 +176,32 @@ export function JobActivity({
                             />
                         )}
                         {!query.isPending && !query.isError && runs.length === 0 && (
-                            <EmptyState
-                                compact
-                                icon={Cog}
-                                title="No active jobs"
-                                description="Open job history to see earlier runs."
+                            <EmptyState compact icon={Cog} title="No active jobs" />
+                        )}
+                        {runs.length > 0 && (
+                            <VirtualList
+                                label="Your job activity"
+                                rows={runs}
+                                getKey={(run) => run.key}
+                                className="max-h-[min(26rem,60dvh)] rounded-none"
+                                itemClassName="pb-0"
+                                renderItem={(run) => (
+                                    <JobActivityItem
+                                        run={run}
+                                        unavailable={query.isError}
+                                        onSelect={() => {
+                                            close();
+                                            setSelected({
+                                                kind: run.kind,
+                                                id: run.id,
+                                                label: run.label,
+                                            });
+                                        }}
+                                        onDismiss={() => dismiss(run.key)}
+                                    />
+                                )}
                             />
                         )}
-                        <div>
-                            {runs.length > 0 && (
-                                <VirtualList
-                                    label="Your job activity"
-                                    rows={runs}
-                                    getKey={(run) => run.key}
-                                    className="max-h-[min(26rem,60dvh)] rounded-none"
-                                    itemClassName="pb-0"
-                                    renderItem={(run) => (
-                                        <JobActivityItem
-                                            run={run}
-                                            unavailable={query.isError}
-                                            onSelect={() => {
-                                                close();
-                                                setSelected({
-                                                    kind: run.kind,
-                                                    id: run.id,
-                                                    label: run.label,
-                                                });
-                                            }}
-                                            onDismiss={() => dismiss(run.key)}
-                                        />
-                                    )}
-                                />
-                            )}
-                            <div className="flex flex-wrap gap-x-4 border-t border-primary-700 pt-1">
-                                {(
-                                    [
-                                        { hash: "queue", label: "Open queue" },
-                                        { hash: "history", label: "Job history" },
-                                    ] as const
-                                ).map((item) => (
-                                    <Link
-                                        key={item.hash}
-                                        to="/jobs"
-                                        hash={item.hash}
-                                        onClick={() => close()}
-                                        className="inline-flex min-h-11 items-center gap-1.5 rounded text-sm font-medium text-accent-300 hover:underline"
-                                    >
-                                        {item.label}
-                                        <ArrowRight size={14} aria-hidden="true" />
-                                    </Link>
-                                ))}
-                            </div>
-                        </div>
                     </ActivityPanel>
                 )}
             </Popover>

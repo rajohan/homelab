@@ -56,7 +56,7 @@ export function NotificationPanel({ onClose }: { readonly onClose: () => void })
             onClose={onClose}
             summary={latest ? undefined : countStatus}
         >
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
                 <div className="min-w-0 flex-[1_1_max-content]">
                     <ChoiceBar
                         fullWidth
@@ -84,7 +84,7 @@ export function NotificationPanel({ onClose }: { readonly onClose: () => void })
                         ]}
                     />
                 </div>
-                <div className="flex min-w-0 items-center gap-2">
+                <div className="min-w-0 flex-auto">
                     <Select
                         label="Notification severity"
                         value={severity}
