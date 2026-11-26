@@ -151,7 +151,7 @@ export function Shell() {
                         </div>
                     </header>
                     <main
-                        className={`mx-auto w-full max-w-400 min-w-0 flex-1 ${viewportWorkspace ? "flex min-h-0 flex-col" : ""} ${chatWorkspace ? "overflow-hidden sm:p-3 xl:p-5" : "p-4 sm:p-5"} ${taskWorkspace ? "overflow-y-auto" : ""}`}
+                        className={`mx-auto w-full min-w-0 flex-1 ${viewportWorkspace ? "flex min-h-0 flex-col" : ""} ${chatWorkspace ? "overflow-hidden sm:p-3 xl:p-5" : "max-w-400 p-4 sm:p-5"} ${taskWorkspace ? "overflow-y-auto" : ""}`}
                         id="main-content"
                         tabIndex={-1}
                     >

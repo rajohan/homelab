@@ -566,7 +566,10 @@ The Windows app checks release metadata at startup and every 15 minutes using
 the existing private pairing. When a verified newer release is available, a
 download icon appears in the title bar. Select it to download the installer.
 You can also select the update action in the tray or **Update app** under
-**Settings → Computers**. You can keep using the connected PC while the download runs.
+**Settings → Computers**. The Windows app shows progress, the result and the install
+confirmation inside its main window, including while the dashboard is offline.
+**Hide** returns to the dashboard during a check or download. **View update** in
+the tray opens progress again. Automatic checks stay in the background.
 When the update is ready, **Later** leaves the connection open. **Update and reopen**
 ends local computer access, waits for the companion and its controllers to exit,
 then installs the verified release. Stopping the connection, closing Homelab or

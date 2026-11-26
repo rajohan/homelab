@@ -44,7 +44,7 @@ internal static class DesktopBridge
             state = new {
                 message = connection.Message, computerId = connection.ComputerId,
                 busy = connection.Busy, canStart = connection.CanStart,
-                canStop = connection.CanStop, canUpdate = connection.CanUpdate
+                canStop = connection.CanStop, canUpdate = connection.CanOpenUpdate
             }
         });
     }

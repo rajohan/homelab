@@ -61,6 +61,7 @@ export async function buildWindowsDesktop(directory: string) {
         "DesktopAppearance.cs",
         "DesktopButton.cs",
         "DesktopStateView.cs",
+        "DesktopUpdateDialog.cs",
         "MiraWindow.cs",
         "MiraNotice.cs",
         "DesktopConnection.cs",

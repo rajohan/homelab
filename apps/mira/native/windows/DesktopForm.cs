@@ -8,6 +8,7 @@ internal sealed class DesktopForm : MiraWindow
 {
     private readonly DesktopConnection connection;
     private readonly DesktopWebView web;
+    private readonly DesktopUpdateDialog updateDialog;
     private readonly NotifyIcon tray = new NotifyIcon();
     private readonly ContextMenuStrip trayMenu = new ContextMenuStrip();
     private readonly ToolStripMenuItem trayConnection, trayUpdate;
@@ -29,12 +30,13 @@ internal sealed class DesktopForm : MiraWindow
             try { if (!IsDisposed && IsHandleCreated) BeginInvoke(action); } catch (InvalidOperationException) { }
         });
         web = new DesktopWebView(settings, Receive); Content.Controls.Add(web);
+        updateDialog = new DesktopUpdateDialog(Content, web);
         updateButton.IconGlyph = DesktopGlyph.Download;
         updateButton.Visible = false;
-        updateButton.Click += delegate { Observe(connection.UpdateApp(this)); };
+        updateButton.Click += delegate { Observe(connection.UpdateApp(updateDialog)); };
         SetCaptionAction(updateButton);
         tray.Icon = Icon; tray.Text = "Homelab";
-        trayMenu.ShowImageMargin = false; trayMenu.Font = Font;
+        trayMenu.ShowImageMargin = !SystemInformation.HighContrast; trayMenu.Font = Font;
         trayMenu.Padding = new Padding(4);
         if (!SystemInformation.HighContrast) trayMenu.Renderer = new DesktopMenuRenderer();
         MenuAction("Open Homelab", DesktopGlyph.Open, async delegate { await RestoreWindow(false); });
@@ -43,9 +45,9 @@ internal sealed class DesktopForm : MiraWindow
         trayConnection = MenuAction("Connect", DesktopGlyph.Connect, delegate {
             if (connection.Busy) connection.Stop(); else Observe(connection.Start("run"));
         });
-        trayUpdate = MenuAction("Check for updates", DesktopGlyph.Download, async delegate {
-            await RestoreWindow(false);
-            await connection.UpdateApp(this);
+        trayUpdate = MenuAction("Check for updates", DesktopGlyph.Download, delegate {
+            Observe(RestoreWindow(false));
+            Observe(connection.UpdateApp(updateDialog));
         });
         trayMenu.Items.Add(new ToolStripSeparator());
         MenuAction("Exit Homelab", DesktopGlyph.Exit, delegate { Close(); });
@@ -85,9 +87,8 @@ internal sealed class DesktopForm : MiraWindow
         trayConnection.Tag = connection.Busy ? DesktopGlyph.Stop : DesktopGlyph.Connect;
         trayConnection.Enabled = connection.Busy ? connection.CanStop : connection.CanStart;
         string available = connection.AvailableVersion;
-        trayUpdate.Text = connection.Updating ? "Updating…" : available == null ? "Check for updates" : "Update to Homelab " + available;
-        trayUpdate.Enabled = connection.CanUpdate;
-        trayMenu.MinimumSize = new Size(Math.Max(Font.Height * 10, TextRenderer.MeasureText(trayUpdate.Text, Font).Width + Font.Height * 3), 0);
+        trayUpdate.Text = connection.Updating ? "View update" : available == null ? "Check for updates" : "Update to Homelab " + available;
+        trayUpdate.Enabled = connection.CanOpenUpdate;
         updateButton.Visible = available != null && connection.CanUpdate;
         if (available != null) {
             updateButton.AccessibleName = "Download and install Homelab " + available;
@@ -98,7 +99,7 @@ internal sealed class DesktopForm : MiraWindow
     {
         var request = DesktopBridge.Read(source, web.Source, json);
         string action = (string)request["action"];
-        if (action != "state" && (((action == "connect" || action == "pair" || action == "forget") && !connection.CanStart) || (action == "update" && !connection.CanUpdate)))
+        if (action != "state" && (((action == "connect" || action == "pair" || action == "forget") && !connection.CanStart) || (action == "update" && !connection.CanOpenUpdate)))
             return DesktopBridge.Reply((string)request["id"], connection, "Finish or stop the current computer operation first.");
         if (action == "pair" && connection.ComputerId != null)
             return DesktopBridge.Reply((string)request["id"], connection, "Remove the existing local pairing before pairing this PC again.");
@@ -106,13 +107,19 @@ internal sealed class DesktopForm : MiraWindow
         else if (action == "pair") Observe(connection.Start("pair", (string)request["ticket"]));
         else if (action == "stop") connection.Stop();
         else if (action == "forget") Observe(connection.Start("forget"));
-        else if (action == "update") Observe(connection.UpdateApp(this));
+        else if (action == "update") Observe(connection.UpdateApp(updateDialog));
         return DesktopBridge.Reply((string)request["id"], connection);
     }
     private static async void Observe(Task task) { try { await task; } catch { } }
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        return (updateDialog != null && updateDialog.ProcessKey(keyData)) || base.ProcessCmdKey(ref msg, keyData);
+    }
     private async Task RestoreWindow(bool settings)
     {
-        ShowInTaskbar = true; Show(); WindowState = FormWindowState.Normal; Activate();
+        ShowInTaskbar = true; Show();
+        if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+        Activate();
         if (!opened) { opened = true; await web.Open(); }
         if (settings) web.Settings();
     }

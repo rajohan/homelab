@@ -1,12 +1,13 @@
 import { IconButton, Modal } from "@homelab/ui";
 import { useParams, useSearch } from "@tanstack/react-router";
 import { Brain, Files, History, PanelLeftOpen } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import * as v from "valibot";
 
 import { ChatConnectionNotice } from "../features/mira/ChatConnectionNotice";
 import { ChatConnectionsMenu } from "../features/mira/ChatConnectionsMenu";
 import { ChatgptConnection } from "../features/mira/ChatgptConnection";
+import { ChatHeader } from "../features/mira/ChatHeader";
 import { ChatPanel } from "../features/mira/ChatPanel";
 import { ChatWelcome } from "../features/mira/ChatWelcome";
 import { ConversationList } from "../features/mira/ConversationList";
@@ -21,6 +22,15 @@ import { useChatgptConnection } from "../features/mira/useChatgptConnection";
 export function Mira() {
     const [choosingConversation, setChoosingConversation] = useState(false);
     const [rail, setRail] = useState(true);
+    const showHistory = useRef<HTMLButtonElement>(null);
+    const hideHistory = useRef<HTMLButtonElement>(null);
+    const previousRail = useRef(rail);
+    useLayoutEffect(() => {
+        if (previousRail.current !== rail) {
+            previousRail.current = rail;
+            (rail ? hideHistory : showHistory).current?.focus({ preventScroll: true });
+        }
+    }, [rail]);
     const [library, setLibrary] = useState<"files" | "memory" | "connection">();
     const auth = useChatgptConnection();
     if (
@@ -49,20 +59,25 @@ export function Mira() {
         useSearch({ strict: false })
     ).success;
     const conversationId = parsed.success ? parsed.output.conversationId : undefined;
-    const historyControl = (
+    const renderHistoryControl = (browserOpen = false) => (
         <>
             <IconButton
                 icon={History}
                 label="Open chat history"
-                className="chat-split:hidden"
+                aria-haspopup="dialog"
+                className={browserOpen ? "" : "chat-split:hidden"}
                 onClick={() => setChoosingConversation(true)}
             />
-            <IconButton
-                icon={PanelLeftOpen}
-                label="Show chat history"
-                className={rail ? "hidden" : "chat-split:inline-flex hidden"}
-                onClick={() => setRail(true)}
-            />
+            {!rail && !browserOpen && (
+                <IconButton
+                    ref={showHistory}
+                    icon={PanelLeftOpen}
+                    label="Show chat history"
+                    aria-expanded={false}
+                    className="chat-split:inline-flex hidden"
+                    onClick={() => setRail(true)}
+                />
+            )}
         </>
     );
     return (
@@ -74,6 +89,7 @@ export function Mira() {
                             selected={conversationId}
                             landing={!conversationId}
                             onCollapse={() => setRail(false)}
+                            collapseRef={hideHistory}
                         />
                     </aside>
                 )}
@@ -81,7 +97,7 @@ export function Mira() {
                     <ChatPanel
                         key={conversationId}
                         id={conversationId}
-                        historyControl={historyControl}
+                        renderHistoryControl={renderHistoryControl}
                         connectionControl={connectionControl}
                         connectionNotice={connectionNotice}
                         settingsOpen={settingsOpen}
@@ -90,25 +106,22 @@ export function Mira() {
                     />
                 ) : (
                     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-                        <header className="@container/chat-header shrink-0 border-b border-primary-700">
-                            <div className="chat-column min-h-chat-header flex items-center gap-2">
-                                <div className="flex">{historyControl}</div>
-                                <h1 className="min-w-0 flex-1 text-base font-semibold text-primary-50 @min-[34rem]/chat-header:order-first">
-                                    New chat
-                                </h1>
-                                {connectionControl}
-                                <IconButton
-                                    icon={Brain}
-                                    label="Memory"
-                                    onClick={() => setLibrary("memory")}
-                                />
-                                <IconButton
-                                    icon={Files}
-                                    label="Files"
-                                    onClick={() => setLibrary("files")}
-                                />
-                            </div>
-                        </header>
+                        <ChatHeader
+                            title="New chat"
+                            historyControl={renderHistoryControl()}
+                        >
+                            {connectionControl}
+                            <IconButton
+                                icon={Brain}
+                                label="Memory"
+                                onClick={() => setLibrary("memory")}
+                            />
+                            <IconButton
+                                icon={Files}
+                                label="Files"
+                                onClick={() => setLibrary("files")}
+                            />
+                        </ChatHeader>
                         {connectionNotice}
                         <div className="chat-welcome-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
                             <ChatWelcome />

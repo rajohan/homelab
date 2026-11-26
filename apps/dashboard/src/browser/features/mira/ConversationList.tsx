@@ -11,7 +11,7 @@ import {
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { PanelLeftClose, SquarePen } from "lucide-react";
-import { Fragment, useState } from "react";
+import { Fragment, type Ref, useState } from "react";
 
 import { api } from "../../api/client";
 
@@ -23,10 +23,12 @@ export function ConversationList({
     selected,
     onSelect,
     onCollapse,
+    collapseRef,
     embedded = false,
     landing = false,
 }: {
     readonly onCollapse?: () => void;
+    readonly collapseRef?: Ref<HTMLButtonElement>;
     readonly embedded?: boolean;
     readonly landing?: boolean;
     readonly onSelect?: () => void;
@@ -95,7 +97,9 @@ export function ConversationList({
                     {onCollapse && (
                         <IconButton
                             icon={PanelLeftClose}
+                            ref={collapseRef}
                             label="Hide chat history"
+                            aria-expanded
                             onClick={onCollapse}
                         />
                     )}

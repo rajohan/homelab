@@ -11,14 +11,15 @@ internal sealed class DesktopStateView : Panel
     private readonly Panel symbol = new Panel();
     private readonly Label heading = new Label(), detail = new Label();
     private readonly FlowLayoutPanel actions = new FlowLayoutPanel();
-    private readonly bool embedded;
+    private readonly bool embedded, modal;
     private readonly Font headingFont;
     private DesktopGlyph glyph;
     private bool arranging;
 
-    internal DesktopStateView(bool framedCard)
+    internal DesktopStateView(bool framedCard, bool modal = false)
     {
         embedded = framedCard;
+        this.modal = modal;
         Dock = DockStyle.Fill; BackColor = MiraWindow.Canvas; AutoScroll = true;
         card.BackColor = framedCard ? MiraWindow.Surface : MiraWindow.Canvas;
         headingFont = new Font("Segoe UI", framedCard ? 18 : 15, FontStyle.Bold);
@@ -76,20 +77,29 @@ internal sealed class DesktopStateView : Panel
             int headerHeight = Math.Max(iconSize, titleHeight);
             symbol.SetBounds(pad, y + (headerHeight - iconSize) / 2, iconSize, iconSize);
             heading.SetBounds(pad + titleOffset, y, titleWidth, headerHeight);
-            y += headerHeight + Px(12);
-            int d = TextRenderer.MeasureText(detail.Text, detail.Font, new Size(inner, int.MaxValue), flags).Height;
-            detail.SetBounds(pad, y, inner, d); y += d;
+            y += headerHeight;
+            if (detail.Text.Length > 0) {
+                y += Px(12);
+                int d = TextRenderer.MeasureText(detail.Text, detail.Font, new Size(inner, int.MaxValue), flags).Height;
+                detail.SetBounds(pad, y, inner, d); y += d;
+            } else detail.SetBounds(pad, y, inner, 0);
             actions.MaximumSize = new Size(inner, 0);
             var preferred = actions.GetPreferredSize(new Size(inner, 0));
             if (preferred.Height > 0) {
                 y += Px(18);
-                actions.Location = new Point(embedded ? pad : width - pad - preferred.Width, y);
+                actions.Location = new Point(embedded && !modal ? pad : width - pad - preferred.Width, y);
                 y += preferred.Height;
             }
             int height = y + pad;
             int top = Math.Max(edge, (ClientSize.Height - height) / 2);
             card.SetBounds((ClientSize.Width - width) / 2 + AutoScrollPosition.X, top + AutoScrollPosition.Y, width, height);
             AutoScrollMinSize = new Size(0, height + edge * 2);
+            if (modal) {
+                // Keep only the card's native hit/paint region above the dimmed WebView.
+                var previous = Region;
+                using (var outline = DesktopAppearance.Round(card.Bounds, Px(10))) Region = new Region(outline);
+                if (previous != null) previous.Dispose();
+            }
         } finally { arranging = false; }
     }
     protected override void Dispose(bool disposing)

@@ -1,6 +1,5 @@
 using System;
 using System.Threading.Tasks;
-using System.Windows.Forms;
 
 // Windows-only connection/update lifecycle. Chat and all product state stay on the server.
 internal sealed class DesktopConnection : IDisposable
@@ -13,6 +12,7 @@ internal sealed class DesktopConnection : IDisposable
     private DesktopUpdateSession discovery;
     private Task<DesktopUpdateResult> discoveryResult;
     private TaskCompletionSource<bool> presenceStopped;
+    private DesktopUpdateDialog updateDialog;
     private string connectionMessage = "Disconnected", updateMessage;
     private bool blocked, stopping, installing, closing, reconnect;
     internal event Action Changed;
@@ -27,6 +27,7 @@ internal sealed class DesktopConnection : IDisposable
     internal bool CanStart { get { return !Busy && !blocked && !closing; } }
     internal bool CanStop { get { return Busy && !stopping && !installing; } }
     internal bool CanUpdate { get { return maintenance != null && !Updating && !stopping && !blocked && !closing && (session == null || presenceStopped != null); } }
+    internal bool CanOpenUpdate { get { return CanUpdate || (Updating && !closing); } }
 
     internal DesktopConnection(string packageDirectory, string settingsDirectory, Action<bool> installation, Action<Action> invoke)
     {
@@ -37,9 +38,10 @@ internal sealed class DesktopConnection : IDisposable
         connectionMessage = message;
         if (Changed != null) Changed();
     }
-    private void UpdateStatus(string message)
+    private void UpdateStatus(string message, bool reveal = false)
     {
         updateMessage = message;
+        if (message != null && updateDialog != null) updateDialog.Progress(message, reveal);
         if (Changed != null) Changed();
     }
     internal async Task Start(string operation, string ticket = null)
@@ -90,7 +92,10 @@ internal sealed class DesktopConnection : IDisposable
         reconnect = false;
         if (!CanStop) return;
         stopping = true;
-        if (Updating) UpdateStatus("Cancelling update…"); else Publish("Stopping…");
+        if (Updating) {
+            if (updateDialog != null) updateDialog.Dismiss();
+            UpdateStatus("Cancelling update…");
+        } else Publish("Stopping…");
         if (session != null) session.Stop();
         if (download != null) download.Stop();
     }
@@ -124,19 +129,21 @@ internal sealed class DesktopConnection : IDisposable
             ExitIfIdle();
         }
     }
-    internal async Task UpdateApp(IWin32Window owner)
+    internal async Task UpdateApp(DesktopUpdateDialog dialog)
     {
+        if (dialog.IsOpen) return;
+        if (Updating && !closing) { dialog.Progress(updateMessage, true); return; }
         if (!CanUpdate) return;
-        reconnect = false;
-        UpdateStatus(AvailableVersion == null ? "Checking for updates…" : "Downloading Homelab " + AvailableVersion + "…");
+        reconnect = false; updateDialog = dialog;
+        UpdateStatus(AvailableVersion == null ? "Checking for updates…" : "Downloading Homelab " + AvailableVersion + "…", true);
         if (discovery != null) {
             discovery.Stop();
             try { await discoveryResult; } catch { }
         }
-        await InstallAvailableUpdate(owner);
+        await InstallAvailableUpdate(dialog);
         if (reconnect && CanStart) await Start("run");
     }
-    private async Task InstallAvailableUpdate(IWin32Window owner)
+    private async Task InstallAvailableUpdate(DesktopUpdateDialog dialog)
     {
         DesktopUpdateArtifact artifact = null;
         bool released = false, completed = false;
@@ -154,7 +161,7 @@ internal sealed class DesktopConnection : IDisposable
             if (result.UpToDate) { noticeTitle = "Homelab is up to date"; notice = "You’re using the latest verified Windows release."; return; }
             if (artifact == null) { notice = "Homelab couldn't get a verified update. Check your computer pairing and home network, then try again."; return; }
             UpdateStatus("Homelab " + artifact.Version + " is ready to install.");
-            if (!MiraNotice.ConfirmUpdate(owner, artifact.Version, presenceStopped != null) || closing || stopping || blocked) return;
+            if (!await dialog.Confirm(artifact.Version, presenceStopped != null) || closing || stopping || blocked) return;
             artifact.RequireFresh();
             if (presenceStopped != null) {
                 reconnect = true;
@@ -181,7 +188,9 @@ internal sealed class DesktopConnection : IDisposable
             if (artifact != null) { try { artifact.Dispose(); } catch { blocked = true; } }
             if (download != null) { download.Dispose(); download = null; }
             if (blocked && !closing) Publish("Reopen Homelab after setup and process cleanup have finished.");
-            if (notice != null && !closing && !stopping) MiraNotice.ShowNotice(owner, notice, noticeTitle);
+            updateDialog = null;
+            if (notice != null && !closing && !stopping) dialog.Notice(noticeTitle, notice);
+            else dialog.Dismiss();
             if (session == null) stopping = false;
             UpdateStatus(null);
             ExitIfIdle();
