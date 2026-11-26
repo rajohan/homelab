@@ -2,19 +2,21 @@ import { cn } from "../../lib/classNames";
 import type { DataColumn, DataRowAction } from "./DataTable";
 
 /**
- * Present a row as desktop cells or a compact two-column mobile card.
+ * Present a measured row as desktop cells or a compact two-column mobile card.
  * @returns A row with an optional full-surface details button and independent actions.
  */
 export function DataTableRow<T>({
     row,
     index,
     columns,
+    measureElement,
     compact,
     rowAction,
 }: {
     readonly row: T;
     readonly index: number;
     readonly columns: readonly DataColumn<T>[];
+    readonly measureElement: (element: Element | null) => void;
     readonly compact: boolean;
     readonly rowAction?: DataRowAction<T>;
 }) {
@@ -23,6 +25,7 @@ export function DataTableRow<T>({
     );
     return (
         <tr
+            ref={measureElement}
             data-index={index}
             className={cn(
                 "relative isolate @max-3xl:border-b @max-3xl:border-primary-700",

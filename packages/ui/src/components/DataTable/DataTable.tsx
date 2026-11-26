@@ -6,6 +6,7 @@ import {
     type InfiniteScrollContinuation,
     InfiniteScrollTrigger,
 } from "../InfiniteScrollTrigger/InfiniteScrollTrigger";
+import { Virtualizer } from "../Virtualizer/Virtualizer";
 import { DataTableRow } from "./DataTableRow";
 import { TableSortButton } from "./TableSortButton";
 import {
@@ -37,7 +38,7 @@ export interface DataRowAction<T> {
 }
 
 /**
- * Render loaded rows at their natural height and request the next page near the end.
+ * Window measured rows and request the next page near the end of the scrollport.
  * @returns A labelled table which becomes stacked labelled rows on narrow containers.
  */
 export function DataTable<T>({
@@ -148,18 +149,52 @@ export function DataTable<T>({
                             ))}
                         </tr>
                     </thead>
-                    <tbody className="@max-3xl:block">
-                        {displayedRows.map((row, index) => (
-                            <DataTableRow
-                                key={getKey(row)}
-                                row={row}
-                                index={index}
-                                columns={columns}
-                                compact={compact}
-                                {...(rowAction === undefined ? {} : { rowAction })}
-                            />
-                        ))}
-                    </tbody>
+                    <Virtualizer
+                        count={displayedRows.length}
+                        scrollRef={scrollRef}
+                        getKey={(index) => {
+                            const row = displayedRows[index];
+                            return row === undefined ? String(index) : getKey(row);
+                        }}
+                    >
+                        {({ items, totalSize, measureElement }) => (
+                            <tbody className="[overflow-anchor:none] @max-3xl:block">
+                                <tr aria-hidden="true" className="@max-3xl:block">
+                                    <td
+                                        colSpan={columns.length}
+                                        style={{ height: items[0]?.start ?? 0 }}
+                                    />
+                                </tr>
+                                {items.map((item) => {
+                                    const row = displayedRows[item.index];
+                                    return row === undefined ? null : (
+                                        <DataTableRow
+                                            key={item.key}
+                                            row={row}
+                                            index={item.index}
+                                            measureElement={measureElement}
+                                            columns={columns}
+                                            compact={compact}
+                                            {...(rowAction === undefined
+                                                ? {}
+                                                : { rowAction })}
+                                        />
+                                    );
+                                })}
+                                <tr aria-hidden="true" className="@max-3xl:block">
+                                    <td
+                                        colSpan={columns.length}
+                                        style={{
+                                            height: Math.max(
+                                                0,
+                                                totalSize - (items.at(-1)?.end ?? 0)
+                                            ),
+                                        }}
+                                    />
+                                </tr>
+                            </tbody>
+                        )}
+                    </Virtualizer>
                 </table>
                 {continuation && (
                     <InfiniteScrollTrigger
