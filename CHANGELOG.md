@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.30.8](https://github.com/rajohan/homelab/compare/v0.30.7...v0.30.8) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ui:** refine mobile job history and clickable table rows ([#299](https://github.com/rajohan/homelab/issues/299)) ([863a32f](https://github.com/rajohan/homelab/commit/863a32f8b883015e99ac3ab5559ecce7442d4a0d))
+* **ui:** restore row virtualization in shared tables and scroll lists ([#298](https://github.com/rajohan/homelab/issues/298)) ([efcc3d9](https://github.com/rajohan/homelab/commit/efcc3d9e2e7bb25053a9a15ed1fce7d565f4bb4e))
+
 ## [0.30.7](https://github.com/rajohan/homelab/compare/v0.30.6...v0.30.7) (2026-11-26)
 
 
