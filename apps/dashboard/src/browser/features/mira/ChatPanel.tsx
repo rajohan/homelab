@@ -29,6 +29,7 @@ import { BrowserAccessPanel } from "./BrowserAccessPanel";
 import { BrowserWorkspace } from "./BrowserWorkspace";
 import { ChatComposer } from "./ChatComposer";
 import { readChatDisplay, saveChatDisplay } from "./chatDisplay";
+import { ChatHeader } from "./ChatHeader";
 import { ChatModelControl } from "./ChatModelControl";
 import { ChatSettings } from "./ChatSettings";
 import { ChatTranscript } from "./ChatTranscript";
@@ -53,7 +54,7 @@ import { VoiceStatus } from "./VoiceStatus";
 export function ChatPanel({
     id,
     onChooseConversation,
-    historyControl,
+    renderHistoryControl,
     connectionControl,
     connectionNotice,
     settingsOpen,
@@ -61,7 +62,7 @@ export function ChatPanel({
 }: {
     readonly id: string;
     readonly settingsOpen: boolean;
-    readonly historyControl: ReactNode;
+    readonly renderHistoryControl: (browserOpen: boolean) => ReactNode;
     readonly connectionControl: ReactNode;
     readonly connectionNotice: ReactNode;
     readonly onLibrary: (library: "files" | "memory") => void;
@@ -212,18 +213,11 @@ export function ChatPanel({
                 aria-label="Chat"
                 className={`min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${openBrowser ? "chat-split:flex hidden" : "flex"}`}
             >
-                <header className="@container/chat-header shrink-0 border-b border-primary-700">
-                    <div className="chat-column min-h-chat-header grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 py-1 @min-[34rem]/chat-header:grid-cols-[minmax(0,1fr)_auto_auto] @min-[34rem]/chat-header:gap-x-2">
-                        <div className="col-start-1 row-start-1 flex @min-[34rem]/chat-header:col-start-2 @min-[34rem]/chat-header:row-span-2">
-                            {historyControl}
-                        </div>
-                        <h1
-                            title={conversation.title}
-                            className="col-start-2 row-start-1 min-w-0 truncate text-base font-semibold tracking-tight text-primary-50 @min-[34rem]/chat-header:col-start-1 @min-[34rem]/chat-header:self-end @min-[34rem]/chat-header:text-lg"
-                        >
-                            {conversation.title}
-                        </h1>
-                        <div className="col-span-full row-start-2 flex min-w-0 flex-wrap items-center justify-between gap-x-1 @min-[34rem]/chat-header:col-span-1 @min-[34rem]/chat-header:col-start-1 @min-[34rem]/chat-header:justify-start @min-[34rem]/chat-header:gap-x-3 [&>div]:max-w-full">
+                <ChatHeader
+                    title={conversation.title}
+                    historyControl={renderHistoryControl(Boolean(openBrowser))}
+                    details={
+                        <>
                             <ChatModelControl
                                 model={selectedModel}
                                 modelId={modelId}
@@ -253,83 +247,78 @@ export function ChatPanel({
                                 quotas={catalog.data?.quotas ?? []}
                                 fresh={fresh}
                             />
-                        </div>
-                        <div className="col-start-3 row-start-1 flex items-center @min-[34rem]/chat-header:row-span-2">
-                            {connectionControl}
-                            <DropdownMenu
-                                label="Conversation actions"
-                                disabled={change.isPending || rename.isPending}
-                                actions={[
-                                    {
-                                        id: "new",
-                                        label: "New chat",
-                                        icon: SquarePen,
-                                        onSelect: () => void navigate({ to: "/mira" }),
-                                    },
-                                    {
-                                        id: "settings",
-                                        label: "Chat settings",
-                                        icon: Settings2,
-                                        disabled: archived,
-                                        onSelect: () => setDialog("settings"),
-                                    },
-                                    {
-                                        id: "computer",
-                                        label: "Computer access",
-                                        icon: Monitor,
-                                        onSelect: () => setDialog("computer"),
-                                    },
-                                    {
-                                        id: "files",
-                                        label: "Files",
-                                        icon: Files,
-                                        onSelect: () => onLibrary("files"),
-                                    },
-                                    {
-                                        id: "memory",
-                                        label: "Memory",
-                                        icon: Brain,
-                                        onSelect: () => onLibrary("memory"),
-                                    },
-                                    {
-                                        id: "conversations",
-                                        label: "Conversations",
-                                        icon: MessageSquare,
-                                        onSelect: onChooseConversation,
-                                    },
-                                    {
-                                        id: "rename",
-                                        label: "Rename",
-                                        icon: Pencil,
-                                        onSelect: () => setDialog("rename"),
-                                    },
-                                    {
-                                        id: "archive",
-                                        label: conversation.archivedAt
-                                            ? "Restore"
-                                            : "Archive",
-                                        icon: Archive,
-                                        disabled: Boolean(active),
-                                        onSelect: () =>
-                                            change.mutate(
-                                                conversation.archivedAt
-                                                    ? "restore"
-                                                    : "archive"
-                                            ),
-                                    },
-                                    {
-                                        id: "delete",
-                                        label: "Delete conversation",
-                                        icon: Trash2,
-                                        danger: true,
-                                        disabled: Boolean(active),
-                                        onSelect: () => setDialog("delete"),
-                                    },
-                                ]}
-                            />
-                        </div>
-                    </div>
-                </header>
+                        </>
+                    }
+                >
+                    {connectionControl}
+                    <DropdownMenu
+                        label="Conversation actions"
+                        disabled={change.isPending || rename.isPending}
+                        actions={[
+                            {
+                                id: "new",
+                                label: "New chat",
+                                icon: SquarePen,
+                                onSelect: () => void navigate({ to: "/mira" }),
+                            },
+                            {
+                                id: "settings",
+                                label: "Chat settings",
+                                icon: Settings2,
+                                disabled: archived,
+                                onSelect: () => setDialog("settings"),
+                            },
+                            {
+                                id: "computer",
+                                label: "Computer access",
+                                icon: Monitor,
+                                onSelect: () => setDialog("computer"),
+                            },
+                            {
+                                id: "files",
+                                label: "Files",
+                                icon: Files,
+                                onSelect: () => onLibrary("files"),
+                            },
+                            {
+                                id: "memory",
+                                label: "Memory",
+                                icon: Brain,
+                                onSelect: () => onLibrary("memory"),
+                            },
+                            {
+                                id: "conversations",
+                                label: "Conversations",
+                                icon: MessageSquare,
+                                onSelect: onChooseConversation,
+                            },
+                            {
+                                id: "rename",
+                                label: "Rename",
+                                icon: Pencil,
+                                onSelect: () => setDialog("rename"),
+                            },
+                            {
+                                id: "archive",
+                                label: conversation.archivedAt ? "Restore" : "Archive",
+                                icon: Archive,
+                                disabled: Boolean(active),
+                                onSelect: () =>
+                                    change.mutate(
+                                        conversation.archivedAt ? "restore" : "archive"
+                                    ),
+                            },
+                            {
+                                id: "delete",
+                                label: "Delete conversation",
+                                icon: Trash2,
+                                danger: true,
+                                disabled: Boolean(active),
+                                onSelect: () => setDialog("delete"),
+                            },
+                        ]}
+                    />
+                </ChatHeader>
                 {connectionNotice}
                 {!archived && (
                     <VoiceStatus

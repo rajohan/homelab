@@ -58,6 +58,8 @@ internal static class DesktopAppearance
 internal sealed class DesktopMenuRenderer : ToolStripProfessionalRenderer
 {
     protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e) { e.Graphics.Clear(MiraWindow.Surface); }
+    // Let WinForms measure the glyph column; the same surface continues beneath it.
+    protected override void OnRenderImageMargin(ToolStripRenderEventArgs e) { }
     protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
     {
         using (var p = new Pen(MiraWindow.Border)) e.Graphics.DrawRectangle(p, 0, 0, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1);
@@ -65,19 +67,22 @@ internal sealed class DesktopMenuRenderer : ToolStripProfessionalRenderer
     protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
     {
         if (!e.Item.Selected || !e.Item.Enabled) return;
-        var rect = new Rectangle(2, 1, e.Item.Width - 5, e.Item.Height - 2);
+        int rowInset = Math.Max(1, (int)Math.Round(2 * e.Graphics.DpiY / 96));
+        int sideInset = e.ToolStrip.DisplayRectangle.Top + rowInset;
+        var rect = new Rectangle(0, 0, e.Item.Width, e.Item.Height - 1);
+        rect.Inflate(-sideInset, -rowInset);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         using (var fill = new SolidBrush(MiraWindow.Raised))
         using (var outline = DesktopAppearance.Round(rect, 5)) e.Graphics.FillPath(fill, outline);
     }
     protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
     {
-        int size = (int)Math.Round(e.Item.Font.Height * .95);
+        int left = e.TextRectangle.Left;
+        int size = Math.Min(e.ToolStrip.ImageScalingSize.Width, left * 2 / 3);
         if (e.Item.Tag is DesktopGlyph)
-            DesktopAppearance.Glyph(e.Graphics, (DesktopGlyph)e.Item.Tag, new Rectangle(size / 2, (e.Item.Height - size) / 2, size, size),
+            DesktopAppearance.Glyph(e.Graphics, (DesktopGlyph)e.Item.Tag, new Rectangle((left - size) / 2, (e.Item.Height - size) / 2, size, size),
                 e.Item.Enabled && e.Item.Selected ? MiraWindow.Accent : MiraWindow.Muted);
-        int left = size * 2, right = Math.Min(e.Item.Width, e.ToolStrip.ClientSize.Width) - size / 2;
-        e.TextRectangle = new Rectangle(left, 0, Math.Max(1, right - left), e.Item.Height);
+        e.TextRectangle = new Rectangle(left, 0, e.TextRectangle.Width, e.Item.Height);
         e.TextFormat = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine;
         e.TextColor = e.Item.Enabled ? MiraWindow.TextColor : MiraWindow.Muted;
         base.OnRenderItemText(e);
