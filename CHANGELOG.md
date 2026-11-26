@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.1](https://github.com/rajohan/homelab/compare/v0.30.0...v0.30.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **mira:** align chat headers and integrate Windows updates ([#284](https://github.com/rajohan/homelab/issues/284)) ([eccbeef](https://github.com/rajohan/homelab/commit/eccbeef3e02b92cb618aafc8325788340e44b2c2))
+
 ## [0.30.0](https://github.com/rajohan/homelab/compare/v0.29.0...v0.30.0) (2026-11-26)
 
 
