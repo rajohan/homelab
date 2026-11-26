@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.0](https://github.com/rajohan/homelab/compare/v0.29.0...v0.30.0) (2026-11-26)
+
+
+### Features
+
+* **mira:** improve chat, desktop updates and delegated work ([#282](https://github.com/rajohan/homelab/issues/282)) ([081d976](https://github.com/rajohan/homelab/commit/081d97614da4ca77aaea0734e0ddbd4a752ba17a))
+
 ## [0.29.0](https://github.com/rajohan/homelab/compare/v0.28.0...v0.29.0) (2026-11-26)
 
 
