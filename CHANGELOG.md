@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/rajohan/homelab/compare/v0.28.0...v0.29.0) (2026-11-26)
+
+
+### Features
+
+* **mira:** integrate browser and computer controls into chat ([#280](https://github.com/rajohan/homelab/issues/280)) ([952d0b1](https://github.com/rajohan/homelab/commit/952d0b12c7d748f7a438d9985d29b04aefe199a9))
+
 ## [0.28.0](https://github.com/rajohan/homelab/compare/v0.27.1...v0.28.0) (2026-11-25)
 
 
