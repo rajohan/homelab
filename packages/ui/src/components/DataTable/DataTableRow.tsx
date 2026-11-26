@@ -16,7 +16,7 @@ export function DataTableRow<T>({
     readonly row: T;
     readonly index: number;
     readonly columns: readonly DataColumn<T>[];
-    readonly measureElement: (element: Element | null) => void;
+    readonly measureElement?: ((element: Element | null) => void) | undefined;
     readonly compact: boolean;
     readonly rowAction?: DataRowAction<T>;
 }) {

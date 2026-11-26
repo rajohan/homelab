@@ -90,9 +90,9 @@
         margin: 0;
     }
 
-    /* Long account forms must remain scrollable without an app-owned scroll container. */
+    /* Clip horizontal overflow without making body a scroll container for sticky headers. */
     body {
-        overflow-x: hidden;
+        overflow-x: clip;
     }
 
     #root {

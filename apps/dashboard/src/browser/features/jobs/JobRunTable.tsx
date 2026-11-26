@@ -23,12 +23,14 @@ export function JobRunTable({
     rows,
     onSelect,
     continuation,
+    className,
     sort,
     onSortChange,
 }: {
     readonly rows: readonly JobSummary[];
     readonly onSelect: (id: string) => void;
     readonly continuation?: InfiniteScrollContinuation;
+    readonly className?: string;
     readonly sort?: TableSort | null;
     readonly onSortChange?: (sort: TableSort | null) => void;
 }) {
@@ -40,6 +42,7 @@ export function JobRunTable({
         <>
             <DataTable
                 label="Job runs"
+                {...(className ? { className } : {})}
                 compact
                 rowAction={{
                     label: (run) =>

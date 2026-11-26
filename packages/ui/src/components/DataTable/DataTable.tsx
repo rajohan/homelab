@@ -1,4 +1,4 @@
-import { type ReactNode, useRef, useState } from "react";
+import { type Key, type ReactNode, useRef, useState } from "react";
 
 import { useOverlayScrollbars } from "../../hooks/useOverlayScrollbars";
 import { cn } from "../../lib/classNames";
@@ -38,7 +38,7 @@ export interface DataRowAction<T> {
 }
 
 /**
- * Display a responsive, virtualized data table with optional cursor-driven continuation.
+ * Display a responsive table with native rows for complete inventories and a virtual window for paged data.
  * @returns A labelled table which becomes stacked labelled rows on narrow containers.
  */
 export function DataTable<T>({
@@ -87,6 +87,24 @@ export function DataTable<T>({
         else setLocalSort(next);
         scrollRef.current?.scrollTo({ top: 0 });
     };
+    function renderRow(
+        row: T,
+        index: number,
+        key: Key,
+        measureElement?: (element: Element | null) => void
+    ) {
+        return (
+            <DataTableRow
+                key={key}
+                row={row}
+                index={index}
+                measureElement={measureElement}
+                columns={columns}
+                compact={compact}
+                {...(rowAction === undefined ? {} : { rowAction })}
+            />
+        );
+    }
     return (
         <div className="@container min-w-0">
             <section
@@ -98,99 +116,104 @@ export function DataTable<T>({
                     className
                 )}
             >
-                <Virtualizer
-                    count={displayedRows.length}
-                    scrollRef={scrollRef}
-                    getKey={(index) => {
-                        const row = displayedRows[index];
-                        return row ? getKey(row) : String(index);
-                    }}
+                <table
+                    aria-label={label}
+                    className={cn(
+                        "w-full table-fixed border-separate border-spacing-0 text-sm tabular-nums @max-3xl:block",
+                        continuation && "[overflow-anchor:none]"
+                    )}
                 >
-                    {({ items, totalSize, measureElement }) => (
-                        <table
-                            aria-label={label}
-                            className="w-full table-fixed border-separate border-spacing-0 text-sm tabular-nums [overflow-anchor:none] @max-3xl:block"
-                        >
-                            <thead className="sticky top-0 z-10 bg-surface-heading text-left text-xs text-primary-400 @max-3xl:sr-only">
-                                <tr>
-                                    {columns.map((column) => (
-                                        <th
-                                            key={column.id}
-                                            scope="col"
-                                            aria-sort={
+                    <thead className="sticky top-0 z-10 bg-surface-heading text-left text-xs text-primary-400 @max-3xl:sr-only">
+                        <tr>
+                            {columns.map((column) => (
+                                <th
+                                    key={column.id}
+                                    scope="col"
+                                    aria-sort={
+                                        selectedSort?.id === column.id
+                                            ? selectedSort.direction
+                                            : undefined
+                                    }
+                                    className={cn(
+                                        "border-b border-primary-700 p-3 font-medium",
+                                        column.width
+                                    )}
+                                >
+                                    {column.sortValue &&
+                                    (!continuation || onSortChange) ? (
+                                        <TableSortButton
+                                            label={column.label}
+                                            direction={
                                                 selectedSort?.id === column.id
                                                     ? selectedSort.direction
                                                     : undefined
                                             }
-                                            className={cn(
-                                                "border-b border-primary-700 p-3 font-medium",
-                                                column.width
-                                            )}
-                                        >
-                                            {column.sortValue &&
-                                            (!continuation || onSortChange) ? (
-                                                <TableSortButton
-                                                    label={column.label}
-                                                    direction={
-                                                        selectedSort?.id === column.id
-                                                            ? selectedSort.direction
-                                                            : undefined
-                                                    }
-                                                    onClick={() => selectSort(column.id)}
-                                                />
-                                            ) : (
-                                                <span
-                                                    className={
-                                                        column.hideLabel
-                                                            ? "sr-only"
-                                                            : undefined
-                                                    }
-                                                >
-                                                    {column.label}
-                                                </span>
-                                            )}
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody className="@max-3xl:block">
-                                <tr aria-hidden="true" className="@max-3xl:block">
-                                    <td
-                                        colSpan={columns.length}
-                                        style={{ height: items[0]?.start ?? 0 }}
-                                    />
-                                </tr>
-                                {items.map((item) => {
-                                    const row = displayedRows[item.index];
-                                    return row === undefined ? null : (
-                                        <DataTableRow
-                                            key={item.key}
-                                            row={row}
-                                            index={item.index}
-                                            measureElement={measureElement}
-                                            columns={columns}
-                                            compact={compact}
-                                            {...(rowAction === undefined
-                                                ? {}
-                                                : { rowAction })}
+                                            onClick={() => selectSort(column.id)}
                                         />
-                                    );
-                                })}
-                                <tr aria-hidden="true" className="@max-3xl:block">
-                                    <td
-                                        colSpan={columns.length}
-                                        style={{
-                                            height: Math.max(
-                                                0,
-                                                totalSize - (items.at(-1)?.end ?? 0)
-                                            ),
-                                        }}
-                                    />
-                                </tr>
-                            </tbody>
-                        </table>
-                    )}
-                </Virtualizer>
+                                    ) : (
+                                        <span
+                                            className={
+                                                column.hideLabel ? "sr-only" : undefined
+                                            }
+                                        >
+                                            {column.label}
+                                        </span>
+                                    )}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody className="@max-3xl:block">
+                        {continuation ? (
+                            <Virtualizer
+                                count={displayedRows.length}
+                                scrollRef={scrollRef}
+                                getKey={(index) => {
+                                    const row = displayedRows[index];
+                                    return row ? getKey(row) : String(index);
+                                }}
+                            >
+                                {({ items, totalSize, measureElement }) => (
+                                    <>
+                                        <tr aria-hidden="true" className="@max-3xl:block">
+                                            <td
+                                                colSpan={columns.length}
+                                                style={{ height: items[0]?.start ?? 0 }}
+                                            />
+                                        </tr>
+                                        {items.map((item) => {
+                                            const row = displayedRows[item.index];
+                                            return row === undefined
+                                                ? null
+                                                : renderRow(
+                                                      row,
+                                                      item.index,
+                                                      item.key,
+                                                      measureElement
+                                                  );
+                                        })}
+                                        <tr aria-hidden="true" className="@max-3xl:block">
+                                            <td
+                                                colSpan={columns.length}
+                                                style={{
+                                                    height: Math.max(
+                                                        0,
+                                                        totalSize -
+                                                            (items.at(-1)?.end ?? 0)
+                                                    ),
+                                                }}
+                                            />
+                                        </tr>
+                                    </>
+                                )}
+                            </Virtualizer>
+                        ) : (
+                            displayedRows.map((row, index) =>
+                                renderRow(row, index, getKey(row))
+                            )
+                        )}
+                    </tbody>
+                </table>
                 {continuation && (
                     <InfiniteScrollTrigger
                         rootRef={scrollRef}
