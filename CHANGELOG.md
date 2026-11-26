@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.7](https://github.com/rajohan/homelab/compare/v0.30.6...v0.30.7) (2026-11-26)
+
+
+### Bug Fixes
+
+* **ui:** stabilize dashboard scrolling and keep table headers full width ([#296](https://github.com/rajohan/homelab/issues/296)) ([9494d58](https://github.com/rajohan/homelab/commit/9494d58a4d8e00b67ba70862a20fa2539c7efcf1))
+
 ## [0.30.6](https://github.com/rajohan/homelab/compare/v0.30.5...v0.30.6) (2026-11-26)
 
 
