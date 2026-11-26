@@ -1,5 +1,6 @@
 import { type ReactNode, useRef } from "react";
 
+import { useOverlayScrollbars } from "../../hooks/useOverlayScrollbars";
 import { cn } from "../../lib/classNames";
 import {
     type InfiniteScrollContinuation,
@@ -30,8 +31,9 @@ export function ScrollList<T>({
     readonly framed?: boolean;
 }) {
     const scrollRef = useRef<HTMLElement>(null);
+    useOverlayScrollbars(scrollRef);
     return (
-        <div className="grid scroll-anchor-boundary">
+        <div className="relative grid scroll-anchor-boundary">
             <section
                 ref={scrollRef}
                 aria-label={label}

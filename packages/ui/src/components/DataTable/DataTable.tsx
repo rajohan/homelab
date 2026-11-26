@@ -1,5 +1,6 @@
 import { type ReactNode, useRef, useState } from "react";
 
+import { useOverlayScrollbars } from "../../hooks/useOverlayScrollbars";
 import { cn } from "../../lib/classNames";
 import {
     type InfiniteScrollContinuation,
@@ -63,6 +64,7 @@ export function DataTable<T>({
     readonly onSortChange?: (sort: TableSort | null) => void;
 }) {
     const scrollRef = useRef<HTMLElement>(null);
+    useOverlayScrollbars(scrollRef);
     const [localSort, setLocalSort] = useState<TableSort | null>(null);
     const selectedSort = sort === undefined ? localSort : sort;
     const sortedColumn = columns.find((column) => column.id === selectedSort?.id);
@@ -85,7 +87,7 @@ export function DataTable<T>({
         scrollRef.current?.scrollTo({ top: 0 });
     };
     return (
-        <div className="@container scroll-anchor-boundary">
+        <div className="@container relative scroll-anchor-boundary">
             <section
                 ref={scrollRef}
                 tabIndex={0}
