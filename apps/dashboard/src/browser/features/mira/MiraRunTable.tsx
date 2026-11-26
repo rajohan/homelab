@@ -12,25 +12,9 @@ import { Link } from "@tanstack/react-router";
 import { ListChecks, MessageSquare, Square } from "lucide-react";
 import { useState } from "react";
 
+import { MiraRunContext } from "./MiraRunContext";
 import { MiraRunDetails } from "./MiraRunDetails";
 import { miraStatusTone } from "./statusTone";
-
-function runSource(run: MiraRunSummary) {
-    if (run.automationName) return run.automationName;
-    if (run.automationId) return "Automation";
-    return run.taskId ? "Task" : "Chat";
-}
-
-function RunContext({ run, className }: { run: MiraRunSummary; className: string }) {
-    return (
-        <div className={className}>
-            <p className="text-xs text-primary-400">{runSource(run)}</p>
-            {run.message && (
-                <p className="mt-1 text-xs text-primary-300">{run.message}</p>
-            )}
-        </div>
-    );
-}
 
 /**
  * Present agent runs with the same responsive table and scroll behavior as infrastructure jobs.
@@ -72,7 +56,7 @@ export function MiraRunTable({
                                 <p className="font-medium text-primary-100">
                                     {run.title}
                                 </p>
-                                <RunContext run={run} className="hidden @3xl:block" />
+                                <MiraRunContext run={run} className="hidden @3xl:block" />
                             </div>
                         ),
                     },
@@ -97,7 +81,7 @@ export function MiraRunTable({
                                         <Badge tone="info">Follow-up closed</Badge>
                                     )}
                                 </div>
-                                <RunContext run={run} className="mt-2 @3xl:hidden" />
+                                <MiraRunContext run={run} className="mt-2 @3xl:hidden" />
                             </>
                         ),
                     },
