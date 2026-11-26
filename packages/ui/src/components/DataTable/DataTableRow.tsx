@@ -68,7 +68,7 @@ export function DataTableRow<T>({
                                 type="button"
                                 aria-label={rowAction.label(row)}
                                 onClick={() => rowAction.onSelect(row)}
-                                className="absolute inset-0 z-0 cursor-pointer transition-colors hover:bg-primary-800/50 focus-visible:bg-primary-800/50 focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:outline-none focus-visible:ring-inset"
+                                className="absolute inset-0 z-0 cursor-pointer hover:bg-primary-800/50 focus-visible:bg-primary-800/50 focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:outline-none focus-visible:ring-inset"
                             />
                         )}
                         <div

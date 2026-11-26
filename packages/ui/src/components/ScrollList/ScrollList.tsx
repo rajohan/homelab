@@ -43,6 +43,9 @@ export function ScrollList<T>({
                     framed && rows.length > 0
                         ? "scroll-frame bg-surface-card"
                         : "overflow-auto rounded-lg",
+                    continuation?.hasMore &&
+                        (continuation.loading || continuation.refreshing) &&
+                        "overscroll-y-contain",
                     className
                 )}
             >

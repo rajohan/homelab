@@ -94,6 +94,9 @@ export function DataTable<T>({
                 aria-label={label}
                 className={cn(
                     "isolate max-h-[min(32.5rem,60dvh)] scroll-frame bg-surface-card focus-visible:outline-2 focus-visible:outline-accent-500",
+                    continuation?.hasMore &&
+                        (continuation.loading || continuation.refreshing) &&
+                        "overscroll-y-contain",
                     className
                 )}
             >
