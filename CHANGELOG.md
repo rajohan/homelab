@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.2](https://github.com/rajohan/homelab/compare/v0.30.1...v0.30.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **mira:** use shared dialogs for Windows updates and screen access ([#286](https://github.com/rajohan/homelab/issues/286)) ([38fea26](https://github.com/rajohan/homelab/commit/38fea2668ebe597a6a948db940370cc06f7deed8))
+
 ## [0.30.1](https://github.com/rajohan/homelab/compare/v0.30.0...v0.30.1) (2026-11-26)
 
 
