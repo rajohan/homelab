@@ -69,49 +69,36 @@ export function JobHistory({
                     icon={view === "active" ? ListTodo : History}
                 />
             )}
-            <div
-                className={
-                    view === "active"
-                        ? "grid h-(--queue-height) grid-rows-[minmax(0,1fr)] [--queue-height:clamp(10rem,26dvh,15rem)] [&>p]:content-center [&>p]:overflow-y-auto"
-                        : "space-y-4"
-                }
-            >
-                {query.isPending && <LoadingState label="Loading jobs…" />}
-                {query.isError && rows.length === 0 && (
-                    <ErrorNotice error={query.error} />
-                )}
-                {rows.length > 0 && (
-                    <JobRunTable
-                        {...(view === "active"
-                            ? { className: "h-(--queue-height) max-h-none" }
-                            : {})}
-                        rows={rows}
-                        sort={sort}
-                        onSortChange={setSort}
-                        onSelect={setSelected}
-                        continuation={{
-                            hasMore: query.hasNextPage,
-                            loading: query.isFetchingNextPage,
-                            refreshing: query.isRefetching || query.isPlaceholderData,
-                            error: query.isError ? query.error : undefined,
-                            loadingLabel: "Loading more runs…",
-                            onLoadMore: () =>
-                                void (query.isRefetchError
-                                    ? query.refetch()
-                                    : query.fetchNextPage()),
-                        }}
-                    />
-                )}
-                {!query.isPending && !query.isError && rows.length === 0 && (
-                    <EmptyState
-                        message={
-                            view === "active"
-                                ? "No queued or running jobs."
-                                : "No completed runs yet."
-                        }
-                    />
-                )}
-            </div>
+            {query.isPending && <LoadingState label="Loading jobs…" />}
+            {query.isError && rows.length === 0 && <ErrorNotice error={query.error} />}
+            {rows.length > 0 && (
+                <JobRunTable
+                    rows={rows}
+                    sort={sort}
+                    onSortChange={setSort}
+                    onSelect={setSelected}
+                    continuation={{
+                        hasMore: query.hasNextPage,
+                        loading: query.isFetchingNextPage,
+                        refreshing: query.isRefetching || query.isPlaceholderData,
+                        error: query.isError ? query.error : undefined,
+                        loadingLabel: "Loading more runs…",
+                        onLoadMore: () =>
+                            void (query.isRefetchError
+                                ? query.refetch()
+                                : query.fetchNextPage()),
+                    }}
+                />
+            )}
+            {!query.isPending && !query.isError && rows.length === 0 && (
+                <EmptyState
+                    message={
+                        view === "active"
+                            ? "No queued or running jobs."
+                            : "No completed runs yet."
+                    }
+                />
+            )}
             {selected && (
                 <RunDetailDialog id={selected} onClose={() => setSelected(undefined)} />
             )}

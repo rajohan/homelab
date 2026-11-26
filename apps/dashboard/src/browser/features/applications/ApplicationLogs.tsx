@@ -5,10 +5,10 @@ import {
     ErrorNotice,
     LoadingState,
     queryRefresh,
+    ScrollList,
     SearchInput,
     Switch,
     TimeRangeSelect,
-    VirtualList,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ScrollText } from "lucide-react";
@@ -118,7 +118,7 @@ export function ApplicationLogs({
                     </p>
                 )}
                 {rows.length > 0 && (
-                    <VirtualList
+                    <ScrollList
                         label="Application logs"
                         className="max-h-[min(30rem,55dvh)] overflow-y-auto rounded-lg border border-primary-700 bg-primary-950"
                         itemClassName="border-b border-primary-700/70 pb-0"

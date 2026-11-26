@@ -6,15 +6,15 @@ import {
     formatDateTime,
     formatMetric,
     type InfiniteScrollContinuation,
+    ScrollList,
     SortControl,
-    VirtualList,
 } from "@homelab/ui";
 
 import { SnapshotStatus } from "./SnapshotStatus";
 
 /**
  * Present read-only snapshot rows without treating retained mutable state as current.
- * @returns A virtualized metadata list whose health and protection share one availability boundary.
+ * @returns A paginated metadata list whose health and protection share one availability boundary.
  */
 export function SnapshotList({
     snapshots,
@@ -56,7 +56,7 @@ export function SnapshotList({
                     ]}
                 />
             )}
-            <VirtualList
+            <ScrollList
                 label="Backup snapshots"
                 rows={snapshots}
                 getKey={(row) => row.id}

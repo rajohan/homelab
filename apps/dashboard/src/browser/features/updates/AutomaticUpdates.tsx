@@ -1,4 +1,4 @@
-import { ErrorNotice, LoadingState, queryRefresh, VirtualList } from "@homelab/ui";
+import { ErrorNotice, LoadingState, queryRefresh, ScrollList } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../../api/client";
@@ -68,7 +68,7 @@ export function AutomaticUpdates({
                 </div>
             )}
             {targets.length > 0 && (
-                <VirtualList
+                <ScrollList
                     label="Automatic update targets"
                     rows={targets}
                     getKey={(policy) => policy.target}

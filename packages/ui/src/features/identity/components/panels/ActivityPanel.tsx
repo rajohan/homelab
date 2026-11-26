@@ -62,7 +62,7 @@ const columns: readonly DataColumn<Event>[] = [
 ];
 
 /**
- * Load account-scoped activity in cursor pages and virtualize the rendered history.
+ * Load account-scoped activity in cursor pages as the reader scrolls.
  * @returns A responsive audit table with automatic continuation and visible retry controls.
  */
 export function ActivityPanel({

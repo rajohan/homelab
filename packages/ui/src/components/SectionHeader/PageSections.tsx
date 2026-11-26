@@ -1,5 +1,6 @@
 import { type ReactNode, useContext, useEffect, useRef } from "react";
 
+import { cn } from "../../lib/classNames";
 import { DeferredPageContent } from "./DeferredPageContent";
 import { PageOutlineContext } from "./pageOutlineContext";
 
@@ -7,6 +8,7 @@ interface PageSection {
     readonly id: string;
     readonly label: string;
     readonly content: ReactNode;
+    readonly className?: string;
     readonly width?: "half" | "full";
 }
 
@@ -140,7 +142,13 @@ export function PageSections({
                         id={section.id}
                         tabIndex={-1}
                         aria-label={section.label}
-                        className={`min-w-0 scroll-mt-18 focus-visible:outline-2 focus-visible:outline-accent-300 ${section.width === "half" ? "[&>section]:h-full" : "col-span-full"}`}
+                        className={cn(
+                            "min-w-0 scroll-mt-18 focus-visible:outline-2 focus-visible:outline-accent-300",
+                            section.width === "half"
+                                ? "[&>section]:h-full"
+                                : "col-span-full",
+                            section.className
+                        )}
                     >
                         {deferBelowFold && index > 0 ? (
                             <DeferredPageContent label={section.label}>

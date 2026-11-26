@@ -6,7 +6,7 @@ import {
     LoadingState,
     Modal,
     queryRefresh,
-    VirtualList,
+    ScrollList,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { History, Play } from "lucide-react";
@@ -105,7 +105,7 @@ export function RunDetailDialog({
                         </DetailSection>
                         <MaintenanceResults results={run.results ?? []} />
                         <DetailSection icon={History} title="Run events">
-                            <VirtualList
+                            <ScrollList
                                 label="Run events"
                                 className="max-h-72 space-y-3 overflow-y-auto text-sm"
                                 rows={

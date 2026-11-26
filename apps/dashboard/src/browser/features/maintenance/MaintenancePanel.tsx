@@ -4,11 +4,11 @@ import {
     ErrorNotice,
     LoadingState,
     queryRefresh,
+    ScrollList,
     SearchInput,
     SectionPanel,
     Select,
     SummaryStrip,
-    VirtualList,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { RotateCw } from "lucide-react";
@@ -177,7 +177,7 @@ export function MaintenancePanel() {
                 />
             )}
             {groups.length > 0 && (
-                <VirtualList
+                <ScrollList
                     key={JSON.stringify([
                         search.trim().toLowerCase(),
                         requirement,

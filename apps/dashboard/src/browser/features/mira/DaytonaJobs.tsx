@@ -4,14 +4,14 @@ import {
     Badge,
     Button,
     Card,
-    InfiniteScrollTrigger,
     LoadingState,
     Modal,
+    ScrollList,
     SectionHeader,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Cloud, Server, Terminal } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import { api } from "../../api/client";
 import { DaytonaDetails } from "./DaytonaDetails";
@@ -28,7 +28,6 @@ export function DaytonaJobs({
     readonly onClose?: () => void;
     readonly conversationId?: string | undefined;
 }) {
-    const scrollRoot = useRef<HTMLDivElement>(null);
     const [selected, setSelected] = useState<MiraDaytonaJob>();
     const query = useInfiniteQuery({
         queryKey: ["operations", "mira", "daytona", conversationId],
@@ -55,12 +54,14 @@ export function DaytonaJobs({
                     No code jobs yet. Ask Mira to prepare a command in Chat.
                 </p>
             )}
-            <div
-                ref={scrollRoot}
-                className="max-h-128 scroll-frame divide-y divide-primary-700 bg-surface-card"
-            >
-                {rows.map((job) => (
-                    <section key={job.id} className="space-y-3 p-4 sm:p-5">
+            <ScrollList
+                label="Code job history"
+                rows={rows}
+                getKey={(job) => job.id}
+                framed
+                className="max-h-128"
+                renderItem={(job) => (
+                    <section className="space-y-3 p-4 sm:p-5">
                         <SectionHeader
                             title={job.content.title}
                             icon={job.executionTarget === "main" ? Server : Cloud}
@@ -85,21 +86,18 @@ export function DaytonaJobs({
                             <p className="text-sm text-primary-300">{job.message}</p>
                         )}
                     </section>
-                ))}
-                <InfiniteScrollTrigger
-                    rootRef={scrollRoot}
-                    itemCount={query.data?.pages.length ?? 0}
-                    hasMore={query.hasNextPage}
-                    loading={query.isFetchingNextPage}
-                    refreshing={query.isRefetching}
-                    error={query.isError ? query.error : undefined}
-                    onLoadMore={() =>
+                )}
+                continuation={{
+                    hasMore: query.hasNextPage,
+                    loading: query.isFetchingNextPage,
+                    refreshing: query.isRefetching,
+                    error: query.isError ? query.error : undefined,
+                    onLoadMore: () =>
                         void (query.isRefetchError
                             ? query.refetch()
-                            : query.fetchNextPage())
-                    }
-                />
-            </div>
+                            : query.fetchNextPage()),
+                }}
+            />
             {selected && (
                 <DaytonaDetails job={selected} onClose={() => setSelected(undefined)} />
             )}

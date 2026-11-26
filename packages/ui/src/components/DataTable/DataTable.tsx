@@ -1,4 +1,4 @@
-import { type Key, type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 
 import { useOverlayScrollbars } from "../../hooks/useOverlayScrollbars";
 import { cn } from "../../lib/classNames";
@@ -6,7 +6,6 @@ import {
     type InfiniteScrollContinuation,
     InfiniteScrollTrigger,
 } from "../InfiniteScrollTrigger/InfiniteScrollTrigger";
-import { Virtualizer } from "../Virtualizer/Virtualizer";
 import { DataTableRow } from "./DataTableRow";
 import { TableSortButton } from "./TableSortButton";
 import {
@@ -38,7 +37,7 @@ export interface DataRowAction<T> {
 }
 
 /**
- * Display a responsive table with native rows for complete inventories and a virtual window for paged data.
+ * Render loaded rows at their natural height and request the next page near the end.
  * @returns A labelled table which becomes stacked labelled rows on narrow containers.
  */
 export function DataTable<T>({
@@ -87,26 +86,8 @@ export function DataTable<T>({
         else setLocalSort(next);
         scrollRef.current?.scrollTo({ top: 0 });
     };
-    function renderRow(
-        row: T,
-        index: number,
-        key: Key,
-        measureElement?: (element: Element | null) => void
-    ) {
-        return (
-            <DataTableRow
-                key={key}
-                row={row}
-                index={index}
-                measureElement={measureElement}
-                columns={columns}
-                compact={compact}
-                {...(rowAction === undefined ? {} : { rowAction })}
-            />
-        );
-    }
     return (
-        <div className="@container min-w-0">
+        <div className="@container scroll-anchor-boundary">
             <section
                 ref={scrollRef}
                 tabIndex={0}
@@ -118,10 +99,7 @@ export function DataTable<T>({
             >
                 <table
                     aria-label={label}
-                    className={cn(
-                        "w-full table-fixed border-separate border-spacing-0 text-sm tabular-nums @max-3xl:block",
-                        continuation && "[overflow-anchor:none]"
-                    )}
+                    className="w-full table-fixed border-separate border-spacing-0 text-sm tabular-nums @max-3xl:block"
                 >
                     <thead className="sticky top-0 z-10 bg-surface-heading text-left text-xs text-primary-400 @max-3xl:sr-only">
                         <tr>
@@ -164,54 +142,16 @@ export function DataTable<T>({
                         </tr>
                     </thead>
                     <tbody className="@max-3xl:block">
-                        {continuation ? (
-                            <Virtualizer
-                                count={displayedRows.length}
-                                scrollRef={scrollRef}
-                                getKey={(index) => {
-                                    const row = displayedRows[index];
-                                    return row ? getKey(row) : String(index);
-                                }}
-                            >
-                                {({ items, totalSize, measureElement }) => (
-                                    <>
-                                        <tr aria-hidden="true" className="@max-3xl:block">
-                                            <td
-                                                colSpan={columns.length}
-                                                style={{ height: items[0]?.start ?? 0 }}
-                                            />
-                                        </tr>
-                                        {items.map((item) => {
-                                            const row = displayedRows[item.index];
-                                            return row === undefined
-                                                ? null
-                                                : renderRow(
-                                                      row,
-                                                      item.index,
-                                                      item.key,
-                                                      measureElement
-                                                  );
-                                        })}
-                                        <tr aria-hidden="true" className="@max-3xl:block">
-                                            <td
-                                                colSpan={columns.length}
-                                                style={{
-                                                    height: Math.max(
-                                                        0,
-                                                        totalSize -
-                                                            (items.at(-1)?.end ?? 0)
-                                                    ),
-                                                }}
-                                            />
-                                        </tr>
-                                    </>
-                                )}
-                            </Virtualizer>
-                        ) : (
-                            displayedRows.map((row, index) =>
-                                renderRow(row, index, getKey(row))
-                            )
-                        )}
+                        {displayedRows.map((row, index) => (
+                            <DataTableRow
+                                key={getKey(row)}
+                                row={row}
+                                index={index}
+                                columns={columns}
+                                compact={compact}
+                                {...(rowAction === undefined ? {} : { rowAction })}
+                            />
+                        ))}
                     </tbody>
                 </table>
                 {continuation && (

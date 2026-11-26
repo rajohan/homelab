@@ -162,6 +162,14 @@
     }
 }
 
+/* Keep anchors inside a nested scrollport local to that scrollport. A change to
+   an offscreen row must not also move the document that contains it. */
+@utility scroll-anchor-boundary {
+    min-width: 0;
+    min-height: 0;
+    overflow-anchor: none;
+}
+
 @utility scroll-frame {
     min-width: 0;
     overflow: auto;

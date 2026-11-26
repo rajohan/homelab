@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 import { formatDateTimeParts } from "../../lib/formatDateTime";
 import type { InfiniteScrollContinuation } from "../InfiniteScrollTrigger/InfiniteScrollTrigger";
-import { VirtualList } from "../Virtualizer/VirtualList";
+import { ScrollList } from "../ScrollList/ScrollList";
 import { BreakableName } from "./BreakableName";
 
 type EventTone = "positive" | "warning" | "danger" | "neutral";
@@ -121,7 +121,7 @@ export function EventTimeline({
     if (events.length === 0 && !scroll) return null;
     if (scroll)
         return (
-            <VirtualList
+            <ScrollList
                 label={scroll.label}
                 rows={events}
                 getKey={(event) => event.id}
