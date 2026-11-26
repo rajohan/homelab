@@ -6,9 +6,10 @@ import {
     type InfiniteScrollContinuation,
     InfiniteScrollTrigger,
 } from "../InfiniteScrollTrigger/InfiniteScrollTrigger";
+import { Virtualizer } from "../Virtualizer/Virtualizer";
 
 /**
- * Keep loaded items in reading order and fetch cursor pages near the end of the list.
+ * Window measured list items and fetch cursor pages near the end of the list.
  * @returns A keyboard-scrollable list of cards or events at their natural heights.
  */
 export function ScrollList<T>({
@@ -49,21 +50,51 @@ export function ScrollList<T>({
                     className
                 )}
             >
-                <ul>
-                    {rows.map((row, index) => (
-                        <li
-                            key={getKey(row)}
-                            data-index={index}
-                            className={cn(
-                                !framed && "pb-3",
-                                framed && index > 0 && "border-t border-primary-700",
-                                itemClassName
-                            )}
-                        >
-                            {renderItem(row, index)}
-                        </li>
-                    ))}
-                </ul>
+                <Virtualizer
+                    count={rows.length}
+                    scrollRef={scrollRef}
+                    getKey={(index) => {
+                        const row = rows[index];
+                        return row === undefined ? String(index) : getKey(row);
+                    }}
+                >
+                    {({ items, totalSize, measureElement }) => (
+                        <ul className="[overflow-anchor:none]">
+                            <li
+                                aria-hidden="true"
+                                style={{ height: items[0]?.start ?? 0 }}
+                            />
+                            {items.map((item) => {
+                                const row = rows[item.index];
+                                return row === undefined ? null : (
+                                    <li
+                                        key={item.key}
+                                        data-index={item.index}
+                                        ref={measureElement}
+                                        className={cn(
+                                            !framed && "pb-3",
+                                            framed &&
+                                                item.index > 0 &&
+                                                "border-t border-primary-700",
+                                            itemClassName
+                                        )}
+                                    >
+                                        {renderItem(row, item.index)}
+                                    </li>
+                                );
+                            })}
+                            <li
+                                aria-hidden="true"
+                                style={{
+                                    height: Math.max(
+                                        0,
+                                        totalSize - (items.at(-1)?.end ?? 0)
+                                    ),
+                                }}
+                            />
+                        </ul>
+                    )}
+                </Virtualizer>
                 {continuation && (
                     <InfiniteScrollTrigger
                         rootRef={scrollRef}
