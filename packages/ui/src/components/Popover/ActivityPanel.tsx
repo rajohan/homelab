@@ -45,7 +45,7 @@ export function ActivityPanel({
             </header>
             <div
                 data-ui="overlay-body"
-                className="flex min-w-0 flex-col gap-3 bg-surface-panel p-3 sm:p-4"
+                className="flex min-h-0 min-w-0 flex-col gap-3 bg-surface-panel p-3 sm:p-4"
             >
                 {children}
             </div>
