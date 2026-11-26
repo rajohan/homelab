@@ -99,7 +99,8 @@ export function PageSections({
             // Correct that landing only while the reader is still at its original offset.
             if (target && Math.abs(globalThis.scrollY - landingY) <= 1) {
                 const margin =
-                    Number.parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+                    Number(getComputedStyle(target).scrollMarginTop.replace("px", "")) ||
+                    0;
                 if (Math.abs(target.getBoundingClientRect().top - margin) > 1) land();
             } else {
                 releaseTarget();
