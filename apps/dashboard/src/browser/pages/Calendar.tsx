@@ -1,5 +1,5 @@
 import type { CalendarRange } from "@homelab/contracts/miraCalendar";
-import { Button, ErrorNotice, LoadingState, PageHeader } from "@homelab/ui";
+import { Button, ErrorNotice, LoadingState, Modal, PageHeader } from "@homelab/ui";
 import { skipToken, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { addDays, endOfMonth, startOfMonth, startOfWeek } from "date-fns";
@@ -71,6 +71,11 @@ export function Calendar() {
             )
         );
     };
+    const closeEvent = () => {
+        setCreating(false);
+        setDay(day);
+        if (eventId) void navigate({ search: {}, resetScroll: false, replace: true });
+    };
     return (
         <div className="@container/calendar flex min-w-0 flex-col gap-3">
             <PageHeader
@@ -86,13 +91,6 @@ export function Calendar() {
                 }
             />
             {query.isError && <ErrorNotice error={query.error} />}
-            {eventId && linked.isPending && <LoadingState label="Opening event…" />}
-            {eventId && linked.isError && <ErrorNotice error={linked.error} />}
-            {eventId && linked.isSuccess && !event && (
-                <output className="text-sm text-primary-300">
-                    This event is no longer available.
-                </output>
-            )}
             {query.isPending && <LoadingState label="Loading calendar…" />}
             {query.hasNextPage && (
                 <Button
@@ -120,21 +118,24 @@ export function Calendar() {
                     ready={query.isSuccess && !query.hasNextPage}
                 />
             </div>
+            {eventId && !event && !creating && (
+                <Modal title="Calendar event" icon={CalendarDays} onClose={closeEvent}>
+                    {linked.isPending && <LoadingState label="Opening event…" />}
+                    {linked.isError && <ErrorNotice error={linked.error} />}
+                    {linked.isSuccess && (
+                        <p className="text-sm text-primary-300">
+                            This event is no longer available.
+                        </p>
+                    )}
+                </Modal>
+            )}
+            {event && linked.isError && <ErrorNotice error={linked.error} />}
             {(creating || event) && (
                 <CalendarEditor
                     key={event?.id ?? "new"}
                     day={day}
                     event={event ?? undefined}
-                    onClose={() => {
-                        setCreating(false);
-                        setDay(day);
-                        if (eventId)
-                            void navigate({
-                                search: {},
-                                resetScroll: false,
-                                replace: true,
-                            });
-                    }}
+                    onClose={closeEvent}
                 />
             )}
         </div>
