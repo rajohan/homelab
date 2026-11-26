@@ -59,7 +59,7 @@ export function Calendar() {
     const events = query.data?.pages.flatMap((page) => page.items) ?? [];
     const select = (date: Date) => {
         setDay(date);
-        if (eventId) void navigate({ search: {}, replace: true });
+        if (eventId) void navigate({ search: {}, resetScroll: false, replace: true });
     };
     const move = (date: Date) => {
         const first = startOfMonth(date);
@@ -114,7 +114,9 @@ export function Calendar() {
                 <CalendarAgenda
                     day={day}
                     events={eventsOnDay(events, day)}
-                    onSelect={(item) => void navigate({ search: { event: item.id } })}
+                    onSelect={(item) =>
+                        void navigate({ search: { event: item.id }, resetScroll: false })
+                    }
                     ready={query.isSuccess && !query.hasNextPage}
                 />
             </div>
@@ -126,7 +128,12 @@ export function Calendar() {
                     onClose={() => {
                         setCreating(false);
                         setDay(day);
-                        if (eventId) void navigate({ search: {}, replace: true });
+                        if (eventId)
+                            void navigate({
+                                search: {},
+                                resetScroll: false,
+                                replace: true,
+                            });
                     }}
                 />
             )}

@@ -109,7 +109,7 @@ export function DataTable<T>({
                     {({ items, totalSize, measureElement }) => (
                         <table
                             aria-label={label}
-                            className="w-full table-fixed border-separate border-spacing-0 text-sm tabular-nums @max-3xl:block"
+                            className="w-full table-fixed border-separate border-spacing-0 text-sm tabular-nums [overflow-anchor:none] @max-3xl:block"
                         >
                             <thead className="sticky top-0 z-10 bg-surface-heading text-left text-xs text-primary-400 @max-3xl:sr-only">
                                 <tr>

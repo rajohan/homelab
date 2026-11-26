@@ -71,8 +71,6 @@ export function DaytonaDetails({
             job.state === "needs_attention" &&
             job.phase === "cleaning") ||
             job.cleanup === "operator_confirmed");
-    if (recovering)
-        return <DaytonaRecovery id={job.id} onClose={() => setRecovering(false)} />;
     return (
         <Modal
             title={
@@ -245,6 +243,9 @@ export function DaytonaDetails({
                     </ActionGroup>
                 )}
             </div>
+            {recovering && (
+                <DaytonaRecovery id={job.id} onClose={() => setRecovering(false)} />
+            )}
         </Modal>
     );
 }

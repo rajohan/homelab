@@ -12,6 +12,7 @@ import { History, ListTodo } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
+import { sortedListQuery } from "../../api/sortedListQuery";
 import { JobRunTable } from "./JobRunTable";
 import { RunDetailDialog } from "./RunDetailDialog";
 
@@ -33,14 +34,7 @@ export function JobHistory({
     const [selected, setSelected] = useState<string>();
     const [sort, setSort] = useState<TableSort | null>(null);
     const query = useInfiniteQuery({
-        queryKey: [
-            "operations",
-            "jobs",
-            "history",
-            action,
-            view,
-            ...(sort ? [sort] : []),
-        ],
+        ...sortedListQuery(["operations", "jobs", "history", action, view], sort),
         initialPageParam: {},
         queryFn: ({ pageParam, signal }) =>
             api.jobs.list.query(
@@ -85,7 +79,8 @@ export function JobHistory({
                     onSelect={setSelected}
                     continuation={{
                         hasMore: query.hasNextPage,
-                        loading: query.isFetching,
+                        loading: query.isFetchingNextPage,
+                        refreshing: query.isRefetching || query.isPlaceholderData,
                         error: query.isError ? query.error : undefined,
                         loadingLabel: "Loading more runs…",
                         onLoadMore: () =>

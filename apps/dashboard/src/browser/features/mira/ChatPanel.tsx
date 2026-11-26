@@ -421,6 +421,7 @@ export function ChatPanel({
                                     to: "/mira/$conversationId",
                                     params: { conversationId: id },
                                     search: {},
+                                    resetScroll: false,
                                     replace: true,
                                 });
                         }}

@@ -10,9 +10,11 @@ export function ChoiceBar<T extends string>({
     options,
     onChange,
     fullWidth = false,
+    size = "compact",
 }: {
     readonly label: string;
     readonly fullWidth?: boolean;
+    readonly size?: "compact" | "field";
     readonly value: T;
     readonly options: readonly { value: T; label: string; count?: number | string }[];
     readonly onChange: (value: T) => void;
@@ -22,6 +24,7 @@ export function ChoiceBar<T extends string>({
             aria-label={label}
             className={cn(
                 "max-w-full items-center gap-0.5 rounded-lg border border-primary-700 bg-primary-950 p-0.5",
+                size === "field" && "min-h-form-control items-stretch",
                 fullWidth
                     ? "grid w-full auto-cols-fr grid-flow-col"
                     : "inline-flex flex-wrap"
@@ -34,7 +37,10 @@ export function ChoiceBar<T extends string>({
                     aria-pressed={item.value === value}
                     onClick={() => onChange(item.value)}
                     className={cn(
-                        "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md px-2.5 text-sm font-medium pointer-fine:min-h-8",
+                        "inline-flex items-center justify-center gap-1.5 rounded-md px-2.5 text-sm font-medium",
+                        size === "field"
+                            ? "min-h-[calc(var(--spacing-form-control)-var(--spacing)-2px)]"
+                            : "min-h-11 pointer-fine:min-h-8",
                         fullWidth &&
                             item.count !== undefined &&
                             "flex-wrap content-center gap-y-0 self-stretch",

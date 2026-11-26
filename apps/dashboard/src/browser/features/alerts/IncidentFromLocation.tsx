@@ -45,6 +45,8 @@ export function IncidentFromLocation() {
             to: "/alerts",
             search: { view },
             hash: view === "resolved" ? "resolved" : "incidents",
+            resetScroll: false,
+            hashScrollIntoView: false,
             replace: true,
         });
     };

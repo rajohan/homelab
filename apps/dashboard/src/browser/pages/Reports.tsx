@@ -15,13 +15,11 @@ import {
     Switch,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, Outlet } from "@tanstack/react-router";
 import { ArrowUpRight, FileText, History } from "lucide-react";
 import { useState } from "react";
-import * as v from "valibot";
 
 import { api } from "../api/client";
-import { ReportDetail } from "../features/mira/ReportDetail";
 import { miraStatusTone } from "../features/mira/statusTone";
 
 /**
@@ -29,12 +27,6 @@ import { miraStatusTone } from "../features/mira/statusTone";
  * @returns Searchable report history with stable detail links and bounded pagination.
  */
 export function Reports() {
-    const parsed = v.safeParse(
-        v.object({ reportId: v.optional(v.pipe(v.string(), v.uuid())) }),
-        useParams({ strict: false })
-    );
-    const reportId = parsed.success ? parsed.output.reportId : undefined;
-    const navigate = useNavigate();
     const [search, setSearch] = useState("");
     const [kind, setKind] = useState<MiraReport["kind"] | "all">("all");
     const [source, setSource] = useState<MiraReport["source"] | "all">("all");
@@ -184,6 +176,7 @@ export function Reports() {
                             title: (
                                 <Link
                                     to="/reports/$reportId"
+                                    resetScroll={false}
                                     params={{ reportId: report.id }}
                                     className="inline-flex items-baseline gap-2 rounded text-base leading-snug font-semibold tracking-tight wrap-anywhere text-primary-50 hover:text-accent-300"
                                 >
@@ -256,12 +249,7 @@ export function Reports() {
                     }
                 />
             </SectionPanel>
-            {reportId && (
-                <ReportDetail
-                    id={reportId}
-                    onClose={() => void navigate({ to: "/reports" })}
-                />
-            )}
+            <Outlet />
         </div>
     );
 }

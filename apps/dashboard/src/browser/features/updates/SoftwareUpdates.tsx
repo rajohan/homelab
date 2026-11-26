@@ -12,6 +12,7 @@ import { skipToken, useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api } from "../../api/client";
+import { sortedListQuery } from "../../api/sortedListQuery";
 import { UpdateAction } from "./UpdateAction";
 import { UpdateStatus } from "./UpdateStatus";
 import { updateVersion } from "./updateVersion";
@@ -32,15 +33,10 @@ export function SoftwareUpdates({
     const [state, setState] = useState<"attention" | "all">("attention");
     const [sort, setSort] = useState<TableSort | null>(null);
     const query = useInfiniteQuery({
-        queryKey: [
-            "operations",
-            "updates",
-            source,
-            search,
-            state,
-            ...(category === "toolchains" ? [category] : []),
-            ...(sort ? [sort] : []),
-        ],
+        ...sortedListQuery(
+            ["operations", "updates", source, search, state, category],
+            sort
+        ),
         initialPageParam: {},
         queryFn:
             source === undefined
@@ -188,7 +184,8 @@ export function SoftwareUpdates({
                     ]}
                     continuation={{
                         hasMore: query.hasNextPage,
-                        loading: query.isFetching,
+                        loading: query.isFetchingNextPage,
+                        refreshing: query.isRefetching || query.isPlaceholderData,
                         error: query.isError ? query.error : undefined,
                         loadingLabel: "Loading more software…",
                         onLoadMore: () =>

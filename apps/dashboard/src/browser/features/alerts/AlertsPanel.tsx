@@ -46,7 +46,8 @@ export function AlertsPanel({ state }: { readonly state: "current" | "resolved" 
         emptyMessage = "Monitoring incident collection is not configured.";
     const continuation = {
         hasMore: query.hasNextPage,
-        loading: query.isFetching,
+        loading: query.isFetchingNextPage,
+        refreshing: query.isRefetching,
         error: query.isError ? query.error : undefined,
         loadingLabel: "Loading more incidents…",
         onLoadMore: () =>
@@ -139,6 +140,9 @@ export function AlertsPanel({ state }: { readonly state: "current" | "resolved" 
                                 title: (
                                     <Link
                                         to="/alerts"
+                                        hash={true}
+                                        hashScrollIntoView={false}
+                                        resetScroll={false}
                                         search={{
                                             view: state,
                                             incident: row.id,

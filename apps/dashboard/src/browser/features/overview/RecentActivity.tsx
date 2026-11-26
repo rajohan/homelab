@@ -1,5 +1,6 @@
 import {
     Badge,
+    EmptyState,
     ErrorNotice,
     EventTimeline,
     LoadingState,
@@ -31,7 +32,7 @@ export function RecentActivity() {
             {query.isPending && <LoadingState label="Loading recent activity…" />}
             {query.isError && <ErrorNotice error={query.error} />}
             {query.isSuccess && rows.length === 0 && (
-                <p className="text-sm text-primary-400">No recent notifications.</p>
+                <EmptyState message="No recent notifications." />
             )}
             <EventTimeline
                 presentation="feed"

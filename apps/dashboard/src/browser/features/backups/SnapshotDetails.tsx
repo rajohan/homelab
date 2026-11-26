@@ -15,6 +15,7 @@ import { Archive, Layers } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
+import { sortedListQuery } from "../../api/sortedListQuery";
 import { SnapshotList } from "./SnapshotList";
 
 /**
@@ -32,7 +33,7 @@ export function SnapshotDetails({
 }) {
     const [sort, setSort] = useState<TableSort | null>(null);
     const query = useInfiniteQuery({
-        queryKey: ["operations", "snapshots", group.id, ...(sort ? [sort] : [])],
+        ...sortedListQuery(["operations", "snapshots", group.id], sort),
         initialPageParam: {},
         queryFn: ({ pageParam, signal }) =>
             api.backups.snapshots.query(
@@ -86,7 +87,8 @@ export function SnapshotDetails({
                             unavailable={unavailable}
                             continuation={{
                                 hasMore: query.hasNextPage,
-                                loading: query.isFetching,
+                                loading: query.isFetchingNextPage,
+                                refreshing: query.isRefetching || query.isPlaceholderData,
                                 error: query.isError ? query.error : undefined,
                                 onLoadMore: () =>
                                     void (query.isRefetchError

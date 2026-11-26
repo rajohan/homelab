@@ -48,7 +48,13 @@ export function Updates() {
                     id={restartBatch}
                     title="Service restarts need attention"
                     onClose={() =>
-                        void navigate({ search: {}, hash: "maintenance", replace: true })
+                        void navigate({
+                            search: {},
+                            hash: true,
+                            hashScrollIntoView: false,
+                            resetScroll: false,
+                            replace: true,
+                        })
                     }
                 />
             )}

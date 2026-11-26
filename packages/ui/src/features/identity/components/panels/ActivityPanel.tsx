@@ -119,7 +119,8 @@ export function ActivityPanel({
                 continuation={{
                     hasMore: query.hasNextPage,
                     loadingLabel: "Loading more events…",
-                    loading: query.isFetching,
+                    loading: query.isFetchingNextPage,
+                    refreshing: query.isRefetching,
                     error: query.isError ? query.error : undefined,
                     onLoadMore: () => {
                         void (query.isRefetchError

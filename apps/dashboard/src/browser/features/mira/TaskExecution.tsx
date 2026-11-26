@@ -67,7 +67,8 @@ export function TaskExecution({
                     stoppingId={stop.isPending ? stop.variables : undefined}
                     continuation={{
                         hasMore: query.hasNextPage,
-                        loading: query.isFetching,
+                        loading: query.isFetchingNextPage,
+                        refreshing: query.isRefetching,
                         error: query.isError ? query.error : undefined,
                         loadingLabel: "Loading older task runs…",
                         onLoadMore: () =>

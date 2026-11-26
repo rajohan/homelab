@@ -41,26 +41,6 @@ export function MemoryLibrary({ onClose }: { readonly onClose: () => void }) {
     const remove = useOperation((memory: MiraMemory) =>
         api.mira.memory.delete.mutate({ id: memory.id, version: memory.version })
     );
-    if (editing)
-        return (
-            <MemoryEditor
-                memory={editing === "new" ? undefined : editing}
-                onClose={() => setEditing(undefined)}
-            />
-        );
-    if (deleting)
-        return (
-            <ConfirmDialog
-                title="Delete memory"
-                description="Remove this memory from Mira's tools. Previous conversation messages remain in their own history."
-                confirmLabel="Delete memory"
-                onClose={() => setDeleting(undefined)}
-                onConfirm={async () => {
-                    await remove.mutateAsync(deleting);
-                    setDeleting(undefined);
-                }}
-            />
-        );
     return (
         <Modal title="Mira memory" onClose={onClose} size="wide">
             <div className="space-y-4">
@@ -127,6 +107,24 @@ export function MemoryLibrary({ onClose }: { readonly onClose: () => void }) {
                     }
                 />
             </div>
+            {editing && (
+                <MemoryEditor
+                    memory={editing === "new" ? undefined : editing}
+                    onClose={() => setEditing(undefined)}
+                />
+            )}
+            {deleting && (
+                <ConfirmDialog
+                    title="Delete memory"
+                    description="Remove this memory from Mira's tools. Previous conversation messages remain in their own history."
+                    confirmLabel="Delete memory"
+                    onClose={() => setDeleting(undefined)}
+                    onConfirm={async () => {
+                        await remove.mutateAsync(deleting);
+                        setDeleting(undefined);
+                    }}
+                />
+            )}
         </Modal>
     );
 }

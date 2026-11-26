@@ -47,21 +47,6 @@ export function CodeLibrary({
     const cancel = useOperation((draft: MiraCodePublication) =>
         api.mira.code.cancel.mutate({ id: draft.id, version: draft.version })
     );
-    if (reviewing)
-        return <CodeReview draft={reviewing} onClose={() => setReviewing(undefined)} />;
-    if (cancelling)
-        return (
-            <ConfirmDialog
-                title="Cancel proposal"
-                description="Cancel this draft or queued proposal. An attempted publication can only be inspected."
-                confirmLabel="Cancel proposal"
-                onClose={() => setCancelling(undefined)}
-                onConfirm={async () => {
-                    await cancel.mutateAsync(cancelling);
-                    setCancelling(undefined);
-                }}
-            />
-        );
     const rows = query.data?.pages.flatMap((page) => page.rows) ?? [];
     const content = (
         <div className="space-y-4">
@@ -148,6 +133,21 @@ export function CodeLibrary({
                     }
                 />
             </div>
+            {reviewing && (
+                <CodeReview draft={reviewing} onClose={() => setReviewing(undefined)} />
+            )}
+            {cancelling && (
+                <ConfirmDialog
+                    title="Cancel proposal"
+                    description="Cancel this draft or queued proposal. An attempted publication can only be inspected."
+                    confirmLabel="Cancel proposal"
+                    onClose={() => setCancelling(undefined)}
+                    onConfirm={async () => {
+                        await cancel.mutateAsync(cancelling);
+                        setCancelling(undefined);
+                    }}
+                />
+            )}
         </div>
     );
     return onClose ? (

@@ -114,7 +114,8 @@ export function RunDetailDialog({
                                 getKey={(event) => event.id}
                                 continuation={{
                                     hasMore: query.hasNextPage,
-                                    loading: query.isFetching,
+                                    loading: query.isFetchingNextPage,
+                                    refreshing: query.isRefetching,
                                     error: query.isError ? query.error : undefined,
                                     loadingLabel: "Loading older events…",
                                     onLoadMore: () =>
