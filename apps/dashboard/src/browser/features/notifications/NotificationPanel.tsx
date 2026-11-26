@@ -57,8 +57,9 @@ export function NotificationPanel({ onClose }: { readonly onClose: () => void })
             summary={latest ? undefined : countStatus}
         >
             <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-[min(100%,13rem)] flex-1">
+                <div className="min-w-0 flex-[1_1_max-content]">
                     <ChoiceBar
+                        fullWidth
                         label="Notification read state"
                         value={state}
                         onChange={setState}
