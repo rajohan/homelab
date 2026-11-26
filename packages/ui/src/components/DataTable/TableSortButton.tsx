@@ -25,7 +25,7 @@ export function TableSortButton({
             onClick={onClick}
             title={`Sort ${next}`}
             aria-label={`Sort by ${label}: ${next}`}
-            className="inline-flex max-w-full cursor-pointer items-center gap-1 rounded-sm text-left underline-offset-4 hover:text-accent-300 hover:underline focus-visible:outline-2 focus-visible:outline-accent-400"
+            className="inline-flex max-w-full cursor-pointer items-center gap-1 rounded-sm text-left hover:text-primary-50 focus-visible:outline-2 focus-visible:outline-accent-400"
         >
             <span>{label}</span>
             {direction && <SortIcon size={14} aria-hidden="true" className="shrink-0" />}
