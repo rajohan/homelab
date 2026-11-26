@@ -4,6 +4,7 @@ import type {
     NotificationSeverity,
 } from "@homelab/contracts/notifications";
 import {
+    ActionGroup,
     ActivityPanel,
     Button,
     ChoiceBar,
@@ -15,7 +16,7 @@ import {
     VirtualList,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Bell } from "lucide-react";
+import { Bell, CheckCheck, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { NotificationItem } from "./NotificationItem";
@@ -55,9 +56,10 @@ export function NotificationPanel({ onClose }: { readonly onClose: () => void })
             onClose={onClose}
             summary={latest ? undefined : countStatus}
         >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-[min(100%,13rem)] flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+                <div className="min-w-0 flex-[1_1_max-content]">
                     <ChoiceBar
+                        fullWidth
                         label="Notification read state"
                         value={state}
                         onChange={setState}
@@ -82,7 +84,7 @@ export function NotificationPanel({ onClose }: { readonly onClose: () => void })
                         ]}
                     />
                 </div>
-                <div className="flex min-w-0 items-center gap-2">
+                <div className="min-w-0 flex-auto">
                     <Select
                         label="Notification severity"
                         value={severity}
@@ -134,28 +136,32 @@ export function NotificationPanel({ onClose }: { readonly onClose: () => void })
                     }}
                 />
             )}
-            <div className="flex flex-wrap items-center justify-end gap-1 border-t border-primary-700 pt-2">
+            <ActionGroup className="border-t border-primary-700 pt-3">
                 <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={actions.pending || !input || !latest?.unreadCount}
-                    onClick={() => {
-                        if (input) actions.bulk.mutate({ ...input, action: "read" });
-                    }}
-                >
-                    Mark all read
-                </Button>
-                <Button
-                    variant="ghost"
-                    size="sm"
+                    variant="secondary"
                     disabled={actions.pending || !input || !latest?.readCount}
                     onClick={() => {
                         if (input) setClear({ ...input, action: "dismissRead" });
                     }}
                 >
+                    <Trash2 size={16} aria-hidden="true" />
                     Clear read
                 </Button>
-            </div>
+                <Button
+                    busy={
+                        actions.bulk.isPending &&
+                        actions.bulk.variables?.action === "read"
+                    }
+                    busyLabel="Marking as read…"
+                    disabled={actions.pending || !input || !latest?.unreadCount}
+                    onClick={() => {
+                        if (input) actions.bulk.mutate({ ...input, action: "read" });
+                    }}
+                >
+                    <CheckCheck size={16} aria-hidden="true" />
+                    Mark all as read
+                </Button>
+            </ActionGroup>
             {clear && (
                 <ConfirmDialog
                     title="Clear read notifications?"

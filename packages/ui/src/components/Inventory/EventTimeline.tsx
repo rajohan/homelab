@@ -127,7 +127,7 @@ export function EventTimeline({
                 renderItem={renderEvent}
                 continuation={scroll.continuation}
                 className="@container/events"
-                itemClassName="pb-0"
+                itemClassName="pe-scrollbar-inset pb-0"
             />
         );
     return (

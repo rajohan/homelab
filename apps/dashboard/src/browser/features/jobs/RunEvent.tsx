@@ -31,7 +31,7 @@ export function RunEvent({
     };
 }) {
     return (
-        <div>
+        <div className="pe-scrollbar-inset">
             <p className="wrap-anywhere">
                 {event.message ?? labels[event.action] ?? event.action}
             </p>
