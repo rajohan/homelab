@@ -3,6 +3,7 @@ import {
     miraActionPageSchema,
     miraAutomationInputSchema,
     miraAutomationUpdateSchema,
+    miraChatSettingsSchema,
     miraChatSettingsUpdateSchema,
     miraConversationInputSchema,
     miraConversationPageSchema,
@@ -229,6 +230,11 @@ function execute<T>(
 }
 
 const record = v.strictObject({ id: idSchema });
+const voiceOffer = {
+    model: v.pipe(v.string(), v.maxLength(120)),
+    voice: v.picklist(miraVoiceNames),
+    sdp: v.pipe(v.string(), v.minLength(1), v.maxLength(65_536)),
+};
 export const miraRouter = trpc.router({
     voice: trpc.router({
         models: trpc.procedure.query(({ ctx }) =>
@@ -237,13 +243,25 @@ export const miraRouter = trpc.router({
                 return readVoiceModels(ctx.operations?.miraOpenaiApiKey);
             })
         ),
+        preview: trpc.procedure
+            .input(v.strictObject(voiceOffer))
+            .mutation(({ ctx, input }) =>
+                execute(ctx, () => {
+                    authorizedOperations(ctx, "jobs:run");
+                    return connectVoice(
+                        ctx.operations?.miraOpenaiApiKey,
+                        input.model,
+                        input.voice,
+                        input.sdp,
+                        true
+                    );
+                })
+            ),
         connect: trpc.procedure
             .input(
                 v.strictObject({
                     conversationId: idSchema,
-                    model: v.pipe(v.string(), v.maxLength(120)),
-                    voice: v.picklist(miraVoiceNames),
-                    sdp: v.pipe(v.string(), v.minLength(1), v.maxLength(65_536)),
+                    ...voiceOffer,
                 })
             )
             .mutation(({ ctx, input }) =>
@@ -636,9 +654,14 @@ export const miraRouter = trpc.router({
                 execute(ctx, (mira) => changeConversation(mira, input))
             ),
         send: trpc.procedure
-            .input(miraMessageInputSchema)
-            .mutation(({ ctx, input }) =>
-                execute(ctx, (mira) => sendMiraMessage(mira, input))
+            .input(
+                v.strictObject({
+                    ...miraMessageInputSchema.entries,
+                    initialSettings: v.exactOptional(miraChatSettingsSchema),
+                })
+            )
+            .mutation(({ ctx, input: { initialSettings, ...message } }) =>
+                execute(ctx, (mira) => sendMiraMessage(mira, message, initialSettings))
             ),
     }),
     runs: trpc.router({

@@ -69,6 +69,7 @@ export function VoiceSettings({ voice }: { readonly voice: MiraVoiceConnection }
                 />
             </div>
             {catalog.error && <ErrorNotice error={catalog.error} />}
+            {state.error && <ErrorNotice error={new Error(state.error)} />}
             {catalog.data?.configured === false && (
                 <p className="text-sm text-primary-300">Voice is not configured.</p>
             )}

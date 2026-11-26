@@ -11,7 +11,7 @@ const turnDetection = v.object({
     interrupt_response: v.boolean(),
 });
 const inputConfiguration = v.object({
-    turn_detection: turnDetection,
+    turn_detection: v.nullable(turnDetection),
     transcription: v.nullable(v.object({ model: v.string() })),
 });
 const sessionConfiguration = v.object({
@@ -39,6 +39,7 @@ type Utterance = { id: string; text: string | null; discarded: boolean };
 /** Browser-owned audio transport; ordinary Mira messages retain all task authority. */
 export class MiraVoiceConnection {
     private conversationId: string;
+    private readonly draftPreview: boolean;
     private changed: () => void;
     private listeners = new Set<() => void>();
     private value = {
@@ -82,9 +83,11 @@ export class MiraVoiceConnection {
     /** Bind audio and retry identities to exactly one conversation.
      * @param conversationId - Owned conversation; switching conversations destroys this transport.
      * @param changed - Refresh visible text after ordinary message admission.
+     * @param draftPreview - Negotiate playback only while trying a voice before the first message.
      */
-    constructor(conversationId: string, changed: () => void) {
+    constructor(conversationId: string, changed: () => void, draftPreview = false) {
         this.conversationId = conversationId;
+        this.draftPreview = draftPreview;
         this.changed = changed;
         this.audio.autoplay = true;
         this.audio.muted = true;
@@ -143,6 +146,7 @@ export class MiraVoiceConnection {
      * @returns Completion of the browser permission/capture operation.
      */
     async microphone(enabled: boolean) {
+        if (this.draftPreview) return;
         const capture = ++this.captureGeneration;
         this.update({ microphone: enabled, paused: false, error: "" });
         if (!enabled) {
@@ -410,7 +414,7 @@ export class MiraVoiceConnection {
                 this.sender = pc.addTrack(track, this.stream!);
             } else {
                 this.sender = pc.addTransceiver("audio", {
-                    direction: "sendrecv",
+                    direction: this.draftPreview ? "recvonly" : "sendrecv",
                 }).sender;
             }
             pc.ontrack = (event) => {
@@ -466,12 +470,17 @@ export class MiraVoiceConnection {
             };
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            const answer = await api.mira.voice.connect.mutate({
-                conversationId: this.conversationId,
+            const offerInput = {
                 model: this.value.model,
                 voice: this.value.voice,
                 sdp: offer.sdp!,
-            });
+            };
+            const answer = this.draftPreview
+                ? await api.mira.voice.preview.mutate(offerInput)
+                : await api.mira.voice.connect.mutate({
+                      ...offerInput,
+                      conversationId: this.conversationId,
+                  });
             if (!current()) return;
             await pc.setRemoteDescription({ type: "answer", sdp: answer.sdp });
         } catch (error) {
@@ -508,12 +517,12 @@ export class MiraVoiceConnection {
             event.session
         ) {
             const input = event.session.audio.input;
-            if (
-                input.turn_detection.create_response ||
-                input.turn_detection.interrupt_response ||
-                input.transcription?.model !== "gpt-transcribe" ||
-                event.session.tools.length > 0
-            ) {
+            const inputReady = this.draftPreview
+                ? input.turn_detection === null && input.transcription === null
+                : input.turn_detection?.create_response === false &&
+                  input.turn_detection.interrupt_response === false &&
+                  input.transcription?.model === "gpt-transcribe";
+            if (!inputReady || event.session.tools.length > 0) {
                 // Unified SDP setup can announce defaults before applying the server configuration.
                 if (event.type === "session.created") return;
                 this.closeConnection();

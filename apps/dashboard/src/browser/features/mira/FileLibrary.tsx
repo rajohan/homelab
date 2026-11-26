@@ -1,5 +1,6 @@
 import type { MiraAttachment } from "@homelab/contracts/mira";
 import {
+    BreakableName,
     Card,
     ConfirmDialog,
     DropdownMenu,
@@ -77,10 +78,10 @@ export function FileLibrary({
                                 title={
                                     <button
                                         type="button"
-                                        className="cursor-pointer text-left hover:underline focus-visible:outline-2 focus-visible:outline-accent-400"
+                                        className="block max-w-full cursor-pointer text-left wrap-anywhere whitespace-normal hover:underline focus-visible:outline-2 focus-visible:outline-accent-400"
                                         onClick={() => setPreview(file)}
                                     >
-                                        {file.name}
+                                        <BreakableName>{file.name}</BreakableName>
                                     </button>
                                 }
                                 icon={fileTypeIcon(file)}

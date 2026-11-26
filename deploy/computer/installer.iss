@@ -2,7 +2,7 @@
 #define Version "@VERSION@"
 [Setup]
 AppId={{52017324-6EBD-4BE6-A1EC-833EBDB364F7}
-AppName=Mira
+AppName=Homelab
 AppVersion={#Version}
 AppPublisher=Homelab
 AppPublisherURL=https://github.com/rajohan/homelab
@@ -17,6 +17,7 @@ MinVersion=10.0
 WizardStyle=modern dark polar
 SetupIconFile=@ICON@
 UninstallDisplayIcon={app}\versions\{#Version}\mira-computer-desktop.exe
+UninstallDisplayName=Homelab
 OutputDir=@OUTPUT@
 OutputBaseFilename=mira-computer-{#Version}-windows-x64-setup
 Compression=lzma2/fast
@@ -29,17 +30,21 @@ UsePreviousAppDir=no
 UsePreviousTasks=yes
 
 [Tasks]
-Name: "startup"; Description: "Start Mira in the tray and connect when I sign in"; Flags: unchecked
+Name: "startup"; Description: "Start Homelab in the tray and connect when I sign in"; Flags: unchecked
 
 [Files]
 #include "@FILES@"
 
 [Icons]
-Name: "{userprograms}\Homelab\Mira"; Filename: "{app}\versions\{#Version}\mira-computer-desktop.exe"; WorkingDir: "{app}\versions\{#Version}"
-Name: "{userstartup}\Homelab Mira"; Filename: "{app}\versions\{#Version}\mira-computer-desktop.exe"; Parameters: "--startup"; WorkingDir: "{app}\versions\{#Version}"; Tasks: startup
+Name: "{userprograms}\Homelab"; Filename: "{app}\versions\{#Version}\mira-computer-desktop.exe"; WorkingDir: "{app}\versions\{#Version}"
+Name: "{userstartup}\Homelab"; Filename: "{app}\versions\{#Version}\mira-computer-desktop.exe"; Parameters: "--startup"; WorkingDir: "{app}\versions\{#Version}"; Tasks: startup
 
 [InstallDelete]
-Type: files; Name: "{userstartup}\Homelab Mira.lnk"; Tasks: not startup
+; Remove only the previous installer's named shortcuts when upgrading an existing PC.
+Type: files; Name: "{userprograms}\Homelab\Mira.lnk"
+Type: dirifempty; Name: "{userprograms}\Homelab"
+Type: files; Name: "{userstartup}\Homelab Mira.lnk"
+Type: files; Name: "{userstartup}\Homelab.lnk"; Tasks: not startup
 
 [Code]
 var
@@ -61,11 +66,11 @@ var Parent: String; Attr: Cardinal;
 begin
   Name := RemoveBackslashUnlessRoot(ExpandFileName(Name));
   if (Length(Name) < 3) or (Name[2] <> ':') or (DriveType(Copy(Name, 1, 3)) <> 3) then
-    RaiseException('Mira requires an ordinary local drive.');
+    RaiseException('Homelab requires an ordinary local drive.');
   repeat
     Attr := Attributes(Name);
     if (Attr <> $FFFFFFFF) and ((Attr and FILE_ATTRIBUTE_REPARSE_POINT) <> 0) then
-      RaiseException('Mira cannot use linked installation paths.');
+      RaiseException('Homelab cannot use linked installation paths.');
     Parent := RemoveBackslashUnlessRoot(ExtractFileDir(Name));
     if CompareText(Parent, Name) = 0 then Break;
     Name := Parent;
@@ -78,14 +83,14 @@ begin
   if Maintenance <> 0 then Exit;
   Directory := ExpandConstant('{localappdata}\Homelab\MiraComputer');
   CheckLocalPath(Directory);
-  if not ForceDirectories(Directory) then RaiseException('Could not open Mira installation state.');
+  if not ForceDirectories(Directory) then RaiseException('Could not open Homelab installation state.');
   LockFile := Directory + '\installation.lock';
   CheckLocalPath(LockFile);
   { Exclusive, non-inheritable, OPEN_ALWAYS; runtime readers hold the same file. }
   Maintenance := NativeCreateFile(LockFile, $C0000000, 0, 0, 4, $00200000, 0);
   if Maintenance = THandle(-1) then begin
     Maintenance := 0;
-    RaiseException('Exit Mira from the system tray and stop any Mira command-line clients, then try again.');
+    RaiseException('Exit Homelab from the system tray and stop any Mira command-line clients, then try again.');
   end;
 end;
 
@@ -105,7 +110,7 @@ begin
         if (Item.Name <> '.') and (Item.Name <> '..') then begin
           Name := Relative + Item.Name;
           if (Item.Attributes and FILE_ATTRIBUTE_REPARSE_POINT) <> 0 then
-            RaiseException('Mira cannot modify linked package files.');
+            RaiseException('Homelab cannot modify linked package files.');
           if (Item.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
             CheckTree(Directory + '\' + Item.Name, Name + '\', KnownOnly)
           else if KnownOnly then begin
@@ -136,7 +141,7 @@ begin
   try
     if CompareText(RemoveBackslashUnlessRoot(ExpandFileName(ExpandConstant('{app}'))),
       ExpandConstant('{localappdata}\Programs\Homelab\MiraComputer')) <> 0 then
-      RaiseException('Mira installs only in the current user''s Programs folder.');
+      RaiseException('Homelab installs only in the current user''s Programs folder.');
     AcquireMaintenance;
     LoadInventory;
     CheckTree(ExpandConstant('{app}'), '', False);

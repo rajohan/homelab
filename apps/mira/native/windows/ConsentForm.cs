@@ -10,22 +10,6 @@ using Microsoft.Win32;
 
 namespace Homelab.Mira.Computer
 {
-    // Keep the native button's accessibility and keyboard behavior while making disabled text readable.
-    internal sealed class ConsentActionButton : Button
-    {
-        protected override void OnPaint(PaintEventArgs args)
-        {
-            base.OnPaint(args);
-            if (Enabled) return;
-            Color background = MiraWindow.Raised;
-            args.Graphics.Clear(background);
-            using (var border = new Pen(MiraWindow.Border))
-                args.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
-            TextRenderer.DrawText(args.Graphics, Text, Font, ClientRectangle,
-                MiraWindow.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-        }
-    }
-
     internal sealed class ConsentForm : MiraWindow
     {
         private readonly ConsentRequest request;
@@ -39,8 +23,8 @@ namespace Homelab.Mira.Computer
         private readonly double consentDeadline;
         private readonly double sessionDeadline;
         private readonly ListView windows = new ListView();
-        private readonly Button allow = new ConsentActionButton();
-        private readonly Button stop = new Button();
+        private readonly Button allow = new DesktopButton { Primary = true };
+        private readonly Button stop = new DesktopButton();
         private readonly CheckBox foreground = new CheckBox();
         private readonly Label status = new Label();
         private readonly Label selection = new Label();
@@ -88,7 +72,7 @@ namespace Homelab.Mira.Computer
             };
             destroyedHook = WholeDesktop ? IntPtr.Zero : SetWinEventHook(0x8001, 0x8001, IntPtr.Zero, destroyedCallback, 0, 0, 2);
             if (!WholeDesktop && destroyedHook == IntPtr.Zero) throw new InvalidOperationException("Window lifetime monitoring is unavailable.");
-            Text = "Mira · Computer access";
+            Text = "Homelab · Computer access";
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             Font = new Font("Segoe UI", 10);
             ForeColor = TextColor;
@@ -144,14 +128,10 @@ namespace Homelab.Mira.Computer
             allow.AutoSize = true;
             allow.Enabled = false;
             allow.Padding = new Padding(12, 5, 12, 5);
-            allow.FlatStyle = FlatStyle.Flat;
-            allow.BackColor = Accent; allow.ForeColor = Canvas; allow.FlatAppearance.BorderSize = 0;
             allow.Click += delegate { ApproveSelected(); };
             stop.Text = "Decline";
             stop.AutoSize = true;
             stop.Padding = new Padding(12, 5, 12, 5);
-            stop.FlatStyle = FlatStyle.Flat;
-            stop.BackColor = Raised; stop.FlatAppearance.BorderColor = Border;
             stop.Click += delegate { Retire(); };
             actions.Controls.Add(allow);
             actions.Controls.Add(stop);
@@ -291,7 +271,7 @@ namespace Homelab.Mira.Computer
                 heading.Text = WholeDesktop
                     ? (request.Mode == "view" ? "Mira is viewing " : "Mira can control ") + DisplayLabel
                     : "Computer access is active";
-                Text = "Mira · " + (WholeDesktop ? "Sharing " + DisplayLabel : "Sharing one window");
+                Text = "Homelab · " + (WholeDesktop ? "Sharing " + DisplayLabel : "Sharing one window");
                 detail.Text = request.Origin + (WholeDesktop ? "\nVisible apps and notifications are shared." : "\nOnly the selected window is shared.");
                 status.ForeColor = Color.FromArgb(110, 231, 183);
                 stop.Text = "Stop access";

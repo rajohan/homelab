@@ -1,5 +1,5 @@
 import type { MiraQuota } from "@homelab/contracts/mira";
-import { formatDateTime, Popover } from "@homelab/ui";
+import { ActivityPanel, formatDateTime, Popover } from "@homelab/ui";
 import { Gauge } from "lucide-react";
 import { useSyncExternalStore } from "react";
 
@@ -64,17 +64,16 @@ export function ProviderQuota({
         <Popover
             label={`ChatGPT quota · ${summary}`}
             triggerStyle="label"
+            layout="feed"
             panelClassName="w-[min(21rem,calc(100vw-1rem))]"
             trigger={
                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary-300">
                     <Gauge aria-hidden="true" size={14} />
                     <span className={paired ? "@min-[34rem]/chat-header:hidden" : ""}>
-                        {remaining !== null && "Quota "}
                         {compact}
                     </span>
                     {paired && (
                         <span className="hidden items-center gap-2.5 @min-[34rem]/chat-header:inline-flex">
-                            Quota{" "}
                             {windows.map((entry, index) => (
                                 <span
                                     key={entry.label}
@@ -93,49 +92,60 @@ export function ProviderQuota({
                 </span>
             }
         >
-            <h2 className="text-sm font-semibold text-primary-50">ChatGPT quota</h2>
-            <div className="mt-3 max-h-[55dvh] space-y-3 overflow-y-auto text-xs text-primary-300">
-                {windows.length === 0 ? (
-                    <p>Quota unavailable</p>
-                ) : (
-                    <>
-                        {stale && <p>Last reported values · refresh unavailable</p>}
-                        {windows.map((window) => (
-                            <div key={window.label}>
-                                <p className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                                    <span className="min-w-0 wrap-break-word">
-                                        {window.label.replace(
-                                            /\d+(?:\.\d+)?h$/,
-                                            (period) =>
-                                                windowDuration(window.label) ?? period
-                                        )}
-                                    </span>
-                                    <span className="font-semibold text-primary-100 tabular-nums">
-                                        {Math.round(window.remainingPercent)}% left
-                                    </span>
-                                </p>
-                                <div className="my-1 h-2 overflow-hidden rounded-full bg-primary-800">
-                                    <meter
-                                        aria-label={`ChatGPT ${window.label} remaining`}
-                                        min={0}
-                                        max={100}
-                                        value={window.remainingPercent}
-                                        className="sr-only"
-                                    />
-                                    <div
-                                        aria-hidden="true"
-                                        className="h-full rounded-full bg-accent-400"
-                                        style={{ width: `${window.remainingPercent}%` }}
-                                    />
-                                </div>
-                                {window.resetsAt && (
-                                    <p>Resets {formatDateTime(window.resetsAt)}</p>
+            {({ close }) => (
+                <ActivityPanel title="ChatGPT quota" icon={Gauge} onClose={close}>
+                    <div className="space-y-3 text-xs text-primary-300">
+                        {windows.length === 0 ? (
+                            <p>Quota unavailable</p>
+                        ) : (
+                            <>
+                                {stale && (
+                                    <p>Last reported values · refresh unavailable</p>
                                 )}
-                            </div>
-                        ))}
-                    </>
-                )}
-            </div>
+                                {windows.map((window) => (
+                                    <div key={window.label}>
+                                        <p className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                                            <span className="min-w-0 wrap-break-word">
+                                                {window.label.replace(
+                                                    /\d+(?:\.\d+)?h$/,
+                                                    (period) =>
+                                                        windowDuration(window.label) ??
+                                                        period
+                                                )}
+                                            </span>
+                                            <span className="font-semibold text-primary-100 tabular-nums">
+                                                {Math.round(window.remainingPercent)}%
+                                                left
+                                            </span>
+                                        </p>
+                                        <div className="my-1 h-2 overflow-hidden rounded-full bg-primary-800">
+                                            <meter
+                                                aria-label={`ChatGPT ${window.label} remaining`}
+                                                min={0}
+                                                max={100}
+                                                value={window.remainingPercent}
+                                                className="sr-only"
+                                            />
+                                            <div
+                                                aria-hidden="true"
+                                                className="h-full rounded-full bg-accent-400"
+                                                style={{
+                                                    width: `${window.remainingPercent}%`,
+                                                }}
+                                            />
+                                        </div>
+                                        {window.resetsAt && (
+                                            <p>
+                                                Resets {formatDateTime(window.resetsAt)}
+                                            </p>
+                                        )}
+                                    </div>
+                                ))}
+                            </>
+                        )}
+                    </div>
+                </ActivityPanel>
+            )}
         </Popover>
     );
 }

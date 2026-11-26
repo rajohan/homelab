@@ -14,6 +14,8 @@ PC access still requires operator selection and local consent. Browser navigatio
 
 Cancellation, stale leases, task stop, archive/deletion or revocation prevent later dispatch. A completed manual run may leave an already accepted action in its durable queue. Automatic runs retain their existing explicit policies and cannot inherit manual Chat authority. Questions and real action decisions use the existing cards above the composer; silence is never an answer.
 
+In an interactive dashboard chat Mira can delegate investigation, review and implementation. For parallel implementation she gives each child thread exact file paths in the current Git development worktree on `main`. Each edit checks the original file hash and the assigned checkout revision. Children work directly in that checkout and return their changed paths. The parent inspects the combined diff, runs checks and handles any authorized publication. Assignments end with the run. Scheduled reports retain their read access.
+
 ## Delivery
 
 Deploy dashboard and Mira together. This source change does not provision credentials, change active grants, send pending drafts or start paused automations. Tested task branches are published as normal PRs; merge, release and deployment keep their existing requirements.

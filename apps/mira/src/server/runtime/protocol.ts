@@ -86,6 +86,14 @@ export interface RuntimeTool<Result extends RuntimeToolResult = string> {
         call: { callId: string; threadId: string; turnId: string; reviewer?: boolean }
     ) => Promise<Result>;
 }
+/** Decide which registered host tools a verified child of the current chat may call.
+ * @param tool - A service-defined tool from this run's filtered registry.
+ * @returns True for reads and for the editor that checks the child's exact file assignment.
+ */
+export function canCallFromChild(tool: { name: string; readOnly?: boolean | undefined }) {
+    return tool.readOnly === true || tool.name === "mira_workspace_edit";
+}
+
 export interface TurnResult {
     id: string;
     status: "completed" | "interrupted" | "failed";

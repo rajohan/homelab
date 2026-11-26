@@ -31,6 +31,8 @@ system skills. Missing, modified, extra and linked entries are rejected.
 Codex sees the original skills in its normal skill catalog and can select them for
 matching work. Explicit mentions such as `$impeccable critique`, `$intent:intent`
 and `$intent:evaluate` are sent as native skill inputs on turns and steering.
+`$intent` opens the Intent entrypoint, and `$impeccable:impeccable` is also
+recognized when pasting the design skill mention from Codex.
 Unknown names or packages paused before the run do not select a native skill. The original entrypoint is
 injected by Codex; no shortened replacement is substituted. Use the original
 workflow, references and verification steps.

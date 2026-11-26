@@ -1,6 +1,6 @@
 import * as v from "valibot";
 
-import type { RuntimeTool } from "./protocol";
+import { canCallFromChild, type RuntimeTool } from "./protocol";
 import type { RuntimeToolResult } from "./toolResult";
 
 /**
@@ -34,7 +34,7 @@ export function createMiraToolRouter<Result extends RuntimeToolResult>(
                 return Promise.resolve(
                     JSON.stringify(
                         tools
-                            .filter((tool) => !call.reviewer || tool.readOnly === true)
+                            .filter((tool) => !call.reviewer || canCallFromChild(tool))
                             .map(({ name, description, inputSchema }) => ({
                                 name,
                                 description,
@@ -68,7 +68,7 @@ export function createMiraToolRouter<Result extends RuntimeToolResult>(
                     input
                 );
                 const tool = registry.get(parsed.name);
-                if (!tool || (call.reviewer && tool.readOnly !== true))
+                if (!tool || (call.reviewer && !canCallFromChild(tool)))
                     throw new Error("This tool is not available in the current run.");
                 return tool.execute(parsed.arguments, signal, call);
             },

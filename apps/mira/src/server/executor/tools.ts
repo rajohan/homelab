@@ -64,7 +64,7 @@ import { createMoltbookTools } from "../integrations/moltbook/tools";
 import type { MiraOperationsConfiguration } from "../operations/configuration";
 import { MiraHostCommandFailure } from "../operations/ssh";
 import { createMiraOperationsTools } from "../operations/tools";
-import type { RuntimeTool } from "../runtime/protocol";
+import { canCallFromChild, type RuntimeTool } from "../runtime/protocol";
 import { runtimeContentItems, type RuntimeToolResult } from "../runtime/toolResult";
 import type { LocalCodeBinding } from "../sandbox/localBinding";
 import { createMiraSkillTools } from "../skills/tools";
@@ -166,9 +166,15 @@ export function createMiraTools(
         report ||
         (run.manual && !run.automationId && !run.calendarEventId && !run.taskAssessment);
     let uncertain = false;
+    const hostTools = createMiraOperationsTools(client, run, operations);
     const definitions: MiraToolDefinition[] = [
-        ...createMiraOperationsTools(client, run, operations),
-        ...createMiraDashboardTools(run, dashboard),
+        ...hostTools,
+        ...createMiraDashboardTools(
+            run,
+            dashboard,
+            fetch,
+            hostTools.find((tool) => tool.name === "mira_homelab_command")
+        ),
         ...createMiraQuestionTools(run),
         ...createMiraRecallTools(client, run),
         ...createMiraComputerTools(),
@@ -657,8 +663,11 @@ export function createMiraTools(
                 : definition.description,
             execute: async (input, signal, call) => {
                 signal.throwIfAborted();
-                if (call.reviewer && !readOnly)
-                    throw new Error("Reviewers can only read current run context.");
+                if (
+                    call.reviewer &&
+                    !canCallFromChild({ name: definition.name, readOnly })
+                )
+                    throw new Error("This tool is unavailable to this subagent.");
                 if (!readOnly && !recovery) {
                     // Persist the fence across router reconstruction. Read-only diagnosis
                     // and access-revoking cleanup never clear an uncertain action.
@@ -717,7 +726,11 @@ export function createMiraTools(
                         message:
                             "This action was already attempted or the run no longer owns its lease. It was not replayed.",
                     });
-                const scoped: MiraToolContext = { ...context, receiptId: receipt };
+                const scoped: MiraToolContext = {
+                    ...context,
+                    receiptId: receipt,
+                    ...(call.reviewer ? { childThreadId: call.threadId } : {}),
+                };
                 let actionCompleted = false;
                 try {
                     const invoke = async (query?: TransactionSQL) => {

@@ -1,8 +1,4 @@
-import {
-    type Capability,
-    capabilitySchema,
-    idSchema,
-} from "@homelab/contracts/operations";
+import { type Capability, idSchema } from "@homelab/contracts/operations";
 import * as v from "valibot";
 
 import { miraManualRunAllowed } from "../../data/approvalPolicy";
@@ -11,7 +7,12 @@ import type { MiraClaim } from "../../data/queue";
 import { isMiraReportRun, miraReportRunAllowed } from "../../data/reportAccess";
 import type { MiraToolContext, MiraToolDefinition } from "../../executor/toolDefinition";
 import { dashboardActions, dashboardReads } from "./catalog";
-import { type MiraDashboardConfiguration, requestDashboard } from "./connection";
+import {
+    dashboardCapabilities,
+    type MiraDashboardConfiguration,
+    requestDashboard,
+} from "./connection";
+import { inventoryPublication, publishHostInventory } from "./publishInventory";
 
 const fields = v.optional(v.record(v.string(), v.unknown()));
 const readNames = Object.keys(dashboardReads) as (keyof typeof dashboardReads)[];
@@ -109,12 +110,14 @@ async function checkRun(
  * @param run - Durable claim selected by the executor, independent of tool arguments.
  * @param connection - Explicit per-owner machine credential with live dashboard grants.
  * @param request - HTTP transport, replaceable for isolated verification.
+ * @param hostCommand - Manual host tool for running the registered inventory publisher under its own identity.
  * @returns Discovery, bounded reads and explicitly named operational requests.
  */
 export function createMiraDashboardTools(
     run: MiraClaim,
     connection?: MiraDashboardConfiguration,
-    request: typeof fetch = fetch
+    request: typeof fetch = fetch,
+    hostCommand?: MiraToolDefinition
 ): MiraToolDefinition[] {
     const report = isMiraReportRun(run) ? run : undefined;
     if (
@@ -142,18 +145,7 @@ export function createMiraDashboardTools(
                     message:
                         "A dashboard automation account has not been connected for this owner. Use mira_dashboard_state for stored host, installed-version, backup, incident and job observations.",
                 };
-            const raw = await requestDashboard(
-                bound,
-                "automation.access",
-                false,
-                undefined,
-                signal,
-                request
-            );
-            const { capabilities } = v.parse(
-                v.object({ capabilities: v.array(capabilitySchema) }),
-                raw
-            );
+            const capabilities = await dashboardCapabilities(bound, signal, request);
             const granted = (
                 entries: Readonly<
                     Record<
@@ -174,7 +166,16 @@ export function createMiraDashboardTools(
             return {
                 configured: true,
                 reads: granted(dashboardReads),
-                actions: report ? [] : granted(dashboardActions),
+                actions: report
+                    ? []
+                    : [
+                          ...granted(dashboardActions),
+                          ...(hostCommand &&
+                          capabilities.includes("updates:read") &&
+                          capabilities.includes("updates:publish")
+                              ? [inventoryPublication]
+                              : []),
+                      ],
                 operatorOnly: report ? [] : operatorOnly,
             };
         },
@@ -233,13 +234,38 @@ export function createMiraDashboardTools(
         },
     };
     if (report) return [access, read];
+    const publisher: MiraToolDefinition[] = hostCommand
+        ? [
+              {
+                  name: inventoryPublication.tool,
+                  description:
+                      "Publish fresh software inventory for one explicitly requested host by running its installed collector. Use an ID from update_sources that matches a provisioned SSH target. A successful publication returns the dashboard capture timestamp. The host supplies its own observations and credentials.",
+                  inputSchema: object({ source: { type: "string" } }, ["source"]),
+                  automatic: false,
+                  commitsIndependently: true,
+                  ...(hostCommand.finalize ? { finalize: hostCommand.finalize } : {}),
+                  action: async (input, signal, context) => {
+                      await checkRun(context, signal);
+                      return publishHostInventory(
+                          input,
+                          context,
+                          signal,
+                          bound,
+                          hostCommand,
+                          request
+                      );
+                  },
+              },
+          ]
+        : [];
     return [
         access,
         read,
+        ...publisher,
         {
             name: "mira_dashboard_request",
             description:
-                "Carry out an operational dashboard action explicitly requested by the operator. Discover grants and argument formats with mira_dashboard_access. Read current targets, versions and revisions first. Reuse the same requestId for the same intended job. Returned job IDs indicate submission; inspect job_detail to confirm the final outcome.",
+                "Carry out an operational dashboard action explicitly requested by the operator. Discover grants and argument formats with mira_dashboard_access. If discovery lists a separate tool for an action, call that tool directly. Read current targets, versions and revisions first. Reuse the same requestId for the same intended job. Returned job IDs indicate submission; inspect job_detail to confirm the final outcome.",
             inputSchema: object(
                 { action: { enum: actionNames }, arguments: argumentsField },
                 ["action", "arguments"]

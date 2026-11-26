@@ -1,3 +1,4 @@
+import { capabilitySchema } from "@homelab/contracts/operations";
 import * as v from "valibot";
 
 import { MiraFailure } from "../../data/context";
@@ -8,6 +9,29 @@ export interface MiraDashboardConfiguration {
     owner: string;
     origin: string;
     token: string;
+}
+
+/** Read the live grants for this dashboard machine credential.
+ * @param connection - Verified operator binding, origin and dedicated credential.
+ * @param signal - Cancellation of the current run.
+ * @param request - Trusted dashboard transport.
+ * @returns The capabilities currently granted by the dashboard.
+ */
+export async function dashboardCapabilities(
+    connection: MiraDashboardConfiguration,
+    signal: AbortSignal,
+    request: typeof fetch
+) {
+    const result = await requestDashboard(
+        connection,
+        "automation.access",
+        false,
+        undefined,
+        signal,
+        request
+    );
+    return v.parse(v.object({ capabilities: v.array(capabilitySchema) }), result)
+        .capabilities;
 }
 
 /** Read the dedicated dashboard machine credential and its single operator binding.

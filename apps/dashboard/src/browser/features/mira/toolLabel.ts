@@ -2,6 +2,7 @@ const toolNames: Readonly<Record<string, string>> = {
     mira_dashboard_access: "Check dashboard access",
     mira_dashboard_read: "Read dashboard data",
     mira_dashboard_request: "Request dashboard action",
+    mira_dashboard_publish_inventory: "Publish host inventory",
     mira_browser_open: "Open browser",
     mira_browser_observe: "Inspect page",
     mira_browser_tabs: "Manage browser tabs",
@@ -12,6 +13,9 @@ const toolNames: Readonly<Record<string, string>> = {
     mira_code_check: "Check code",
     mira_code_edit: "Edit code",
     mira_code_read_sources: "Read source",
+    mira_workspace_assign: "Assign project files",
+    mira_workspace_read: "Read assigned files",
+    mira_workspace_edit: "Edit assigned file",
 };
 
 /**

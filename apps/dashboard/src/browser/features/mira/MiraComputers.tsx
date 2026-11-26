@@ -81,7 +81,7 @@ export function MiraComputers() {
                             }}
                         >
                             <Download size={16} aria-hidden="true" />
-                            Download Windows
+                            Download Homelab
                         </a>
                     )}
                     <Button size="sm" fullWidth onClick={() => setPairing(true)}>
@@ -93,7 +93,7 @@ export function MiraComputers() {
             <DesktopComputer />
             <p className="text-sm text-primary-400">
                 {download
-                    ? `Windows 10 or later · x64 · Version ${download.version}. Install Mira, then pair this computer.`
+                    ? `Windows 10 or later · x64 · Version ${download.version}. Install Homelab, then pair this computer.`
                     : "Windows download is unavailable until a tested release has been checked."}
             </p>
             {query.isPending && <LoadingState label="Loading computers…" />}

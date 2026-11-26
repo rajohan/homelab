@@ -51,25 +51,28 @@ export function DesktopComputer() {
                             work without PC pairing.
                         </p>
                     )}
-                    <div className="grid gap-2 @min-[40rem]/desktop:grid-cols-4">
-                        <Button
-                            variant="secondary"
-                            fullWidth
-                            disabled={!current.canStart || action.isPending}
-                            onClick={() => action.mutate("connect")}
-                        >
-                            <Plug size={16} aria-hidden="true" />
-                            Connect
-                        </Button>
-                        <Button
-                            variant="secondary"
-                            fullWidth
-                            disabled={!current.canStop || action.isPending}
-                            onClick={() => action.mutate("stop")}
-                        >
-                            <Square size={16} aria-hidden="true" />
-                            Stop connection
-                        </Button>
+                    <div className="grid gap-2 @min-[32rem]/desktop:grid-cols-3">
+                        {current.busy ? (
+                            <Button
+                                variant="secondary"
+                                fullWidth
+                                disabled={!current.canStop || action.isPending}
+                                onClick={() => action.mutate("stop")}
+                            >
+                                <Square size={16} aria-hidden="true" />
+                                Stop connection
+                            </Button>
+                        ) : (
+                            <Button
+                                variant="secondary"
+                                fullWidth
+                                disabled={!current.canStart || action.isPending}
+                                onClick={() => action.mutate("connect")}
+                            >
+                                <Plug size={16} aria-hidden="true" />
+                                Connect
+                            </Button>
+                        )}
                         <Button
                             variant="secondary"
                             fullWidth

@@ -85,6 +85,7 @@ internal class MiraWindow : Form
     {
         captionAction = action;
         caption.Controls.Add(action);
+        action.VisibleChanged += delegate { caption.Invalidate(); };
         LayoutCaption();
     }
 
@@ -102,7 +103,7 @@ internal class MiraWindow : Form
         minimize.Visible = MinimizeBox;
         if (MinimizeBox) { minimize.SetBounds(right - width, 0, width, caption.Height); right -= width; }
         if (captionAction != null) {
-            int actionWidth = ScalePixels(142), margin = ScalePixels(3);
+            int actionWidth = ScalePixels(34), margin = ScalePixels(3);
             captionAction.SetBounds(right - actionWidth - margin, margin, actionWidth, caption.Height - 2 * margin);
         }
         maximize.AccessibleName = WindowState == FormWindowState.Maximized ? "Restore" : "Maximize";
@@ -165,7 +166,7 @@ internal class MiraWindow : Form
     {
         if (caption != null && caption.Bounds.Contains(point)) {
             var local = new Point(point.X - caption.Left, point.Y - caption.Top);
-            if (captionAction != null && captionAction.Bounds.Contains(local)) return 1;
+            if (captionAction != null && captionAction.Visible && captionAction.Bounds.Contains(local)) return 1;
             if (close.Bounds.Contains(local)) return 20;
             if (MaximizeBox && maximize.Bounds.Contains(local)) return 9;
             if (MinimizeBox && minimize.Bounds.Contains(local)) return 8;
@@ -277,7 +278,7 @@ internal class MiraWindow : Form
             if (window.Icon != null) args.Graphics.DrawIcon(window.Icon, new Rectangle(left, (Height - iconSize) / 2, iconSize, iconSize));
             int textLeft = left + iconSize + window.ScalePixels(10);
             int right = window.MinimizeBox ? window.minimize.Left : window.MaximizeBox ? window.maximize.Left : window.close.Left;
-            if (window.captionAction != null) right = window.captionAction.Left;
+            if (window.captionAction != null && window.captionAction.Visible) right = window.captionAction.Left;
             TextRenderer.DrawText(args.Graphics, window.Text, Font, new Rectangle(textLeft, 0, Math.Max(0, right - textLeft), Height),
                 TextColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine);
             using (var pen = new Pen(Border)) args.Graphics.DrawLine(pen, 0, Height - 1, Width, Height - 1);

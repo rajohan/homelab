@@ -35,12 +35,15 @@ export function ComputerPairDialog({ onClose }: { readonly onClose: () => void }
         // The mutation cache must not retain the one-time secret after this dialog closes.
     });
     const canPairHere = hasDesktopBridge();
+    const pairingInstruction = canPairHere
+        ? "Select Pair this Windows PC to connect it to your account."
+        : "Enter this code in the companion on the computer you want to pair. Keep it private.";
     return (
         <Modal
             title="Pair a computer"
             description={
                 ticket
-                    ? "Enter this code in the Mira companion on your computer. Keep it private."
+                    ? pairingInstruction
                     : "Give this computer a name you will recognize."
             }
             onClose={onClose}

@@ -1,7 +1,8 @@
-import type { miraMessageInputSchema } from "@homelab/contracts/mira";
+import type { MiraChatSettings, miraMessageInputSchema } from "@homelab/contracts/mira";
 import type { SQL, TransactionSQL } from "bun";
 import type * as v from "valibot";
 
+import { validateMiraModelSelection } from "./chatSettings";
 import { auditMira, type MiraContext, MiraFailure } from "./context";
 import { enqueueTurn, miraMessageHash } from "./conversations";
 import type { MiraClaim } from "./queue";
@@ -10,14 +11,16 @@ import type { MiraClaim } from "./queue";
  * Send a new turn or persist guidance for the current manual conversation run.
  * @param context - Verified human account and product database.
  * @param input - Validated text, owned attachments and idempotency key.
+ * @param initialSettings - Present on a first message to admit its local draft atomically.
  * @returns The owning run ID; pending guidance remains visible across clients.
  */
 export async function sendMiraMessage(
     context: MiraContext,
-    input: v.InferOutput<typeof miraMessageInputSchema>
+    input: v.InferOutput<typeof miraMessageInputSchema>,
+    initialSettings?: MiraChatSettings
 ) {
     return context.client.begin((query) =>
-        sendMiraMessageInTransaction(query, context, input)
+        sendMiraMessageInTransaction(query, context, input, initialSettings)
     );
 }
 
@@ -26,12 +29,14 @@ export async function sendMiraMessage(
  * @param query - Existing transaction; request locking precedes conversation locking.
  * @param context - Verified human account, never a model-selected actor.
  * @param input - Human text and stable request identity.
+ * @param initialSettings - Initial preferences for a new conversation, never applied to an existing one.
  * @returns The active or newly queued run receiving the reply.
  */
 export async function sendMiraMessageInTransaction(
     query: TransactionSQL,
     context: MiraContext,
-    input: v.InferOutput<typeof miraMessageInputSchema>
+    input: v.InferOutput<typeof miraMessageInputSchema>,
+    initialSettings?: MiraChatSettings
 ) {
     const key = `${context.owner}:${input.requestId}`;
     const hash = miraMessageHash(input);
@@ -46,6 +51,20 @@ export async function sendMiraMessageInTransaction(
                 "This request identifier already belongs to another message."
             );
         return { id: existing.id };
+    }
+    if (initialSettings) {
+        await validateMiraModelSelection(query, initialSettings);
+        const [created] = await query<{ id: string }[]>`
+            INSERT INTO mira_conversations (id, owner, title, settings)
+            VALUES (${input.conversationId}, ${context.owner}, 'New conversation', ${JSON.stringify(initialSettings)}::text::jsonb)
+            ON CONFLICT (id) DO NOTHING RETURNING id`;
+        if (!created)
+            throw new MiraFailure(
+                "CONFLICT",
+                "This chat already exists. Open it from history."
+            );
+        await auditMira(query, context, "conversation.created", created.id);
+        return enqueueTurn(query, context, input);
     }
     const [chat] = await query<
         { id: string }[]

@@ -10,7 +10,7 @@ import { ComputerCredentialStore, forgetComputerPairing } from "./companionStore
 import { computerConnectionWork } from "./companionWork";
 import { openComputerInstallationLease } from "./installationLease";
 import { installedComputerHost, readComputerPackage } from "./installedComputer";
-import { withComputerUpdate } from "./updateDownload";
+import { availableComputerUpdate, withComputerUpdate } from "./updateDownload";
 import { writeComputerUpdate } from "./updatePipe";
 
 function print(message: string) {
@@ -44,15 +44,15 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
         return;
     }
     const [command, suppliedOrigin, mode] = args;
+    const updateCommand = command === "check-update" || command === "download-update";
     const supervised =
-        (command === "run" || command === "download-update") &&
+        (command === "run" || updateCommand) &&
         mode === "--supervised" &&
         args.length === 3;
     if (
         (args.length !== 2 && !supervised) ||
-        !["pair", "run", "forget", "download-update"].includes(command ?? "") ||
-        (command === "download-update" &&
-            (!supervised || process.platform !== "win32")) ||
+        (!updateCommand && !["pair", "run", "forget"].includes(command ?? "")) ||
+        (updateCommand && (!supervised || process.platform !== "win32")) ||
         !suppliedOrigin
     )
         throw new Error(
@@ -137,12 +137,26 @@ export async function main(args: string[] = process.argv.slice(2)): Promise<void
                     "Pair this server first using a code from Settings > Computers."
                 );
             }
-            if (command === "download-update") {
+            if (updateCommand) {
+                const getUpdate = (signal: AbortSignal) =>
+                    companion.update(existing.credential, signal);
+                if (command === "check-update") {
+                    const update = await availableComputerUpdate(
+                        version,
+                        getUpdate,
+                        stopped.signal
+                    );
+                    print(
+                        update
+                            ? JSON.stringify({ version: update.version })
+                            : '{"status":"current"}'
+                    );
+                    return;
+                }
                 const result = await withComputerUpdate(
                     {
                         installedVersion: version,
-                        getUpdate: (signal) =>
-                            companion.update(existing.credential, signal),
+                        getUpdate,
                         signal: stopped.signal,
                     },
                     (file, update, signal) =>

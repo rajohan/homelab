@@ -90,25 +90,28 @@ export function Mira() {
                     />
                 ) : (
                     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-                        <header className="@container/chat-header flex h-16 shrink-0 items-center gap-2 border-b border-primary-700 px-3 sm:px-5">
-                            {historyControl}
-                            <h1 className="min-w-0 flex-1 text-base font-semibold text-primary-50">
-                                New chat
-                            </h1>
-                            {connectionControl}
-                            <IconButton
-                                icon={Brain}
-                                label="Memory"
-                                onClick={() => setLibrary("memory")}
-                            />
-                            <IconButton
-                                icon={Files}
-                                label="Files"
-                                onClick={() => setLibrary("files")}
-                            />
+                        <header className="@container/chat-header shrink-0 border-b border-primary-700">
+                            <div className="chat-column min-h-chat-header flex items-center gap-2">
+                                <div className="flex">{historyControl}</div>
+                                <h1 className="min-w-0 flex-1 text-base font-semibold text-primary-50 @min-[34rem]/chat-header:order-first">
+                                    New chat
+                                </h1>
+                                {connectionControl}
+                                <IconButton
+                                    icon={Brain}
+                                    label="Memory"
+                                    onClick={() => setLibrary("memory")}
+                                />
+                                <IconButton
+                                    icon={Files}
+                                    label="Files"
+                                    onClick={() => setLibrary("files")}
+                                />
+                            </div>
                         </header>
-                        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-                            <ChatWelcome connectionNotice={connectionNotice} />
+                        {connectionNotice}
+                        <div className="chat-welcome-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
+                            <ChatWelcome />
                             <ProposedChanges />
                         </div>
                     </section>

@@ -1,9 +1,14 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Security.Principal;
 using System.Threading;
 using System.Windows.Forms;
+
+[assembly: AssemblyTitle("Homelab")]
+[assembly: AssemblyProduct("Homelab")]
+[assembly: AssemblyDescription("Homelab dashboard for Windows")]
 
 internal static class DesktopProgram
 {
@@ -28,11 +33,11 @@ internal static class DesktopProgram
                 {
                     string directory = DesktopSettings.PackageDirectory(Application.ExecutablePath);
                     if (!Environment.UserInteractive || new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
-                        throw new InvalidOperationException("Start Mira in your normal Windows session without administrator privileges.");
+                        throw new InvalidOperationException("Start Homelab in your normal Windows session without administrator privileges.");
                     bool created;
                     using (var instance = new Mutex(true, @"Global\Homelab.Mira.Computer.Desktop." + identity.User.Value, out created))
                     {
-                        if (!created) { if (!startup) MiraNotice.ShowNotice(null, "Mira is already running for this Windows account.", "Mira"); return 1; }
+                        if (!created) { if (!startup) MiraNotice.ShowNotice(null, "Homelab is already running for this Windows account.", "Homelab"); return 1; }
                         Application.EnableVisualStyles();
                         Application.SetCompatibleTextRenderingDefault(false);
                         string settings = InstallationLease.DirectoryPath;
@@ -59,14 +64,14 @@ internal static class DesktopProgram
                         WorkingDirectory = directory, UseShellExecute = false
                     })) { }
                 } catch {
-                    MiraNotice.ShowNotice(null, "Mira was updated. Open Mira from Start to use the new version.", "Update installed");
+                    MiraNotice.ShowNotice(null, "Homelab was updated. Open Homelab from Start to use the new version.", "Update installed");
                 }
             }
             return 0;
         }
         catch
         {
-            if (!check && !leaseOnly && !startup) MiraNotice.ShowNotice(null, "Mira could not start. Wait for any installation to finish, then use the complete local package in your normal Windows session without administrator privileges.", "Mira");
+            if (!check && !leaseOnly && !startup) MiraNotice.ShowNotice(null, "Homelab could not start. Wait for any installation to finish, then use the complete local package in your normal Windows session without administrator privileges.", "Homelab");
             return 1;
         }
     }
