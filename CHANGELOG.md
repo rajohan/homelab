@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.3](https://github.com/rajohan/homelab/compare/v0.30.2...v0.30.3) (2026-11-26)
+
+
+### Bug Fixes
+
+* **maintenance:** recover the system bus on Main and retry inventory publication ([#288](https://github.com/rajohan/homelab/issues/288)) ([ac28332](https://github.com/rajohan/homelab/commit/ac28332be920f50050ecacb024257536dbecb209))
+
 ## [0.30.2](https://github.com/rajohan/homelab/compare/v0.30.1...v0.30.2) (2026-11-26)
 
 
