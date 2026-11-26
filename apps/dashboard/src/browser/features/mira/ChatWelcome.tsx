@@ -7,8 +7,8 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
 import { ChatComposer } from "./ChatComposer";
+import { chatMessageSource } from "./desktopClient";
 import { FileLibrary } from "./FileLibrary";
-import { useChatComputer } from "./useChatComputer";
 import { useChatDraft } from "./useChatDraft";
 
 /** Start typing before a conversation exists, with an explicit path to its model, voice and attachment controls.
@@ -33,7 +33,6 @@ export function ChatWelcome({
     const [uploading, setUploading] = useState(false);
     const request = useRef<{ content: string; id: string } | null>(null);
     const navigate = useNavigate();
-    const source = useChatComputer();
     const start = useOperation(async (action: "send" | "setup", signal) => {
         await api.mira.conversations.create.mutate(
             { title: "New conversation", id: conversationId },
@@ -44,6 +43,7 @@ export function ChatWelcome({
             const content = JSON.stringify([text, attachmentIds]);
             if (request.current?.content !== content)
                 request.current = { content, id: crypto.randomUUID() };
+            const source = await chatMessageSource(signal);
             await api.mira.conversations.send.mutate(
                 {
                     ...source,

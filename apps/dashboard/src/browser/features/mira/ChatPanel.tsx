@@ -34,13 +34,13 @@ import { ChatSettings } from "./ChatSettings";
 import { ChatTranscript } from "./ChatTranscript";
 import { ComputerAccessDialog } from "./ComputerAccessDialog";
 import { ComputerAccessPanel } from "./ComputerAccessPanel";
+import { chatMessageSource } from "./desktopClient";
 import { FileLibrary } from "./FileLibrary";
 import { LiveChatActivity } from "./LiveChatActivity";
 import { ProposedChanges } from "./ProposedChanges";
 import { ProviderQuota } from "./ProviderQuota";
 import { readChatUpdate } from "./readChatUpdate";
 import { useBrowserAccess } from "./useBrowserAccess";
-import { useChatComputer } from "./useChatComputer";
 import { useChatDraft } from "./useChatDraft";
 import { MiraVoiceConnection } from "./voiceConnection";
 
@@ -130,21 +130,24 @@ export function ChatPanel({
         queryFn: () => api.mira.models.query(),
         refetchInterval: 30_000,
     });
-    const source = useChatComputer();
-    const send = useOperation(async () => {
+    const send = useOperation(async (_input: undefined, signal) => {
         const contentKey = JSON.stringify({
             text,
             attachmentIds: attachments.map((file) => file.id),
         });
         if (request.current?.text !== contentKey)
             request.current = { text: contentKey, id: crypto.randomUUID() };
-        await api.mira.conversations.send.mutate({
-            ...source,
-            conversationId: id,
-            requestId: request.current.id,
-            text,
-            attachmentIds: attachments.map((file) => file.id),
-        });
+        const source = await chatMessageSource(signal);
+        await api.mira.conversations.send.mutate(
+            {
+                ...source,
+                conversationId: id,
+                requestId: request.current.id,
+                text,
+                attachmentIds: attachments.map((file) => file.id),
+            },
+            { signal }
+        );
         clear();
         request.current = null;
     });

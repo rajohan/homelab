@@ -40,6 +40,24 @@ export function hasDesktopBridge(): boolean {
     return typeof bridge()?.postMessage === "function";
 }
 
+/** Resolve the sending PC before admitting a chat message or voice transcript.
+ * @param signal - Optional cancellation while the paired desktop answers.
+ * @returns No hint on the web, the paired PC ID on Windows, or an explicit unavailable hint if the lookup fails or the PC is unpaired.
+ */
+export async function chatMessageSource(
+    signal?: AbortSignal
+): Promise<{ sourceComputer?: string }> {
+    signal?.throwIfAborted();
+    if (!hasDesktopBridge()) return {};
+    try {
+        const state = await requestDesktop({ action: "state" }, signal);
+        return { sourceComputer: state.computerId ?? "unavailable" };
+    } catch {
+        signal?.throwIfAborted();
+        return { sourceComputer: "unavailable" };
+    }
+}
+
 /**
  * Request one fixed Windows operation without sending account cookies or provider credentials.
  * @param input - Local connection action; pairing carries only the one-use enrollment ticket.
