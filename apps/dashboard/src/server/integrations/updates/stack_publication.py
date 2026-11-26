@@ -19,7 +19,7 @@ STACK_PINS = {
         "valkey-submaker": "docker.io/valkey/valkey",
     },
     "homelab-tools": {
-        "it-tools": "ghcr.io/corentinth/it-tools", "openspeedtest": "docker.io/openspeedtest/latest",
+        "it-tools": "ghcr.io/sharevb/it-tools", "openspeedtest": "docker.io/openspeedtest/latest",
         "shlink": "ghcr.io/shlinkio/shlink", "shlink-web": "docker.io/shlinkio/shlink-web-client",
         "valkey-shlink": "docker.io/valkey/valkey",
     },
