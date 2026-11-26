@@ -1,7 +1,10 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildWindowsDialogHost } from "./buildWindowsDialogHost";
+import {
+    buildWindowsDialogHosts,
+    windowsDialogExecutables,
+} from "./buildWindowsDialogHost";
 
 /**
  * Build the Windows consent surface with the shared local dialog.
@@ -9,27 +12,14 @@ import { buildWindowsDialogHost } from "./buildWindowsDialogHost";
  * @returns Path to the GUI host.
  */
 export async function buildWindowsConsent(outputRoot?: string) {
-    const directory =
+    const directory = path.resolve(
         outputRoot ??
-        fileURLToPath(new URL("../apps/mira/dist/computer/windows-x64", import.meta.url));
-    return {
-        host: await buildWindowsDialogHost(
-            path.resolve(directory),
-            "mira-computer-consent.exe",
-            [
-                "NativeWindows.cs",
-                "InstallationLease.cs",
-                "DisplayLayout.cs",
-                "ConsentProtocol.cs",
-                "DesktopAppearance.cs",
-                "DesktopButton.cs",
-                "MiraWindow.cs",
-                "ConsentForm.cs",
-                "ConsentRecoveryView.cs",
-                "Program.cs",
-            ]
-        ),
-    };
+            fileURLToPath(
+                new URL("../apps/mira/dist/computer/windows-x64", import.meta.url)
+            )
+    );
+    await buildWindowsDialogHosts(directory, ["consent"]);
+    return { host: path.join(directory, windowsDialogExecutables.consent) };
 }
 
 if (import.meta.main) {

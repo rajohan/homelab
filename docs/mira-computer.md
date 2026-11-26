@@ -579,7 +579,8 @@ client. Click outside, select the close button or press Escape to dismiss it. Di
 an install offer leaves the current version running. If WebView2 itself is unavailable,
 the client presents local recovery controls.
 **Hide** returns to the dashboard during a check or download. **View update** in
-the tray opens progress again. Automatic checks stay in the background.
+the tray opens progress again. A completed download presents the install offer even if
+progress was hidden. Automatic checks stay in the background.
 When the update is ready, **Later** leaves the connection open. **Update and reopen**
 ends local computer access, waits for the companion and its controllers to exit,
 then installs the verified release. Stopping the connection, closing Homelab or

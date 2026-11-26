@@ -1,8 +1,10 @@
 import path from "node:path";
 
 import { buildComputer } from "./buildComputer";
-import { buildWindowsConsent } from "./buildWindowsConsent";
-import { buildWindowsDesktop } from "./buildWindowsDesktop";
+import {
+    buildWindowsDialogHosts,
+    windowsDialogExecutables,
+} from "./buildWindowsDialogHost";
 import { buildWindowsWorker } from "./buildWindowsWorker";
 
 /**
@@ -15,10 +17,15 @@ export async function buildWindowsComputer(outputRoot: string) {
         throw new Error("Computer output must be absolute.");
     const directory = path.join(outputRoot, "windows-x64");
     const worker = await buildWindowsWorker(directory);
-    const { host: consent } = await buildWindowsConsent(directory);
     const companion = await buildComputer("windows-x64", outputRoot);
-    const { desktop } = await buildWindowsDesktop(directory);
-    return { directory, companion, consent, desktop, ...worker };
+    await buildWindowsDialogHosts(directory);
+    return {
+        directory,
+        companion,
+        consent: path.join(directory, windowsDialogExecutables.consent),
+        desktop: path.join(directory, windowsDialogExecutables.desktop),
+        ...worker,
+    };
 }
 
 if (import.meta.main) {

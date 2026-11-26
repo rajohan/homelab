@@ -6,17 +6,56 @@ import { fileURLToPath } from "node:url";
 
 import tailwind from "bun-plugin-tailwind";
 
-/** Compile a Windows host with the packaged React dialog and verified WebView2 SDK.
- * @param directory - Absolute build output owned by the caller.
- * @param executable - Installed executable name.
- * @param sources - Host-specific C# sources relative to the native Windows directory.
- * @returns The compiled executable path.
+export const windowsDialogExecutables = {
+    consent: "mira-computer-consent.exe",
+    desktop: "mira-computer-desktop.exe",
+} as const;
+
+const sources = {
+    consent: [
+        "NativeWindows.cs",
+        "InstallationLease.cs",
+        "DisplayLayout.cs",
+        "ConsentProtocol.cs",
+        "DesktopAppearance.cs",
+        "DesktopButton.cs",
+        "MiraWindow.cs",
+        "ConsentForm.cs",
+        "ConsentRecoveryView.cs",
+        "Program.cs",
+    ],
+    desktop: [
+        "WorkerJob.cs",
+        "DesktopSettings.cs",
+        "DesktopSession.cs",
+        "DesktopUpdateArtifact.cs",
+        "DesktopUpdateSession.cs",
+        "InstallationLease.cs",
+        "InstallationProtocol.cs",
+        "ConsentProtocol.cs",
+        "DesktopAppearance.cs",
+        "DesktopButton.cs",
+        "DesktopStateView.cs",
+        "DesktopUpdateDialog.cs",
+        "MiraWindow.cs",
+        "MiraNotice.cs",
+        "DesktopConnection.cs",
+        "DesktopBridge.cs",
+        "DesktopWebView.cs",
+        "DesktopForm.cs",
+        "DesktopProgram.cs",
+    ],
+} as const;
+
+/** Build the selected dialog hosts with one verified SDK and a single shared UI bundle.
+ * @param directory - Absolute build directory for the executables and WebView2 runtime files.
+ * @param targets - Hosts to compile; the release and CodeQL build both together.
+ * @returns Completion after all requested executables have been compiled.
  */
-export async function buildWindowsDialogHost(
+export async function buildWindowsDialogHosts(
     directory: string,
-    executable: string,
-    sources: readonly string[]
-) {
+    targets: readonly (keyof typeof windowsDialogExecutables)[] = ["consent", "desktop"]
+): Promise<void> {
     if (
         process.platform !== "win32" ||
         process.arch !== "x64" ||
@@ -56,7 +95,6 @@ export async function buildWindowsDialogHost(
             },
         }
     );
-    const output = path.join(directory, executable);
     const common = [
         "/nologo",
         "/platform:x64",
@@ -84,24 +122,33 @@ export async function buildWindowsDialogHost(
         });
         if (!bundle.success)
             throw new AggregateError(bundle.logs, "Desktop dialog build failed.");
-        execFileSync(
-            compiler,
-            [
-                ...common,
-                "/target:winexe",
-                `/out:${output}`,
-                `/resource:${path.join(ui, "index.html")},index.html`,
-                ...["main.js", "dialog.css"].map(
-                    (name) => `/resource:${path.join(assets, name)},${name}`
-                ),
-                ...["DesktopDialogView.cs", ...sources].map((name) =>
-                    path.join(source, name)
-                ),
-            ],
-            { windowsHide: true, timeout: 120_000, maxBuffer: 64 * 1024 }
-        );
+        for (const target of targets) {
+            execFileSync(
+                compiler,
+                [
+                    ...common,
+                    "/target:winexe",
+                    `/out:${path.join(directory, windowsDialogExecutables[target])}`,
+                    `/resource:${path.join(ui, "index.html")},index.html`,
+                    ...["main.js", "dialog.css"].map(
+                        (name) => `/resource:${path.join(assets, name)},${name}`
+                    ),
+                    ...["DesktopDialogView.cs", ...sources[target]].map((name) =>
+                        path.join(source, name)
+                    ),
+                ],
+                { windowsHide: true, timeout: 120_000, maxBuffer: 64 * 1024 }
+            );
+        }
     } finally {
         await rm(assets, { recursive: true, force: true });
     }
-    return output;
+}
+
+if (import.meta.main) {
+    if (process.argv.length !== 2)
+        throw new Error("No dialog build arguments are supported.");
+    await buildWindowsDialogHosts(
+        fileURLToPath(new URL("../apps/mira/dist/computer/windows-x64", import.meta.url))
+    );
 }

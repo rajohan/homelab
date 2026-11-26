@@ -1,6 +1,10 @@
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildWindowsDialogHost } from "./buildWindowsDialogHost";
+import {
+    buildWindowsDialogHosts,
+    windowsDialogExecutables,
+} from "./buildWindowsDialogHost";
 
 /**
  * Build the shared-dashboard Windows shell.
@@ -8,34 +12,8 @@ import { buildWindowsDialogHost } from "./buildWindowsDialogHost";
  * @returns Path to the Windows desktop executable.
  */
 export async function buildWindowsDesktop(directory: string) {
-    const shared = [
-        "WorkerJob.cs",
-        "DesktopSettings.cs",
-        "DesktopSession.cs",
-        "DesktopUpdateArtifact.cs",
-        "DesktopUpdateSession.cs",
-        "InstallationLease.cs",
-        "InstallationProtocol.cs",
-        "ConsentProtocol.cs",
-        "DesktopAppearance.cs",
-        "DesktopButton.cs",
-        "DesktopStateView.cs",
-        "DesktopUpdateDialog.cs",
-        "MiraWindow.cs",
-        "MiraNotice.cs",
-        "DesktopConnection.cs",
-        "DesktopBridge.cs",
-        "DesktopWebView.cs",
-        "DesktopForm.cs",
-        "DesktopProgram.cs",
-    ];
-    return {
-        desktop: await buildWindowsDialogHost(
-            directory,
-            "mira-computer-desktop.exe",
-            shared
-        ),
-    };
+    await buildWindowsDialogHosts(directory, ["desktop"]);
+    return { desktop: path.join(directory, windowsDialogExecutables.desktop) };
 }
 
 if (import.meta.main) {

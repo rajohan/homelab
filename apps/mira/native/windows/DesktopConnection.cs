@@ -161,7 +161,7 @@ internal sealed class DesktopConnection : IDisposable
             if (result.UpToDate) { noticeTitle = "Homelab is up to date"; notice = "You’re using the latest verified Windows release."; return; }
             if (artifact == null) { notice = "Homelab couldn't get a verified update. Check your computer pairing and home network, then try again."; return; }
             UpdateStatus("Homelab " + artifact.Version + " is ready to install.");
-            if (!dialog.IsOpen || !await dialog.Confirm(artifact.Version, presenceStopped != null) || closing || stopping || blocked) return;
+            if (!await dialog.Confirm(artifact.Version, presenceStopped != null) || closing || stopping || blocked) return;
             artifact.RequireFresh();
             if (presenceStopped != null) {
                 reconnect = true;
