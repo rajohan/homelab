@@ -31,13 +31,15 @@ export async function readVoiceModels(key: string | undefined) {
  * @param model - Account-visible Realtime model selected by the operator.
  * @param voice - Supported built-in speaking voice.
  * @param sdp - Browser WebRTC offer; contains no Mira history or tool definitions.
+ * @param preview - Negotiate a short playback sample without microphone transcription.
  * @returns The remote SDP answer, never an API credential.
  */
 export async function connectVoice(
     key: string | undefined,
     model: string,
     voice: MiraVoiceName,
-    sdp: string
+    sdp: string,
+    preview = false
 ) {
     if (!key)
         throw new OperationFailure(
@@ -62,24 +64,26 @@ export async function connectVoice(
             tools: [],
             tool_choice: "none",
             output_modalities: ["audio"],
-            max_output_tokens: 4096,
+            max_output_tokens: preview ? 256 : 4096,
             audio: {
-                input: {
-                    noise_reduction: { type: "near_field" },
-                    transcription: {
-                        model: "gpt-transcribe",
-                        languages: ["no", "en"],
-                        keywords: ["Mira", "Homelab", "ChatGPT"],
-                    },
-                    turn_detection: {
-                        type: "server_vad",
-                        threshold: 0.6,
-                        prefix_padding_ms: 300,
-                        silence_duration_ms: 700,
-                        create_response: false,
-                        interrupt_response: false,
-                    },
-                },
+                input: preview
+                    ? { turn_detection: null, transcription: null }
+                    : {
+                          noise_reduction: { type: "near_field" },
+                          transcription: {
+                              model: "gpt-transcribe",
+                              languages: ["no", "en"],
+                              keywords: ["Mira", "Homelab", "ChatGPT"],
+                          },
+                          turn_detection: {
+                              type: "server_vad",
+                              threshold: 0.6,
+                              prefix_padding_ms: 300,
+                              silence_duration_ms: 700,
+                              create_response: false,
+                              interrupt_response: false,
+                          },
+                      },
                 output: { voice },
             },
         })

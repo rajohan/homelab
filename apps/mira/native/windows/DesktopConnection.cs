@@ -10,6 +10,8 @@ internal sealed class DesktopConnection : IDisposable
     private readonly Action<Action> dispatch;
     private DesktopSession session;
     private DesktopUpdateSession download;
+    private DesktopUpdateSession discovery;
+    private Task<DesktopUpdateResult> discoveryResult;
     private TaskCompletionSource<bool> presenceStopped;
     private string connectionMessage = "Disconnected", updateMessage;
     private bool blocked, stopping, installing, closing, reconnect;
@@ -18,6 +20,7 @@ internal sealed class DesktopConnection : IDisposable
     internal string Message { get { return updateMessage ?? connectionMessage; } }
     internal string ComputerId { get; private set; }
     internal string InstalledVersion { get; private set; }
+    internal string AvailableVersion { get; private set; }
     internal bool ReconnectAfterUpdate { get { return reconnect; } }
     internal bool Updating { get { return updateMessage != null; } }
     internal bool Busy { get { return session != null || Updating; } }
@@ -61,7 +64,7 @@ internal sealed class DesktopConnection : IDisposable
             blocked |= !result.Clean;
             if (result.ComputerId != null) ComputerId = result.ComputerId;
             if (result.PairingMissing) ComputerId = null;
-            if (blocked) Publish("Process cleanup could not be confirmed. Close Mira before reconnecting.");
+            if (blocked) Publish("Process cleanup could not be confirmed. Close Homelab before reconnecting.");
             else if (operation == "pair") {
                 paired = result.Success && !result.Stopped;
                 Publish(paired ? "Paired" : "Pairing was not confirmed. Revoke the ticket in Settings before trying again.");
@@ -78,7 +81,7 @@ internal sealed class DesktopConnection : IDisposable
             var stopped = presenceStopped; presenceStopped = null;
             if (stopped != null) stopped.TrySetResult(!blocked);
             if (Changed != null) Changed();
-            if (closing && !Busy && ExitRequested != null) ExitRequested();
+            ExitIfIdle();
         }
         if (paired && !closing) await Start("run");
     }
@@ -95,14 +98,41 @@ internal sealed class DesktopConnection : IDisposable
     {
         if (installing) return false;
         closing = true;
-        if (!Busy) return true;
+        if (discovery != null) discovery.Stop();
+        if (!Busy && discovery == null) return true;
         Stop(); return false;
+    }
+    private void ExitIfIdle()
+    {
+        if (closing && !Busy && discovery == null && ExitRequested != null) ExitRequested();
+    }
+    internal async Task CheckAvailability()
+    {
+        if (!CanUpdate || discovery != null) return;
+        var check = new DesktopUpdateSession(package, DesktopSettings.ServerOrigin, settings);
+        discovery = check;
+        try {
+            discoveryResult = check.Run(true);
+            var result = await discoveryResult;
+            blocked |= !result.Clean;
+            if (!result.Clean && !closing) Publish("Process cleanup could not be confirmed. Close Homelab before reconnecting.");
+            if (!Updating && !closing) AvailableVersion = result.AvailableVersion;
+        } catch { AvailableVersion = null; }
+        finally {
+            check.Dispose(); discovery = null; discoveryResult = null;
+            if (Changed != null) Changed();
+            ExitIfIdle();
+        }
     }
     internal async Task UpdateApp(IWin32Window owner)
     {
         if (!CanUpdate) return;
         reconnect = false;
-        UpdateStatus("Checking for updates…");
+        UpdateStatus(AvailableVersion == null ? "Checking for updates…" : "Downloading Homelab " + AvailableVersion + "…");
+        if (discovery != null) {
+            discovery.Stop();
+            try { await discoveryResult; } catch { }
+        }
         await InstallAvailableUpdate(owner);
         if (reconnect && CanStart) await Start("run");
     }
@@ -111,16 +141,19 @@ internal sealed class DesktopConnection : IDisposable
         DesktopUpdateArtifact artifact = null;
         bool released = false, completed = false;
         string notice = null;
+        string noticeTitle = "Homelab couldn’t update";
         try {
+            if (closing || stopping || blocked) return;
             download = new DesktopUpdateSession(package, DesktopSettings.ServerOrigin, settings);
             var result = await download.Run();
             artifact = result.Artifact;
             blocked |= !result.Clean;
-            if (blocked) { notice = "Mira could not confirm process cleanup. Close the app before trying again."; return; }
+            if (blocked) { notice = "Homelab could not confirm process cleanup. Close the app before trying again."; return; }
             if (closing || stopping) return;
-            if (result.UpToDate) { notice = "You're using the latest verified release of Mira."; return; }
-            if (artifact == null) { notice = "Mira couldn't get a verified update. Check your computer pairing and home network, then try again."; return; }
-            UpdateStatus("Mira " + artifact.Version + " is ready to install.");
+            AvailableVersion = artifact == null ? null : artifact.Version;
+            if (result.UpToDate) { noticeTitle = "Homelab is up to date"; notice = "You’re using the latest verified Windows release."; return; }
+            if (artifact == null) { notice = "Homelab couldn't get a verified update. Check your computer pairing and home network, then try again."; return; }
+            UpdateStatus("Homelab " + artifact.Version + " is ready to install.");
             if (!MiraNotice.ConfirmUpdate(owner, artifact.Version, presenceStopped != null) || closing || stopping || blocked) return;
             artifact.RequireFresh();
             if (presenceStopped != null) {
@@ -128,35 +161,36 @@ internal sealed class DesktopConnection : IDisposable
                 UpdateStatus("Ending local computer access before updating…");
                 var stopped = presenceStopped.Task;
                 session.Stop();
-                if (!await stopped) { notice = "Computer access could not be stopped cleanly. Close Mira before updating."; return; }
+                if (!await stopped) { notice = "Computer access could not be stopped cleanly. Close Homelab before updating."; return; }
                 if (closing || stopping) return;
             }
             artifact.RequireFresh();
-            installing = true; UpdateStatus("Installing Mira " + artifact.Version + "…");
+            installing = true; UpdateStatus("Installing Homelab " + artifact.Version + "…");
             maintenance(true); released = true;
             bool success = await Task.Run((Func<bool>)artifact.Install); completed = true;
             if (success) {
                 InstalledVersion = artifact.Version; closing = true;
-            } else notice = "Setup did not complete. Close other Mira clients and try again.";
+            } else notice = "Setup did not complete. Close other Homelab clients and try again.";
         } catch {
             blocked |= released && !completed;
-            notice = blocked ? "The update could not be confirmed. Let setup finish, then reopen Mira from Start." : "The verified update is no longer available. Check for updates again.";
+            notice = blocked ? "The update could not be confirmed. Let setup finish, then reopen Homelab from Start." : "The verified update is no longer available. Check for updates again.";
         }
         finally {
             installing = false;
             if (released && completed && !closing) { try { maintenance(false); } catch { blocked = true; } }
             if (artifact != null) { try { artifact.Dispose(); } catch { blocked = true; } }
             if (download != null) { download.Dispose(); download = null; }
-            if (blocked && !closing) Publish("Reopen Mira after setup and process cleanup have finished.");
-            if (notice != null && !closing && !stopping) MiraNotice.ShowNotice(owner, notice, "Mira updates");
+            if (blocked && !closing) Publish("Reopen Homelab after setup and process cleanup have finished.");
+            if (notice != null && !closing && !stopping) MiraNotice.ShowNotice(owner, notice, noticeTitle);
             if (session == null) stopping = false;
             UpdateStatus(null);
-            if (closing && !Busy && ExitRequested != null) ExitRequested();
+            ExitIfIdle();
         }
     }
     public void Dispose()
     {
         if (session != null) session.Stop();
         if (download != null) download.Stop();
+        if (discovery != null) discovery.Stop();
     }
 }

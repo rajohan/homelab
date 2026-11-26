@@ -32,6 +32,29 @@ function sameRelease(before: MiraComputerUpdate, after: MiraComputerUpdate): boo
     );
 }
 
+/**
+ * Check authenticated release metadata without opening an installer or contacting GitHub.
+ * @param installed - Version compiled into the running Windows package.
+ * @param getUpdate - Paired computer's private release lookup.
+ * @param signal - Cancellation for the lookup.
+ * @returns A newer verified release with its remaining lifetime, or null if up to date.
+ */
+export async function availableComputerUpdate(
+    installed: string,
+    getUpdate: (signal: AbortSignal) => Promise<MiraComputerUpdate | null>,
+    signal: AbortSignal
+) {
+    signal.throwIfAborted();
+    const started = performance.now();
+    const candidate = await getUpdate(signal);
+    signal.throwIfAborted();
+    if (!candidate) throw new Error("No fresh verified Windows update is available.");
+    const update = v.parse(miraComputerUpdateSchema, candidate);
+    const validForMs = Math.floor(update.validForMs - (performance.now() - started));
+    if (validForMs <= 0) throw new Error("The update evidence expired.");
+    return newerVersion(installed, update.version) ? { ...update, validForMs } : null;
+}
+
 async function receive(
     update: MiraComputerUpdate,
     output: FileHandle,
@@ -169,16 +192,14 @@ export async function withComputerUpdate<T>(
     let staged: FileHandle | undefined;
     try {
         signal.throwIfAborted();
-        const started = performance.now();
-        const candidate = await options.getUpdate(signal);
-        signal.throwIfAborted();
-        if (!candidate) throw new Error("No fresh verified Windows update is available.");
-        const update = v.parse(miraComputerUpdateSchema, candidate);
-        const remaining = Math.floor(update.validForMs - (performance.now() - started));
-        if (remaining <= 0) throw new Error("The update evidence expired.");
-        if (!newerVersion(options.installedVersion, update.version)) return null;
+        const update = await availableComputerUpdate(
+            options.installedVersion,
+            options.getUpdate,
+            signal
+        );
+        if (!update) return null;
         clearTimeout(timer);
-        timer = setTimeout(() => deadline.abort(), remaining);
+        timer = setTimeout(() => deadline.abort(), update.validForMs);
         const parent = options.temporaryDirectory ?? tmpdir();
         if (!path.isAbsolute(parent))
             throw new Error("An absolute temporary directory is required.");

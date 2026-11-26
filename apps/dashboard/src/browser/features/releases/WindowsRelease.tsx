@@ -30,7 +30,7 @@ export function WindowsRelease({
     return (
         <section className="space-y-3 rounded-lg border border-primary-700 bg-surface-card p-4 text-sm">
             <SectionHeader
-                title="Windows app"
+                title="Homelab for Windows"
                 icon={Monitor}
                 actions={
                     download && (
@@ -45,7 +45,7 @@ export function WindowsRelease({
                             }}
                         >
                             <Download size={16} aria-hidden="true" />
-                            Download Windows
+                            Download app
                         </a>
                     )
                 }

@@ -35,6 +35,8 @@ export async function buildWindowsConsent(outputRoot?: string) {
             "NativeWindows.cs",
             "DisplayLayout.cs",
             "ConsentProtocol.cs",
+            "DesktopAppearance.cs",
+            "DesktopButton.cs",
             "MiraWindow.cs",
             "ConsentForm.cs",
             "Program.cs",

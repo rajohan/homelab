@@ -4,6 +4,7 @@ import type { RuntimeTool } from "../runtime/protocol";
 /** Trusted action scope created only after the tool receipt commits. */
 export interface MiraToolContext extends MiraContext {
     readonly receiptId: string;
+    readonly childThreadId?: string;
 }
 
 /** Fixed service-owned behavior; no lifecycle hook is accepted from tool arguments. */

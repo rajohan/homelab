@@ -202,6 +202,8 @@ export function nativeSkillInputs(text: string, skills: readonly NativeSkill[]) 
     const names = new Set(
         Array.from(text.matchAll(/\$([a-zA-Z0-9][a-zA-Z0-9:_-]*)/g), (match) => match[1])
     );
+    if (names.has("intent")) names.add("intent:intent");
+    if (names.has("impeccable:impeccable")) names.add("impeccable");
     return skills
         .filter((skill) => names.has(skill.name))
         .map((skill) => ({ type: "skill" as const, name: skill.name, path: skill.path }));

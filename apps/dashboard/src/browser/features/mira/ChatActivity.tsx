@@ -91,9 +91,10 @@ export function ChatActivity({
     const showNotes =
         display.showThinking &&
         Boolean(thinking || notes?.length || noteContinuation?.error);
-    if (!showStatus && !showTools && !showNotes) return null;
+    const outcome = !active && run.message;
+    if (!showStatus && !showTools && !showNotes && !outcome) return null;
     return (
-        <section aria-label="Run activity" className="min-w-0 space-y-1">
+        <section aria-label="Run activity" className="grid min-w-0 gap-3">
             {showStatus && (
                 <output
                     className={
@@ -117,6 +118,7 @@ export function ChatActivity({
                     {label}
                 </output>
             )}
+            {outcome && <p className="text-sm text-primary-300">{outcome}</p>}
             {(showNotes || showTools) && (
                 <div className="min-w-0 divide-y divide-primary-700 overflow-hidden rounded-lg border border-primary-700 bg-surface-heading">
                     {showNotes && (

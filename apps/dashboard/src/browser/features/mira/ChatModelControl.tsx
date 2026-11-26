@@ -1,6 +1,7 @@
 import type { MiraChatSettings, MiraModel } from "@homelab/contracts/mira";
-import { Button } from "@homelab/ui";
+import { Popover } from "@homelab/ui";
 import { Brain, ChevronDown, CircleAlert, Cpu, Zap } from "lucide-react";
+import type { ReactNode } from "react";
 
 /** Display the current run's frozen model choices or the conversation's next-run choices.
  * @returns A model settings trigger that also works as a read-only summary for archived chats.
@@ -14,7 +15,7 @@ export function ChatModelControl({
     fresh,
     loading,
     archived,
-    onEdit,
+    children,
 }: {
     readonly model: MiraModel | undefined;
     readonly modelId: string | null;
@@ -24,7 +25,7 @@ export function ChatModelControl({
     readonly fresh: boolean;
     readonly loading: boolean;
     readonly archived: boolean;
-    readonly onEdit: () => void;
+    readonly children: (controls: { close: () => void }) => ReactNode;
 }) {
     const effort = settings.effort ?? (resolved ? null : model?.defaultReasoningEffort);
     const tier = settings.serviceTier ?? (resolved ? null : model?.defaultServiceTier);
@@ -59,16 +60,8 @@ export function ChatModelControl({
     ]
         .filter(Boolean)
         .join(" · ");
-    return (
-        <Button
-            variant="ghost"
-            size="sm"
-            disabled={archived}
-            onClick={onEdit}
-            title={label}
-            aria-label={archived ? label : `Open model settings. ${label}`}
-            className="min-h-8 max-w-full min-w-0 flex-wrap justify-start gap-x-2 gap-y-0.5 px-1.5 py-1 text-xs font-medium disabled:opacity-100 sm:min-h-8"
-        >
+    const summary = (
+        <>
             <span className="inline-flex max-w-full min-w-0 items-center gap-1 font-semibold text-primary-100">
                 <Cpu size={13} aria-hidden="true" className="shrink-0 text-primary-300" />
                 <span className="truncate">{name}</span>
@@ -99,6 +92,20 @@ export function ChatModelControl({
                     className="shrink-0 text-primary-400"
                 />
             )}
-        </Button>
+        </>
+    );
+    return (
+        <Popover
+            triggerStyle="label"
+            layout="feed"
+            triggerClassName="min-h-8 max-w-full min-w-0 flex-nowrap justify-start gap-2 px-1.5 py-1 text-xs font-medium disabled:opacity-100 sm:min-h-8 @min-[34rem]/chat-header:-translate-x-1.5"
+            trigger={summary}
+            disabled={archived}
+            label={archived ? label : `Open model settings. ${label}`}
+            anchor="bottom start"
+            panelClassName="w-[min(24rem,calc(100vw-1rem))]"
+        >
+            {children}
+        </Popover>
     );
 }

@@ -2,7 +2,7 @@
 
 ## Shared Windows app
 
-Mira for Windows opens the deployed dashboard at
+Homelab for Windows opens the deployed dashboard at
 `https://dashboard.home.rajohan.no/mira` in Microsoft WebView2. Chat, Tasks,
 Automations, files, browser controls and Settings are the same React application
 and server workflows used by the website. The existing Homelab sign-in flow stays
@@ -22,7 +22,7 @@ there is no bridge timeout while the user considers the dialog. Revoke the serve
 entry too.
 No pairing form covers the chat when an already paired app starts.
 
-Minimizing keeps the app in the system tray. Open Mira and Settings restore the same
+Minimizing keeps the app in the system tray. Open Homelab and Settings restore the same
 window; Exit shuts down the companion and local controllers. Screen lock/suspend
 stops local access. Chat and automation jobs continue on Main independently of the
 window, network connection and PC power. Screen and input sharing needs separate
@@ -40,7 +40,7 @@ The Bun build downloads the official WebView2 SDK pinned by version and SHA-256 
 the two .NET assemblies, x64 loader and license. It introduces no additional package
 manager or application framework. Update the SDK pin and hash together in reviewed
 repository changes. The separate Evergreen runtime is maintained by Microsoft;
-reopening Mira adopts its updates. If it is missing, the app links to Microsoft's
+reopening Homelab adopts its updates. If it is missing, the app links to Microsoft's
 installer instead of silently installing software. The repository release/update
 pipeline ships the Windows shell and verified SDK files together.
 
@@ -450,8 +450,9 @@ Pairing does not automatically connect or grant window access.
 
 Connect starts the companion; Stop ends the connection and any owned native
 processes. Minimizing hides the window in the system tray without disconnecting.
-The tray uses the shared Homelab icon, shows connection status in its tooltip,
-and offers Open Mira, Stop connection and Exit. Double-click restores the window.
+The tray uses the shared Homelab icon and shows connection status in its tooltip.
+Its menu offers Open Homelab, Settings, the available connection and update actions,
+and Exit Homelab. Double-click restores the window.
 Closing the window or choosing Exit stops the connection before exiting.
 Session changes, suspension and resume also stop the connection; reconnecting
 requires the operator to select Connect again. Sharing after reconnecting requires
@@ -478,7 +479,12 @@ computer or start a connection during installation. Startup at sign-in is an
 explicit, initially unchecked task. The installer uses the shared
 Homelab icon and the standard dark Inno Setup wizard.
 
-Exit Mira from its tray menu and stop command-line clients before installation,
+Upgrading an installation previously displayed as Mira updates its existing
+Apps & features entry to Homelab and replaces the old Start-menu and startup
+shortcuts. The installer identity, version directories, local pairing,
+WebView profile and startup task selection carry forward.
+
+Exit Homelab from its tray menu and stop command-line clients before installation,
 upgrade or uninstall. The desktop and packaged CLI hold a shared installation
 lease; maintenance holds an exclusive handle to the same per-user file throughout
 its work. CLI cancellation retains its lease until controller cleanup completes.
@@ -495,7 +501,7 @@ The compiler version, official release URL, SHA-256 and Authenticode publisher a
 pinned in `package.json` → `config.windows.inno`. `scripts/setupInno.ps1` verifies the download
 and extracts it in portable mode into a new caller-owned directory. Compiler
 updates require a reviewed pin change and Windows package build; Inno is
-a build dependency, not an installed Mira runtime dependency.
+a build dependency, not an installed Homelab runtime dependency.
 
 CI compiles the Windows package and installer on every pull request. The
 release workflow builds and publishes them without running installation, desktop
@@ -514,12 +520,12 @@ GitHub-reported digest must match that manifest. Legacy releases and incomplete 
 changed Windows assets leave downloads unavailable without invalidating container
 reporting.
 
-Settings → Computers offers **Download Windows** only while that snapshot is fresh
+Settings → Computers offers **Download Homelab** only while that snapshot is fresh
 (20 minutes), belongs to the configured repository, and no newer check has failed.
 The button is an ordinary official GitHub release download; it does not verify the
 browser's downloaded bytes or install software. Windows x64 on Windows 10 or later
 is required. Run the per-user installer and then pair the computer. For a manual
-upgrade, exit Mira, run the newer installer and reopen Mira; pairing is retained.
+upgrade, exit Homelab, run the newer installer and reopen Homelab; pairing is retained.
 The Windows app also offers the authenticated update flow below. Recovery to a retained older installation remains a manual operation.
 
 A paired Windows computer with a lower stable version shows **Update available**.
@@ -556,12 +562,14 @@ update UI and installation handoff are described below; rollback qualification r
 
 ### Updating in the Windows app
 
-Select **Check for updates** in the Windows title bar or tray menu, or **Update app**
-in Settings > Computers. The app checks the verified release using the existing
-private pairing. You can keep using the connected PC while the download runs.
+The Windows app checks release metadata at startup and every 15 minutes using
+the existing private pairing. When a verified newer release is available, a
+download icon appears in the title bar. Select it to download the installer.
+You can also select the update action in the tray or **Update app** under
+**Settings → Computers**. You can keep using the connected PC while the download runs.
 When the update is ready, **Later** leaves the connection open. **Update and reopen**
 ends local computer access, waits for the companion and its controllers to exit,
-then installs the verified release. Stopping the connection, closing Mira or
+then installs the verified release. Stopping the connection, closing Homelab or
 locking the PC during download cancels the update.
 
 The companion transfers a bounded metadata line and exact installer bytes over
@@ -578,11 +586,11 @@ The per-user installer keeps pairing, sign-in and preferences. After successful
 setup, the app reopens the installed version and restores the previous connection
 state. An interrupted computer-use session needs fresh approval. If setup reports
 a clean failure, the old app can reconnect after reacquiring its installation
-lease. An unconfirmed installer outcome blocks new work until Mira is reopened.
+lease. An unconfirmed installer outcome blocks new work until Homelab is reopened.
 
 ### Optional startup at sign-in
 
-The per-user installer offers **Start Mira in the tray and connect when I sign in**,
+The per-user installer offers **Start Homelab in the tray and connect when I sign in**,
 unchecked on a new installation. Opting in adds only the current user's startup
 shortcut. It starts the qualified desktop manager with `--startup` and always attempts
 the fixed Homelab address using its existing OS-vault pairing, even when no preferences

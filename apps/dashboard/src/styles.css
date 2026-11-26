@@ -4,6 +4,7 @@
 
 @theme {
     --spacing-shell-header: 3.5rem;
+    --spacing-chat-header: 4rem;
     --color-coverage-surface: #11221e;
     --color-workspace-accent: var(--color-accent-300);
     --animate-task-arrive: task-arrive 260ms ease-out;
@@ -36,6 +37,17 @@
     --epr-search-border-color-active: var(--homelab-link);
     --epr-emoji-variation-picker-bg-color: var(--homelab-raised);
     --epr-skin-tone-picker-menu-color: var(--homelab-raised);
+}
+
+@utility chat-column {
+    @apply mx-auto w-full max-w-4xl min-w-0 px-3 sm:px-6;
+}
+
+/* Balance the two headers above the welcome composer. On short screens the
+   spacer gives up its space first. Pending requests use the bottom area. */
+.chat-welcome-scroll:has(> :only-child)::after {
+    content: "";
+    flex: 0 1 calc(var(--spacing-shell-header) + var(--spacing-chat-header) + 1px);
 }
 
 /* Reserve space for both a usable history rail and the active conversation. */

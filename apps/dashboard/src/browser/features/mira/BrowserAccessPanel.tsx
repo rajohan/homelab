@@ -31,10 +31,7 @@ export function BrowserAccessPanel({
         ) : null;
     const label = browserAccessLabel(access, run, query.fresh);
     return (
-        <section
-            className="mx-auto w-full max-w-3xl px-2 pb-1 sm:px-6"
-            aria-label="Browser session"
-        >
+        <section className="chat-column pb-1" aria-label="Browser session">
             <div className="flex min-w-0 items-center gap-2 rounded-xl border border-primary-700 bg-surface-card px-1.5 py-0.5">
                 <Button
                     variant="ghost"

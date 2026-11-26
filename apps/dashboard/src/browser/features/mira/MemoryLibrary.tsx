@@ -67,7 +67,6 @@ export function MemoryLibrary({ onClose }: { readonly onClose: () => void }) {
                 <SectionHeader
                     title="Remembered context"
                     icon={Brain}
-                    compactActions
                     actions={
                         <Button onClick={() => setEditing("new")}>
                             <Plus size={16} aria-hidden="true" />

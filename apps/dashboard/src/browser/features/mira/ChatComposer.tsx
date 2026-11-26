@@ -1,7 +1,7 @@
 import type { MiraAttachment } from "@homelab/contracts/mira";
 import { Button, IconButton } from "@homelab/ui";
 import { SlidersHorizontal, Square } from "lucide-react";
-import { type RefObject, useRef } from "react";
+import { useRef } from "react";
 
 import { AttachmentPicker } from "./AttachmentPicker";
 import { ChatEmojiPicker } from "./ChatEmojiPicker";
@@ -10,7 +10,6 @@ import { MessageField } from "./MessageField";
 import { MiraVoice } from "./MiraVoice";
 import { SendMessageButton } from "./SendMessageButton";
 import type { MiraVoiceConnection } from "./voiceConnection";
-import { VoiceStatus } from "./VoiceStatus";
 
 /**
  * Keep drafting, attachments and send/stop actions together at the foot of the chat workspace.
@@ -18,7 +17,7 @@ import { VoiceStatus } from "./VoiceStatus";
  */
 export function ChatComposer({
     voice,
-    inputRef,
+    transcript,
     onSetup,
     text,
     onText,
@@ -36,7 +35,7 @@ export function ChatComposer({
     onBrowse,
 }: {
     readonly voice?: MiraVoiceConnection;
-    readonly inputRef?: RefObject<HTMLTextAreaElement | null>;
+    readonly transcript?: string;
     readonly onSetup?: () => void;
     readonly text: string;
     readonly onText: (value: string) => void;
@@ -53,8 +52,7 @@ export function ChatComposer({
     readonly onSend: () => void;
     readonly onBrowse: () => void;
 }) {
-    const localField = useRef<HTMLTextAreaElement>(null);
-    const field = inputRef ?? localField;
+    const field = useRef<HTMLTextAreaElement>(null);
     const placeholder = active ? "Add guidance while Mira works…" : "Message Mira…";
     // Cancellation remains part of a terminal run's history, not a composer lock.
     const blocked = active && (stopping || stopPending || !steerable);
@@ -64,15 +62,23 @@ export function ChatComposer({
             className={
                 onSetup
                     ? "w-full"
-                    : "mx-auto max-h-[50dvh] w-full max-w-3xl shrink-0 overflow-y-auto px-2 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-4 [@media(max-height:28rem)]:py-1"
+                    : "chat-column max-h-[50%] shrink-0 overflow-y-auto pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-4 [@media(max-height:28rem)]:py-1"
             }
             onSubmit={(event) => {
                 event.preventDefault();
                 if (canSend) onSend();
             }}
         >
-            {voice && <VoiceStatus voice={voice} />}
             <ComposerSurface>
+                {transcript && (
+                    <p
+                        className="px-2 text-sm wrap-anywhere text-primary-200"
+                        aria-label="Voice transcript"
+                        aria-live="polite"
+                    >
+                        {transcript}
+                    </p>
+                )}
                 <AttachmentPicker
                     compact
                     value={attachments}

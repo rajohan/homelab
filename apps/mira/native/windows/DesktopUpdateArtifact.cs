@@ -24,7 +24,7 @@ internal sealed class DesktopUpdateArtifact : IDisposable
         directory = owned; file = Path.Combine(owned, "setup.exe"); Version = version; clock = started; validForMs = validity;
     }
 
-    internal static DesktopUpdateArtifact Receive(Stream input, string parent)
+    internal static string ReadHeader(Stream input)
     {
         var line = new StringBuilder();
         for (;;) {
@@ -33,9 +33,13 @@ internal sealed class DesktopUpdateArtifact : IDisposable
             if (value < 32 || value > 126 || line.Length >= 1024) throw new InvalidDataException();
             line.Append((char)value);
         }
+        return line.ToString();
+    }
+    internal static DesktopUpdateArtifact Receive(Stream input, string parent)
+    {
+        string header = ReadHeader(input);
         // The receipt follows the completed network download. Its remaining lifetime starts here.
         var clock = Stopwatch.StartNew();
-        string header = line.ToString();
         if (header == "{\"status\":\"current\"}") {
             if (input.ReadByte() != -1) throw new InvalidDataException();
             return null;

@@ -71,7 +71,7 @@ export function requestDesktop(
     const host = bridge();
     if (!host)
         return Promise.reject(
-            new Error("Open Mira for Windows to use local computer controls.")
+            new Error("Open Homelab for Windows to use local computer controls.")
         );
     const id = crypto.randomUUID();
     return new Promise((resolve, reject) => {
@@ -97,7 +97,7 @@ export function requestDesktop(
             cleanup();
             reject(
                 new Error(
-                    "Mira for Windows did not respond. Check the app before trying again."
+                    "Homelab for Windows did not respond. Check the app before trying again."
                 )
             );
         }, 8000);

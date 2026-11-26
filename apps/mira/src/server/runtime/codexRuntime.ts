@@ -14,6 +14,7 @@ import {
 } from "./nativeSkills";
 import {
     accountSchema,
+    canCallFromChild,
     completedSchema,
     deltaSchema,
     initializeSchema,
@@ -1137,7 +1138,7 @@ export class CodexRuntime {
         const tool = this.threads
             .get(active.threadId)
             ?.find((entry) => entry.name === call.tool);
-        if (!tool || (reviewer && tool.readOnly !== true))
+        if (!tool || (reviewer && !canCallFromChild(tool)))
             throw new Error("Tool is not registered for this run.");
         active.calls.add(callId);
         const turnSignal = AbortSignal.any([

@@ -1,8 +1,8 @@
-import type { MiraAttachment } from "@homelab/contracts/mira";
+import type { MiraAttachment, MiraChatSettings } from "@homelab/contracts/mira";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-type Draft = { text: string; attachments: MiraAttachment[] };
+type Draft = { text: string; attachments: MiraAttachment[]; settings?: MiraChatSettings };
 const empty: Draft = { text: "", attachments: [] };
 
 /** Retain unsent text and selected file references in this dashboard session across chat navigation.
@@ -23,6 +23,7 @@ export function useChatDraft(id: string) {
     return {
         ...draft,
         setText: (text: string) => update({ text }),
+        setSettings: (settings: MiraChatSettings) => update({ settings }),
         setAttachments: (attachments: MiraAttachment[]) => update({ attachments }),
         addFile: (file: MiraAttachment) => {
             const files =

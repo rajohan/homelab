@@ -292,7 +292,7 @@ export async function executeMiraTurn(
             .update(miraSkillCatalogHash)
             .update(JSON.stringify(nativeSkills))
             .update(
-                `native-images:${nativeImages}:web-search:${webSearch}:sleep:${chatSearch}:read-only-reviewers:1`
+                `native-images:${nativeImages}:web-search:${webSearch}:sleep:${chatSearch}:child-workspace:1`
             )
             .digest("hex");
 

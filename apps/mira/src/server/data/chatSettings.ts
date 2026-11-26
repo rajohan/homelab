@@ -125,12 +125,12 @@ export async function saveMiraChatSettings(
 }
 
 /**
- * Validate an explicit automation model choice against the current native catalog.
- * @param query - Transaction saving the automation definition.
+ * Validate explicit model choices against the current native catalog.
+ * @param query - Transaction saving initial chat preferences or an automation definition.
  * @param settings - Requested model preferences; null defaults remain editable while a provider is offline.
  * @returns Completion after capability and availability validation.
  */
-export async function validateMiraAutomationSettings(
+export async function validateMiraModelSelection(
     query: MiraQuery,
     settings: MiraChatSettings
 ): Promise<void> {

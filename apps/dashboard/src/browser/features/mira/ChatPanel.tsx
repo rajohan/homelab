@@ -42,7 +42,9 @@ import { ProviderQuota } from "./ProviderQuota";
 import { readChatUpdate } from "./readChatUpdate";
 import { useBrowserAccess } from "./useBrowserAccess";
 import { useChatDraft } from "./useChatDraft";
+import { useChatModels } from "./useChatModels";
 import { MiraVoiceConnection } from "./voiceConnection";
+import { VoiceStatus } from "./VoiceStatus";
 
 /**
  * Send durable messages, observe streamed text and stop or manage an owned conversation.
@@ -71,9 +73,7 @@ export function ChatPanel({
     const [display, setDisplay] = useState(readChatDisplay);
     const [uploading, setUploading] = useState(false);
     const [selectingFile, setSelectingFile] = useState(false);
-    const [dialog, setDialog] = useState<
-        "rename" | "delete" | "settings" | "model" | "computer"
-    >();
+    const [dialog, setDialog] = useState<"rename" | "delete" | "settings" | "computer">();
     const request = useRef<{ text: string; id: string } | null>(null);
     const navigate = useNavigate();
     const [voice] = useState(
@@ -125,11 +125,7 @@ export function ChatPanel({
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
     });
-    const catalog = useQuery({
-        queryKey: ["operations", "mira", "models"],
-        queryFn: () => api.mira.models.query(),
-        refetchInterval: 30_000,
-    });
+    const catalog = useChatModels();
     const send = useOperation(async (_input: undefined, signal) => {
         const contentKey = JSON.stringify({
             text,
@@ -214,20 +210,20 @@ export function ChatPanel({
         <>
             <section
                 aria-label="Chat"
-                className={`min-h-0 min-w-0 flex-1 flex-col overflow-y-auto ${openBrowser ? "chat-split:flex hidden" : "flex"}`}
+                className={`min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${openBrowser ? "chat-split:flex hidden" : "flex"}`}
             >
                 <header className="@container/chat-header shrink-0 border-b border-primary-700">
-                    <div className="grid min-h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 px-2 py-1 @min-[34rem]/chat-header:gap-x-2 @min-[34rem]/chat-header:px-4">
-                        <div className="col-start-1 row-start-1 flex @min-[34rem]/chat-header:row-span-2">
+                    <div className="chat-column min-h-chat-header grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 py-1 @min-[34rem]/chat-header:grid-cols-[minmax(0,1fr)_auto_auto] @min-[34rem]/chat-header:gap-x-2">
+                        <div className="col-start-1 row-start-1 flex @min-[34rem]/chat-header:col-start-2 @min-[34rem]/chat-header:row-span-2">
                             {historyControl}
                         </div>
                         <h1
                             title={conversation.title}
-                            className="col-start-2 row-start-1 min-w-0 truncate text-base font-semibold tracking-tight text-primary-50 @min-[34rem]/chat-header:self-end @min-[34rem]/chat-header:text-lg"
+                            className="col-start-2 row-start-1 min-w-0 truncate text-base font-semibold tracking-tight text-primary-50 @min-[34rem]/chat-header:col-start-1 @min-[34rem]/chat-header:self-end @min-[34rem]/chat-header:text-lg"
                         >
                             {conversation.title}
                         </h1>
-                        <div className="col-span-full row-start-2 flex min-w-0 flex-wrap items-center justify-between gap-x-1 @min-[34rem]/chat-header:col-span-1 @min-[34rem]/chat-header:col-start-2 @min-[34rem]/chat-header:justify-start @min-[34rem]/chat-header:gap-x-3">
+                        <div className="col-span-full row-start-2 flex min-w-0 flex-wrap items-center justify-between gap-x-1 @min-[34rem]/chat-header:col-span-1 @min-[34rem]/chat-header:col-start-1 @min-[34rem]/chat-header:justify-start @min-[34rem]/chat-header:gap-x-3 [&>div]:max-w-full">
                             <ChatModelControl
                                 model={selectedModel}
                                 modelId={modelId}
@@ -237,8 +233,22 @@ export function ChatPanel({
                                 archived={archived}
                                 fresh={fresh}
                                 loading={catalog.isPending}
-                                onEdit={() => setDialog("model")}
-                            />
+                            >
+                                {({ close }) => (
+                                    <ChatSettings
+                                        modelOnly
+                                        destination={{
+                                            id,
+                                            version: conversation.version,
+                                        }}
+                                        settings={settings}
+                                        models={catalog.data?.models ?? []}
+                                        defaultModel={catalog.data?.defaultModel ?? null}
+                                        fresh={fresh}
+                                        onClose={close}
+                                    />
+                                )}
+                            </ChatModelControl>
                             <ProviderQuota
                                 quotas={catalog.data?.quotas ?? []}
                                 fresh={fresh}
@@ -321,6 +331,13 @@ export function ChatPanel({
                     </div>
                 </header>
                 {connectionNotice}
+                {!archived && (
+                    <VoiceStatus
+                        voice={voice}
+                        error={voiceState.error}
+                        pending={voiceState.pending}
+                    />
+                )}
                 {error && (
                     <div className="shrink-0 px-4 py-2">
                         <ErrorNotice error={error} />
@@ -354,11 +371,6 @@ export function ChatPanel({
                     }
                 />
                 <div className="max-h-[32dvh] shrink-0 overflow-y-auto">
-                    {run?.message && (
-                        <p className="shrink-0 px-4 py-2 text-xs text-primary-300">
-                            {run.message}
-                        </p>
-                    )}
                     <div hidden={Boolean(openBrowser)}>
                         <BrowserAccessPanel
                             run={run}
@@ -384,6 +396,11 @@ export function ChatPanel({
                 {!conversation.archivedAt && (
                     <ChatComposer
                         voice={voice}
+                        transcript={
+                            voiceState.microphone && !voiceState.paused
+                                ? voiceState.transcript
+                                : ""
+                        }
                         text={text}
                         onText={setText}
                         attachments={attachments}
@@ -419,35 +436,31 @@ export function ChatPanel({
                         onClose={() => setDialog(undefined)}
                     />
                 )}
-                {!archived &&
-                    (dialog === "settings" || dialog === "model" || settingsOpen) && (
-                        <ChatSettings
-                            modelOnly={dialog === "model" && !settingsOpen}
-                            activeRun={active}
-                            voice={voice}
-                            id={id}
-                            version={conversation.version}
-                            settings={settings}
-                            models={catalog.data?.models ?? []}
-                            defaultModel={catalog.data?.defaultModel ?? null}
-                            fresh={fresh}
-                            display={display}
-                            onDisplayChange={(next) => {
-                                setDisplay(next);
-                                saveChatDisplay(next);
-                            }}
-                            onClose={() => {
-                                setDialog(undefined);
-                                if (settingsOpen)
-                                    void navigate({
-                                        to: "/mira/$conversationId",
-                                        params: { conversationId: id },
-                                        search: {},
-                                        replace: true,
-                                    });
-                            }}
-                        />
-                    )}
+                {!archived && (dialog === "settings" || settingsOpen) && (
+                    <ChatSettings
+                        voice={voice}
+                        destination={{ id, version: conversation.version }}
+                        settings={settings}
+                        models={catalog.data?.models ?? []}
+                        defaultModel={catalog.data?.defaultModel ?? null}
+                        fresh={fresh}
+                        display={display}
+                        onDisplayChange={(next) => {
+                            setDisplay(next);
+                            saveChatDisplay(next);
+                        }}
+                        onClose={() => {
+                            setDialog(undefined);
+                            if (settingsOpen)
+                                void navigate({
+                                    to: "/mira/$conversationId",
+                                    params: { conversationId: id },
+                                    search: {},
+                                    replace: true,
+                                });
+                        }}
+                    />
+                )}
                 {dialog === "rename" && (
                     <Modal
                         title="Rename conversation"

@@ -19,7 +19,6 @@ import {
     Textarea,
     TimePicker,
 } from "@homelab/ui";
-import { useQuery } from "@tanstack/react-query";
 import { CalendarClock } from "lucide-react";
 import { useState } from "react";
 
@@ -28,6 +27,7 @@ import { useOperation } from "../operations/useOperation";
 import { CodeTargetSettings } from "./CodeTargetSettings";
 import { ModelSettings } from "./ModelSettings";
 import { RecallSettings } from "./RecallSettings";
+import { useChatModels } from "./useChatModels";
 
 /**
  * Edit a bounded Mira automation while preserving its independently saved pause state.
@@ -45,11 +45,7 @@ export function AutomationEditor({
     const [settings, setSettings] = useState<MiraChatSettings>(
         automation?.settings ?? miraDefaultChatSettings
     );
-    const models = useQuery({
-        queryKey: ["operations", "mira", "models"],
-        queryFn: () => api.mira.models.query(),
-        refetchInterval: 30_000,
-    });
+    const models = useChatModels();
     const [title, setTitle] = useState(automation?.title ?? "");
     const [prompt, setPrompt] = useState(automation?.prompt ?? "");
     const [delivery, setDelivery] = useState<MiraAutomation["delivery"]>(

@@ -24,14 +24,16 @@ export function Popover({
     controlRef,
     anchor = "bottom end",
     panelClassName,
+    triggerClassName,
     layout = "default",
     triggerStyle = "icon",
     disabled = false,
 }: {
-    readonly anchor?: "top start" | "bottom end";
+    readonly anchor?: "top start" | "bottom start" | "bottom end";
     readonly layout?: "default" | "feed";
     readonly triggerStyle?: "icon" | "label";
     readonly panelClassName?: string;
+    readonly triggerClassName?: string;
     readonly disabled?: boolean;
     readonly label: string;
     readonly trigger: ReactNode;
@@ -57,8 +59,10 @@ export function Popover({
                 className={buttonStyles({
                     variant: "ghost",
                     size: triggerStyle === "label" ? "sm" : "md",
-                    className:
-                        triggerStyle === "icon" ? "relative size-11 p-0" : undefined,
+                    className: cn(
+                        triggerStyle === "icon" && "relative size-11 p-0",
+                        triggerClassName
+                    ),
                 })}
             >
                 {trigger}
