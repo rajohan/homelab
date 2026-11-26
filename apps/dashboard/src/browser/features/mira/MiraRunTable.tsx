@@ -77,6 +77,7 @@ export function MiraRunTable({
                         id: "state",
                         sortValue: (run) => run.state,
                         label: "Status",
+                        mobile: "status",
                         width: "w-36",
                         render: (run) => (
                             <div className="flex flex-wrap gap-1.5">
@@ -98,6 +99,7 @@ export function MiraRunTable({
                         id: "time",
                         sortValue: (run) => run.createdAt,
                         label: "Queued",
+                        mobile: "wide",
                         width: "w-48",
                         render: (run) => formatDateTime(run.createdAt),
                     },
@@ -106,7 +108,7 @@ export function MiraRunTable({
                         label: "Actions",
                         hideLabel: true,
                         width: "w-16",
-                        mobile: "footer-actions",
+                        mobile: "actions",
                         render: (run) => {
                             const actions: DropdownMenuAction[] = [
                                 {

@@ -3,8 +3,8 @@ import {
     Badge,
     Card,
     ConfirmDialog,
-    DropdownMenu,
     formatDateTime,
+    HistoryEntry,
     LoadingState,
     Modal,
     ScrollList,
@@ -67,58 +67,46 @@ export function CodeLibrary({
                 framed
                 className="max-h-128"
                 renderItem={(draft) => (
-                    <section className="space-y-3 p-4 sm:p-5">
-                        <SectionHeader
-                            title={draft.content.title}
-                            icon={GitPullRequest}
-                            badge={
-                                <Badge tone={miraStatusTone(draft.state)}>
-                                    {draft.state.replaceAll("_", " ")}
-                                </Badge>
-                            }
-                            compactActions
-                            actions={
-                                <DropdownMenu
-                                    label={`Actions for ${draft.content.title}`}
-                                    actions={[
-                                        {
-                                            id: "review",
-                                            label:
-                                                draft.state === "draft"
-                                                    ? "Review and create PR"
-                                                    : "View proposal",
-                                            icon: Eye,
-                                            onSelect: () => setReviewing(draft),
-                                        },
-                                        ...(["draft", "queued"].includes(draft.state)
-                                            ? [
-                                                  {
-                                                      id: "cancel",
-                                                      label: "Cancel proposal",
-                                                      icon: Trash2,
-                                                      danger: true,
-                                                      onSelect: () =>
-                                                          setCancelling(draft),
-                                                  },
-                                              ]
-                                            : []),
-                                    ]}
-                                />
-                            }
-                        />
-                        <p className="truncate text-sm text-primary-300">
-                            Base {draft.content.commit.slice(0, 12)} · rajohan/homelab
-                        </p>
-                        {draft.message && (
-                            <p className="text-sm text-primary-300">{draft.message}</p>
-                        )}
+                    <HistoryEntry
+                        title={draft.content.title}
+                        icon={GitPullRequest}
+                        badge={
+                            <Badge tone={miraStatusTone(draft.state)}>
+                                {draft.state.replaceAll("_", " ")}
+                            </Badge>
+                        }
+                        actions={[
+                            {
+                                id: "review",
+                                label:
+                                    draft.state === "draft"
+                                        ? "Review and create PR"
+                                        : "View proposal",
+                                icon: Eye,
+                                onSelect: () => setReviewing(draft),
+                            },
+                            ...(["draft", "queued"].includes(draft.state)
+                                ? [
+                                      {
+                                          id: "cancel",
+                                          label: "Cancel proposal",
+                                          icon: Trash2,
+                                          danger: true,
+                                          onSelect: () => setCancelling(draft),
+                                      },
+                                  ]
+                                : []),
+                        ]}
+                    >
+                        <p>Base {draft.content.commit.slice(0, 12)} · rajohan/homelab</p>
+                        {draft.message && <p>{draft.message}</p>}
                         <time
-                            className="text-xs text-primary-400"
+                            className="block text-xs text-primary-400"
                             dateTime={draft.updatedAt}
                         >
                             {formatDateTime(draft.updatedAt)}
                         </time>
-                    </section>
+                    </HistoryEntry>
                 )}
                 continuation={{
                     hasMore: query.hasNextPage,

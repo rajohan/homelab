@@ -20,9 +20,9 @@ export function DataTableRow<T>({
     readonly compact: boolean;
     readonly rowAction?: DataRowAction<T>;
 }) {
-    const hasTitleAccessory = columns.some(
-        (column) => column.mobile === "actions" || column.mobile === "status"
-    );
+    const hasActions = columns.some((column) => column.mobile === "actions");
+    const hasStatus = columns.some((column) => column.mobile === "status");
+    const statusWithActions = hasStatus && hasActions;
     return (
         <tr
             ref={measureElement}
@@ -31,7 +31,12 @@ export function DataTableRow<T>({
                 "relative isolate @max-3xl:border-b @max-3xl:border-primary-700",
                 compact ? "align-middle" : "align-top",
                 compact
-                    ? "@max-3xl:grid @max-3xl:grid-cols-2 @max-3xl:gap-3 @max-3xl:p-3"
+                    ? cn(
+                          "@max-3xl:gap-x-3 @max-3xl:p-3",
+                          statusWithActions
+                              ? "@max-3xl:status-action-grid @max-3xl:gap-y-1.5"
+                              : "@max-3xl:grid @max-3xl:grid-cols-2 @max-3xl:gap-y-3"
+                      )
                     : "@max-3xl:block"
             )}
         >
@@ -41,6 +46,7 @@ export function DataTableRow<T>({
                 return (
                     <td
                         key={column.id}
+                        data-slot={column.mobile}
                         className={cn(
                             "min-w-0 border-b border-primary-700 p-3 wrap-anywhere @max-3xl:border-0",
                             isAction && "text-right",
@@ -51,15 +57,22 @@ export function DataTableRow<T>({
                             compact &&
                                 column.mobile === "title" &&
                                 cn(
-                                    "@max-3xl:row-start-1 @max-3xl:self-center @max-3xl:font-medium @max-3xl:text-primary-50",
-                                    !hasTitleAccessory && "@max-3xl:col-span-2"
+                                    "@max-3xl:font-medium @max-3xl:text-primary-50",
+                                    !statusWithActions &&
+                                        "@max-3xl:row-start-1 @max-3xl:self-center",
+                                    !hasActions && !hasStatus && "@max-3xl:col-span-2"
                                 ),
                             compact &&
+                                !statusWithActions &&
                                 column.mobile === "status" &&
                                 "@max-3xl:col-start-2 @max-3xl:row-start-1 @max-3xl:self-center @max-3xl:justify-self-end",
                             compact &&
                                 column.mobile === "actions" &&
-                                "py-1 @max-3xl:col-start-2 @max-3xl:row-start-1 @max-3xl:justify-self-end @max-3xl:p-0",
+                                cn(
+                                    "py-1 @max-3xl:p-0",
+                                    !statusWithActions &&
+                                        "@max-3xl:col-start-2 @max-3xl:row-start-1 @max-3xl:justify-self-end"
+                                ),
                             compact &&
                                 column.mobile === "footer-actions" &&
                                 "@max-3xl:order-last @max-3xl:col-span-2",

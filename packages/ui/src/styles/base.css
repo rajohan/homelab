@@ -170,6 +170,26 @@
     overflow-anchor: none;
 }
 
+/* Keep status and actions anchored above a wrapping title in narrow history rows. */
+@utility status-action-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "status actions" "title title";
+    & > [data-slot="status"] {
+        grid-area: status;
+        align-self: center;
+        justify-self: start;
+    }
+    & > [data-slot="actions"] {
+        grid-area: actions;
+        align-self: start;
+        justify-self: end;
+    }
+    & > [data-slot="title"] {
+        grid-area: title;
+    }
+}
+
 @utility scroll-frame {
     min-width: 0;
     overflow: auto;
