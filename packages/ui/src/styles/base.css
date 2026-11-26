@@ -170,6 +170,27 @@
     overflow-anchor: none;
 }
 
+/* Keep status and actions anchored above a wrapping title in narrow history rows. */
+@utility status-action-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "title actions" "status actions";
+    align-items: start;
+    gap: calc(var(--spacing) * 2);
+    & > [data-slot="status"] {
+        grid-area: status;
+        min-width: 0;
+    }
+    & > [data-slot="actions"] {
+        grid-area: actions;
+        justify-self: end;
+        margin-block-start: calc(var(--spacing) * -2);
+    }
+    & > [data-slot="title"] {
+        grid-area: title;
+    }
+}
+
 @utility scroll-frame {
     min-width: 0;
     overflow: auto;

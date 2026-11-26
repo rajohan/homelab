@@ -1,16 +1,15 @@
 import type { MiraDaytonaJob } from "@homelab/contracts/miraDaytona";
 import {
-    ActionGroup,
     Badge,
-    Button,
     Card,
+    HistoryEntry,
     LoadingState,
     Modal,
     ScrollList,
     SectionHeader,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { Cloud, Server, Terminal } from "lucide-react";
+import { Cloud, Eye, Server, Terminal } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
@@ -61,31 +60,30 @@ export function DaytonaJobs({
                 framed
                 className="max-h-128"
                 renderItem={(job) => (
-                    <section className="space-y-3 p-4 sm:p-5">
-                        <SectionHeader
-                            title={job.content.title}
-                            icon={job.executionTarget === "main" ? Server : Cloud}
-                            badge={
-                                <Badge tone={daytonaTones[job.state]}>
-                                    {job.state.replaceAll("_", " ")}
-                                </Badge>
-                            }
-                            description={`${job.executionTarget === "main" ? "Main" : "Daytona"} · ${daytonaCleanupDescriptions[job.cleanup]}`}
-                            actions={
-                                <ActionGroup stretch={false}>
-                                    <Button
-                                        variant="secondary"
-                                        onClick={() => setSelected(job)}
-                                    >
-                                        {job.state === "draft" ? "Review" : "View job"}
-                                    </Button>
-                                </ActionGroup>
-                            }
-                        />
-                        {job.message && (
-                            <p className="text-sm text-primary-300">{job.message}</p>
-                        )}
-                    </section>
+                    <HistoryEntry
+                        title={job.content.title}
+                        icon={job.executionTarget === "main" ? Server : Cloud}
+                        badge={
+                            <Badge tone={daytonaTones[job.state]}>
+                                {job.state.replaceAll("_", " ")}
+                            </Badge>
+                        }
+                        showSingleActionInline
+                        actions={[
+                            {
+                                id: "details",
+                                label: job.state === "draft" ? "Review" : "View job",
+                                icon: Eye,
+                                onSelect: () => setSelected(job),
+                            },
+                        ]}
+                    >
+                        <p className="text-primary-400">
+                            {job.executionTarget === "main" ? "Main" : "Daytona"} ·{" "}
+                            {daytonaCleanupDescriptions[job.cleanup]}
+                        </p>
+                        {job.message && <p className="text-primary-300">{job.message}</p>}
+                    </HistoryEntry>
                 )}
                 continuation={{
                     hasMore: query.hasNextPage,

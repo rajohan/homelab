@@ -12,14 +12,8 @@ import { Link } from "@tanstack/react-router";
 import { ListChecks, MessageSquare, Square } from "lucide-react";
 import { useState } from "react";
 
+import { MiraRunContext } from "./MiraRunContext";
 import { MiraRunDetails } from "./MiraRunDetails";
-
-function runSource(run: MiraRunSummary) {
-    if (run.automationName) return run.automationName;
-    if (run.automationId) return "Automation";
-    return run.taskId ? "Task" : "Chat";
-}
-
 import { miraStatusTone } from "./statusTone";
 
 /**
@@ -58,18 +52,11 @@ export function MiraRunTable({
                         label: "Conversation",
                         mobile: "title",
                         render: (run) => (
-                            <div className="space-y-1">
-                                <p className="font-medium text-primary-100">
+                            <div className="@3xl:space-y-1">
+                                <p className="font-medium text-primary-100 @max-3xl:text-sm @max-3xl:leading-5 @max-3xl:font-semibold">
                                     {run.title}
                                 </p>
-                                <p className="text-xs text-primary-400">
-                                    {runSource(run)}
-                                </p>
-                                {run.message && (
-                                    <p className="text-xs text-primary-300">
-                                        {run.message}
-                                    </p>
-                                )}
+                                <MiraRunContext run={run} />
                             </div>
                         ),
                     },
@@ -77,6 +64,7 @@ export function MiraRunTable({
                         id: "state",
                         sortValue: (run) => run.state,
                         label: "Status",
+                        mobile: "status",
                         width: "w-36",
                         render: (run) => (
                             <div className="flex flex-wrap gap-1.5">
@@ -98,15 +86,27 @@ export function MiraRunTable({
                         id: "time",
                         sortValue: (run) => run.createdAt,
                         label: "Queued",
+                        mobile: "wide",
+                        hideLabel: "mobile",
                         width: "w-48",
-                        render: (run) => formatDateTime(run.createdAt),
+                        render: (run) => (
+                            <>
+                                <MiraRunContext run={run} withQueuedTime />
+                                <time
+                                    className="hidden @3xl:inline"
+                                    dateTime={run.createdAt}
+                                >
+                                    {formatDateTime(run.createdAt)}
+                                </time>
+                            </>
+                        ),
                     },
                     {
                         id: "actions",
                         label: "Actions",
                         hideLabel: true,
                         width: "w-16",
-                        mobile: "footer-actions",
+                        mobile: "actions",
                         render: (run) => {
                             const actions: DropdownMenuAction[] = [
                                 {
