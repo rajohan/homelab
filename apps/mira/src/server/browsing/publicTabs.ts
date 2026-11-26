@@ -25,7 +25,7 @@ export function createBrowserTabs(context: BrowserContext, grant: BrowserGrant) 
     const sites = grant.origins;
     const tabs = new Map<string, { page: Page; cdp: CDPSession }>();
     let selected = "";
-    const synchronizeTabs = async () => {
+    const synchronizeTabs = async (ensurePage = true) => {
         for (const [id, tab] of tabs)
             if (tab.page.isClosed()) {
                 tabs.delete(id);
@@ -64,6 +64,8 @@ export function createBrowserTabs(context: BrowserContext, grant: BrowserGrant) 
         else if (!visible.includes(selected) && visible.length > 0)
             selected = visible.at(-1)!;
         if (!tabs.has(selected)) selected = tabs.keys().next().value ?? "";
+        // A script-opened page can close itself even when it is the last tab.
+        if (ensurePage && tabs.size === 0) await add(undefined);
     };
     const current = () => {
         const tab = tabs.get(selected);
@@ -127,13 +129,13 @@ export function createBrowserTabs(context: BrowserContext, grant: BrowserGrant) 
         };
     };
     const command = async (input: unknown, operator: boolean) => {
-        await synchronizeTabs();
         const cmd = v.parse(
             operator ? miraBrowserWorkspaceCommandSchema : miraBrowserTabCommandSchema,
             input
         );
         if (operator && grant.mode !== "control")
             throw new Error("Browser access is view-only.");
+        await synchronizeTabs(cmd.action !== "open");
         if (cmd.action === "open") {
             if (operator && tabs.size >= 8) return browserWorkspaceWarning.limit;
             return add(cmd.url, operator);

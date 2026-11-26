@@ -66,6 +66,7 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
         headless: false,
         ignoreDefaultArgs: ["--enable-automation"],
         pipe: true,
+        waitForInitialPage: false,
         timeout: 30_000,
         protocolTimeout: 10_000,
         args: [
@@ -76,6 +77,8 @@ export async function openPublicBrowser(grant: BrowserGrant, signal: AbortSignal
             "--window-size=1280,800",
             "--start-maximized",
             "--kiosk",
+            // The session owner closes Chromium. A site can close its last window.
+            "--no-startup-window",
         ],
         defaultViewport: null,
         signal,
