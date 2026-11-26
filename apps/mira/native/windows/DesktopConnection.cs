@@ -189,7 +189,7 @@ internal sealed class DesktopConnection : IDisposable
             if (download != null) { download.Dispose(); download = null; }
             if (blocked && !closing) Publish("Reopen Homelab after setup and process cleanup have finished.");
             updateDialog = null;
-            if (notice != null && !closing && !stopping) dialog.Notice(noticeTitle, notice);
+            if (notice != null && dialog.IsOpen && !closing && !stopping) dialog.Notice(noticeTitle, notice);
             else dialog.Dismiss();
             if (session == null) stopping = false;
             UpdateStatus(null);

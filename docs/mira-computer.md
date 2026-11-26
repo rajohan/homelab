@@ -408,6 +408,12 @@ cleanup is terminal. A temporary command-polling outage may reconnect only after
 confirmed cleanup; failed input/result delivery remains terminal. No PC listener
 or public endpoint is added.
 
+The consent window uses the same packaged dashboard modal as the Windows updater.
+Its buttons return decisions only to the local consent process. Closing the dialog,
+clicking outside it or pressing Escape declines a request or stops active access.
+The window also works when the dashboard is closed. If WebView2 cannot start, Windows
+provides local recovery controls. A renderer failure during active sharing ends access.
+
 ## Qualified Windows release archive
 
 Stable Homelab releases attach `mira-computer-<version>-windows-x64.zip` and the
@@ -568,8 +574,13 @@ download icon appears in the title bar. Select it to download the installer.
 You can also select the update action in the tray or **Update app** under
 **Settings → Computers**. The Windows app shows progress, the result and the install
 confirmation inside its main window, including while the dashboard is offline.
+Updates and startup notices use the shared dashboard dialog, packaged with the Windows
+client. Click outside, select the close button or press Escape to dismiss it. Dismissing
+an install offer leaves the current version running. If WebView2 itself is unavailable,
+the client presents local recovery controls.
 **Hide** returns to the dashboard during a check or download. **View update** in
-the tray opens progress again. Automatic checks stay in the background.
+the tray opens progress again. A completed download presents the install offer even if
+progress was hidden. Automatic checks stay in the background.
 When the update is ready, **Later** leaves the connection open. **Update and reopen**
 ends local computer access, waits for the companion and its controllers to exit,
 then installs the verified release. Stopping the connection, closing Homelab or

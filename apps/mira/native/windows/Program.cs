@@ -30,7 +30,7 @@ namespace Homelab.Mira.Computer
                             throw new InvalidDataException("Initialize local consent first.");
                         request = ConsentRequest.Parse(ConsentProtocol.Parameters(message));
                     }
-                    using (var form = new ConsentForm(request))
+                    using (var form = new ConsentForm(request, InstallationLease.DirectoryPath))
                     {
                         ConsentProtocol.Write(new { id = initialized, result = new { protocol = 1 } });
                         var input = new Thread(delegate()

@@ -17,7 +17,11 @@ export function MobileNavigation({
     readonly onClose: () => void;
 }) {
     return (
-        <Dialog open={open} onClose={onClose} className="relative z-40 lg:hidden">
+        <Dialog
+            open={open}
+            onClose={onClose}
+            className="relative z-40 outline-none lg:hidden"
+        >
             <DialogBackdrop
                 transition
                 className="fixed inset-0 bg-black/65 backdrop-blur-sm transition data-closed:opacity-0 motion-reduce:transition-none"

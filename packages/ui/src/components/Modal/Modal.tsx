@@ -49,7 +49,7 @@ export function Modal({
             onClose={() => {
                 if (dismissible) onClose();
             }}
-            className="relative z-50"
+            className="relative z-50 outline-none"
         >
             <DialogBackdrop
                 transition
