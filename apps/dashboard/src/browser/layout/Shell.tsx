@@ -83,7 +83,7 @@ export function Shell() {
                 <div
                     className={`flex min-w-0 flex-col ${compactNavigation ? "lg:pl-18" : "lg:pl-52"} ${viewportWorkspace ? "h-full min-h-0" : "min-h-dvh"}`}
                 >
-                    <header className="h-shell-header sticky top-0 z-20 flex shrink-0 items-center justify-between gap-3 border-b border-primary-700 bg-primary-950/95 px-4 backdrop-blur-sm sm:px-5">
+                    <header className="h-shell-header sticky top-0 z-30 flex shrink-0 items-center justify-between gap-3 border-b border-primary-700 bg-primary-950 px-4 sm:px-5">
                         <div className="flex min-w-0 items-center gap-3">
                             <IconButton
                                 icon={Menu}
