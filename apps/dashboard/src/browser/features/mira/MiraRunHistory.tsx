@@ -5,6 +5,7 @@ import { History } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
+import { sortedListQuery } from "../../api/sortedListQuery";
 import { useOperation } from "../operations/useOperation";
 import { MiraRunTable } from "./MiraRunTable";
 
@@ -18,7 +19,7 @@ export function MiraRunHistory({
     const [needsReview, setNeedsReview] = useState(false);
     const [sort, setSort] = useState<TableSort | null>(null);
     const query = useInfiniteQuery({
-        queryKey: ["operations", "mira", "runs", needsReview, sort],
+        ...sortedListQuery(["operations", "mira", "runs", needsReview], sort),
         initialPageParam: undefined as TableCursor | undefined,
         queryFn: ({ pageParam }) =>
             api.mira.runs.list.query({
@@ -62,7 +63,8 @@ export function MiraRunHistory({
                     stoppingId={stop.isPending ? stop.variables : undefined}
                     continuation={{
                         hasMore: query.hasNextPage,
-                        loading: query.isFetching,
+                        loading: query.isFetchingNextPage,
+                        refreshing: query.isRefetching || query.isPlaceholderData,
                         error: query.isError ? query.error : undefined,
                         loadingLabel: "Loading more Mira runs…",
                         onLoadMore: () =>

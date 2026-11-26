@@ -11,6 +11,7 @@ import { incidentLocation } from "./features/alerts/incidentLocation";
 import { calendarLocation } from "./features/calendar/calendarLocation";
 import { jobLocation } from "./features/jobs/jobLocation";
 import { restartLocation } from "./features/maintenance/restartLocation";
+import { ReportFromLocation } from "./features/mira/ReportFromLocation";
 import { Shell } from "./layout/Shell";
 import { Alerts } from "./pages/Alerts";
 import { Backups } from "./pages/Backups";
@@ -53,6 +54,11 @@ export function createDashboardRouter(history?: RouterHistory) {
         path: "/infrastructure",
         component: Infrastructure,
     });
+    const reports = createRoute({
+        getParentRoute: () => root,
+        path: "/reports",
+        component: Reports,
+    });
     return createRouter({
         defaultErrorComponent: RouteError,
         routeTree: root.addChildren([
@@ -64,16 +70,13 @@ export function createDashboardRouter(history?: RouterHistory) {
                 component: Calendar,
             }),
             createRoute({ getParentRoute: () => root, path: "/tasks", component: Tasks }),
-            createRoute({
-                getParentRoute: () => root,
-                path: "/reports",
-                component: Reports,
-            }),
-            createRoute({
-                getParentRoute: () => root,
-                path: "/reports/$reportId",
-                component: Reports,
-            }),
+            reports.addChildren([
+                createRoute({
+                    getParentRoute: () => reports,
+                    path: "$reportId",
+                    component: ReportFromLocation,
+                }),
+            ]),
             createRoute({
                 getParentRoute: () => root,
                 path: "/mira-automations",

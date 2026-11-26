@@ -127,7 +127,8 @@ export function ApplicationLogs({
                         renderItem={(entry) => <ApplicationLogLine entry={entry} />}
                         continuation={{
                             hasMore: query.hasNextPage,
-                            loading: query.isFetching,
+                            loading: query.isFetchingNextPage,
+                            refreshing: query.isRefetching,
                             error: query.isError ? query.error : undefined,
                             loadingLabel: "Loading older logs…",
                             onLoadMore: () => {

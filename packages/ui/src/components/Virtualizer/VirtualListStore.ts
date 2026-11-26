@@ -96,6 +96,8 @@ export class VirtualListStore {
             ...this.#virtualizer.options,
             count,
             getItemKey: getKey,
+            // Preserve the visible key when polling prepends rows. At the top, show new arrivals.
+            anchorTo: scrollElement && scrollElement.scrollTop > 0 ? "end" : "start",
             getScrollElement: () => scrollElement,
         });
         this.#virtualizer._willUpdate();

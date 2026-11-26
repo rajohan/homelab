@@ -60,6 +60,7 @@ export function NotificationPanel({ onClose }: { readonly onClose: () => void })
                 <div className="min-w-0 flex-[1_1_max-content]">
                     <ChoiceBar
                         fullWidth
+                        size="field"
                         label="Notification read state"
                         value={state}
                         onChange={setState}
@@ -126,7 +127,8 @@ export function NotificationPanel({ onClose }: { readonly onClose: () => void })
                     className="max-h-[min(30rem,50dvh)] min-h-0 shrink"
                     continuation={{
                         hasMore: query.hasNextPage,
-                        loading: query.isFetching,
+                        loading: query.isFetchingNextPage,
+                        refreshing: query.isRefetching,
                         error: query.isError ? query.error : undefined,
                         loadingLabel: "Loading older notifications…",
                         onLoadMore: () =>

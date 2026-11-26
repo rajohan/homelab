@@ -2,7 +2,6 @@ import { type RefObject, useEffect, useEffectEvent, useRef } from "react";
 
 import { ErrorNotice } from "../Alert/ErrorNotice";
 import { Button } from "../Button/Button";
-import { LoadingState } from "../Loading/LoadingState";
 
 export interface InfiniteScrollContinuation {
     readonly hasMore: boolean;
@@ -54,8 +53,10 @@ export function InfiniteScrollTrigger({
     }, [rootRef, hasMore, loading, refreshing, error, itemCount]);
     if (!hasMore && !error) return null;
     return (
-        <div ref={sentinel} className="space-y-2 p-3">
-            {loading && <LoadingState label={loadingLabel} />}
+        <div ref={sentinel} className="space-y-2 px-3">
+            <output className="block text-sm leading-6 text-primary-400">
+                <span className={loading ? undefined : "invisible"}>{loadingLabel}</span>
+            </output>
             {!loading && error !== undefined && (
                 <>
                     <ErrorNotice error={error} />

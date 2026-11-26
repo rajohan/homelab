@@ -58,7 +58,9 @@ export function Jobs() {
                         void navigate({
                             to: "/jobs",
                             search: {},
-                            hash: "history",
+                            hash: true,
+                            hashScrollIntoView: false,
+                            resetScroll: false,
                             replace: true,
                         })
                     }

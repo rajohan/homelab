@@ -87,7 +87,8 @@ export function AutomationAccess() {
                 getKey={(row) => row.account.id}
                 continuation={{
                     hasMore: inventory.hasNextPage,
-                    loading: inventory.isFetching,
+                    loading: inventory.isFetchingNextPage,
+                    refreshing: inventory.isRefetching,
                     error: inventory.isError ? inventory.error : undefined,
                     loadingLabel: "Loading more accounts…",
                     onLoadMore: () =>

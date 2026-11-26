@@ -2,6 +2,8 @@ import {
     type ReactNode,
     type RefObject,
     useEffect,
+    useEffectEvent,
+    useLayoutEffect,
     useState,
     useSyncExternalStore,
 } from "react";
@@ -28,12 +30,19 @@ export function Virtualizer({
     readonly children: (window: VirtualWindow) => ReactNode;
 }) {
     const [store] = useState(() => new VirtualListStore(count, getKey));
-    // Parent DOM refs are committed before passive effects, not before child layout effects.
-    useEffect(() => store.mount(), [store]);
-    useEffect(
-        () => store.configure(count, getKey, scrollRef.current),
-        [store, count, getKey, scrollRef]
+    const attach = useEffectEvent(() =>
+        store.configure(count, getKey, scrollRef.current)
     );
+    // The parent scrollport ref is available after the initial commit.
+    useEffect(() => {
+        const cleanup = store.mount();
+        attach();
+        return cleanup;
+    }, [store]);
+    // Reconcile new row keys and offsets together before painting a live update.
+    useLayoutEffect(() => {
+        if (scrollRef.current) store.configure(count, getKey, scrollRef.current);
+    }, [store, count, getKey, scrollRef]);
     const snapshot = useSyncExternalStore(
         store.subscribe,
         store.getSnapshot,

@@ -38,6 +38,7 @@ export function PageSections({
         let frame = 0;
         let current: string | undefined;
         let target: HTMLElement | null = null;
+        let landingY = 0;
         const releaseTarget = () => {
             target = null;
         };
@@ -80,24 +81,38 @@ export function PageSections({
         const queue = () => {
             if (!frame) frame = requestAnimationFrame(update);
         };
-        const alignTarget = () => {
-            if (target) target.scrollIntoView({ block: "start" });
-            queue();
+        const land = () => {
+            target?.scrollIntoView({ block: "start" });
+            landingY = globalThis.scrollY;
         };
         const readTarget = () => {
             const fragment = globalThis.location.hash.slice(1);
             target = fragment
                 ? root.querySelector<HTMLElement>(`#${CSS.escape(fragment)}`)
                 : null;
-            alignTarget();
+            land();
+            queue();
         };
         readTarget();
-        const observer = new ResizeObserver(alignTarget);
+        const observer = new ResizeObserver(() => {
+            // A direct link can land on a placeholder before earlier sections have loaded.
+            // Correct that landing only while the reader is still at its original offset.
+            if (target && Math.abs(globalThis.scrollY - landingY) <= 1) {
+                const margin =
+                    Number(getComputedStyle(target).scrollMarginTop.replace("px", "")) ||
+                    0;
+                if (Math.abs(target.getBoundingClientRect().top - margin) > 1) land();
+            } else {
+                releaseTarget();
+            }
+            queue();
+        });
         for (const node of landmarks) observer.observe(node);
         globalThis.addEventListener("scroll", queue, { passive: true });
         globalThis.addEventListener("resize", queue);
         globalThis.addEventListener("hashchange", readTarget);
         globalThis.addEventListener("wheel", releaseTarget, { passive: true });
+        globalThis.addEventListener("touchstart", releaseTarget, { passive: true });
         globalThis.addEventListener("pointerdown", releaseTarget, { passive: true });
         globalThis.addEventListener("keydown", releaseForKey);
         return () => {
@@ -105,6 +120,7 @@ export function PageSections({
             globalThis.removeEventListener("resize", queue);
             globalThis.removeEventListener("hashchange", readTarget);
             globalThis.removeEventListener("wheel", releaseTarget);
+            globalThis.removeEventListener("touchstart", releaseTarget);
             globalThis.removeEventListener("pointerdown", releaseTarget);
             globalThis.removeEventListener("keydown", releaseForKey);
             observer.disconnect();

@@ -121,7 +121,8 @@ export function MiraRunDetails({
                             <InfiniteScrollTrigger
                                 itemCount={rows.length}
                                 hasMore={query.hasNextPage}
-                                loading={query.isFetching}
+                                loading={query.isFetchingNextPage}
+                                refreshing={query.isRefetching}
                                 error={query.isError ? query.error : undefined}
                                 loadingLabel="Loading older tool outcomes…"
                                 onLoadMore={() =>

@@ -40,19 +40,6 @@ export function ReportDetail({
         if (!report) throw new Error("The report has not loaded yet.");
         return api.mira.reports.change.mutate({ id, version: report.version, action });
     });
-    if (deleting)
-        return (
-            <ConfirmDialog
-                title="Delete report"
-                description="Remove report content. Its link and execution audit remain available."
-                confirmLabel="Delete report"
-                onClose={() => setDeleting(false)}
-                onConfirm={async () => {
-                    await change.mutateAsync("delete");
-                    setDeleting(false);
-                }}
-            />
-        );
     return (
         <Modal
             title={report?.title ?? "Report"}
@@ -121,6 +108,18 @@ export function ReportDetail({
                         )}
                     </ActionGroup>
                 </div>
+            )}
+            {deleting && (
+                <ConfirmDialog
+                    title="Delete report"
+                    description="Remove report content. Its link and execution audit remain available."
+                    confirmLabel="Delete report"
+                    onClose={() => setDeleting(false)}
+                    onConfirm={async () => {
+                        await change.mutateAsync("delete");
+                        setDeleting(false);
+                    }}
+                />
             )}
         </Modal>
     );

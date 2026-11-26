@@ -100,10 +100,11 @@ export function DaytonaJobs({
                     }
                 />
             </div>
+            {selected && (
+                <DaytonaDetails job={selected} onClose={() => setSelected(undefined)} />
+            )}
         </div>
     );
-    if (selected)
-        return <DaytonaDetails job={selected} onClose={() => setSelected(undefined)} />;
     return onClose ? (
         <Modal title="Code jobs" onClose={onClose} size="wide">
             {content}

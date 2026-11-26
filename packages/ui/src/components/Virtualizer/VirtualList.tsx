@@ -55,7 +55,7 @@ export function VirtualList<T>({
                 }}
             >
                 {({ items, totalSize, measureElement }) => (
-                    <ul>
+                    <ul className="[overflow-anchor:none]">
                         <li aria-hidden="true" style={{ height: items[0]?.start ?? 0 }} />
                         {items.map((item) => {
                             const row = rows[item.index];

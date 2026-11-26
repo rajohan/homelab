@@ -118,6 +118,7 @@ export function EventTimeline({
             </>
         );
     };
+    if (events.length === 0 && !scroll) return null;
     if (scroll)
         return (
             <VirtualList
