@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.6](https://github.com/rajohan/homelab/compare/v0.30.5...v0.30.6) (2026-11-26)
+
+
+### Bug Fixes
+
+* **dashboard:** preserve scroll position during live updates and detail actions ([#294](https://github.com/rajohan/homelab/issues/294)) ([8a7c392](https://github.com/rajohan/homelab/commit/8a7c392f4b6bc72707244a95c3bbcaf6039880b3))
+
 ## [0.30.5](https://github.com/rajohan/homelab/compare/v0.30.4...v0.30.5) (2026-11-26)
 
 
