@@ -6,8 +6,8 @@ import {
     Popover,
     type PopoverControl,
     queryRefresh,
+    ScrollList,
     SummaryStrip,
-    VirtualList,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Cog } from "lucide-react";
@@ -179,7 +179,7 @@ export function JobActivity({
                             <EmptyState compact icon={Cog} title="No active jobs" />
                         )}
                         {runs.length > 0 && (
-                            <VirtualList
+                            <ScrollList
                                 label="Your job activity"
                                 rows={runs}
                                 getKey={(run) => run.key}

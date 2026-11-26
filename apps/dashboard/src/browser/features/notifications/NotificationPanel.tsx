@@ -12,8 +12,8 @@ import {
     EmptyState,
     ErrorNotice,
     LoadingState,
+    ScrollList,
     Select,
-    VirtualList,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Bell, CheckCheck, Trash2 } from "lucide-react";
@@ -25,7 +25,7 @@ import { useNotificationActions } from "./useNotificationActions";
 
 /**
  * Browse and acknowledge a bounded notification inbox with server-side filters.
- * @returns Virtualized infinite history and explicit confirmation for clearing read items.
+ * @returns Cursor-paginated history and explicit confirmation for clearing read items.
  */
 export function NotificationPanel({ onClose }: { readonly onClose: () => void }) {
     const [state, setState] = useState<NotificationFilter["state"]>("all");
@@ -109,7 +109,7 @@ export function NotificationPanel({ onClose }: { readonly onClose: () => void })
                 <EmptyState compact icon={Bell} title="No matching notifications." />
             )}
             {rows.length > 0 && (
-                <VirtualList
+                <ScrollList
                     label="Notification history"
                     itemClassName="pb-0"
                     rows={rows}

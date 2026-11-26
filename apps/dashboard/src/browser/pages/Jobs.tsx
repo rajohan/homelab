@@ -34,6 +34,8 @@ export function Jobs() {
                     {
                         id: "queue",
                         label: "Queue",
+                        // Anchor the page to the section being read as active jobs come and go.
+                        className: "[overflow-anchor:none]",
                         content: <JobHistory view="active" title="Queued and running" />,
                     },
                     { id: "schedules", label: "Schedules", content: <SchedulesPanel /> },

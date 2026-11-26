@@ -5,14 +5,14 @@ import {
     ConfirmDialog,
     DropdownMenu,
     formatDateTime,
-    InfiniteScrollTrigger,
     LoadingState,
     Modal,
+    ScrollList,
     SectionHeader,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Eye, GitPullRequest, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import { api } from "../../api/client";
 import { useOperation } from "../operations/useOperation";
@@ -30,7 +30,6 @@ export function CodeLibrary({
     readonly onClose?: (() => void) | undefined;
     readonly conversationId?: string | undefined;
 }) {
-    const scrollRoot = useRef<HTMLDivElement>(null);
     const [reviewing, setReviewing] = useState<MiraCodePublication>();
     const [cancelling, setCancelling] = useState<MiraCodePublication>();
     const query = useInfiniteQuery({
@@ -61,12 +60,14 @@ export function CodeLibrary({
                     proposal by asking Mira in Chat.
                 </p>
             )}
-            <div
-                ref={scrollRoot}
-                className="max-h-128 scroll-frame divide-y divide-primary-700 bg-surface-card"
-            >
-                {rows.map((draft) => (
-                    <section key={draft.id} className="space-y-3 p-4 sm:p-5">
+            <ScrollList
+                label="Code change history"
+                rows={rows}
+                getKey={(draft) => draft.id}
+                framed
+                className="max-h-128"
+                renderItem={(draft) => (
+                    <section className="space-y-3 p-4 sm:p-5">
                         <SectionHeader
                             title={draft.content.title}
                             icon={GitPullRequest}
@@ -118,21 +119,18 @@ export function CodeLibrary({
                             {formatDateTime(draft.updatedAt)}
                         </time>
                     </section>
-                ))}
-                <InfiniteScrollTrigger
-                    rootRef={scrollRoot}
-                    itemCount={query.data?.pages.length ?? 0}
-                    hasMore={query.hasNextPage}
-                    loading={query.isFetchingNextPage}
-                    refreshing={query.isRefetching}
-                    error={query.isError ? query.error : undefined}
-                    onLoadMore={() =>
+                )}
+                continuation={{
+                    hasMore: query.hasNextPage,
+                    loading: query.isFetchingNextPage,
+                    refreshing: query.isRefetching,
+                    error: query.isError ? query.error : undefined,
+                    onLoadMore: () =>
                         void (query.isRefetchError
                             ? query.refetch()
-                            : query.fetchNextPage())
-                    }
-                />
-            </div>
+                            : query.fetchNextPage()),
+                }}
+            />
             {reviewing && (
                 <CodeReview draft={reviewing} onClose={() => setReviewing(undefined)} />
             )}

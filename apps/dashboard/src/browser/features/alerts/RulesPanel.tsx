@@ -6,12 +6,12 @@ import {
     formatDateTime,
     LoadingState,
     queryRefresh,
+    ScrollList,
     SearchInput,
     SectionPanel,
     Select,
     SortControl,
     useInventorySort,
-    VirtualList,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Activity } from "lucide-react";
@@ -23,7 +23,7 @@ import { RuleStatus } from "./RuleStatus";
 
 /**
  * List all loaded alerting rules independently of active incident delivery and personal receipts.
- * @returns Searchable, virtualized rules with live state, grouping and evaluation timestamps.
+ * @returns Searchable rules with live state, grouping and evaluation timestamps.
  */
 export function RulesPanel() {
     const [search, setSearch] = useState("");
@@ -94,7 +94,7 @@ export function RulesPanel() {
                 />
             </FilterBar>
             {rows.length > 0 ? (
-                <VirtualList
+                <ScrollList
                     label="Monitoring rule evaluations"
                     rows={ordered}
                     getKey={(row) => row.id}

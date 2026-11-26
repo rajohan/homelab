@@ -1,6 +1,7 @@
 import { type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { EmptyState } from "../EmptyState/EmptyState";
 import { DetailSection } from "../Modal/DetailSection";
 import { SortControl } from "./SortControl";
 import { type SortField, useInventorySort } from "./useInventorySort";
@@ -66,7 +67,7 @@ export function DetailList<T>({
                     ))}
                 </ul>
             ) : (
-                <p className="text-sm text-primary-400">{empty}</p>
+                <EmptyState message={empty} />
             )}
         </DetailSection>
     );

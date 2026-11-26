@@ -5,9 +5,9 @@ import {
     formatDateTime,
     formatMetric,
     LoadingState,
+    ScrollList,
     SectionPanel,
     SummaryStrip,
-    VirtualList,
 } from "@homelab/ui";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Layers } from "lucide-react";
@@ -59,7 +59,7 @@ export function SnapshotsPanel() {
                 />
             )}
             {groups.length > 0 ? (
-                <VirtualList
+                <ScrollList
                     label="Backup groups"
                     rows={groups.toSorted((a, b) =>
                         a.name.localeCompare(b.name, undefined, { numeric: true })

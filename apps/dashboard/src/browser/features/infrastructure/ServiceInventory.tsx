@@ -1,11 +1,11 @@
 import type { ServiceMetric } from "@homelab/contracts/infrastructure";
 import {
+    ScrollList,
     SearchInput,
     SectionPanel,
     Select,
     SortControl,
     useInventorySort,
-    VirtualList,
 } from "@homelab/ui";
 import { Activity } from "lucide-react";
 import { useState } from "react";
@@ -69,7 +69,7 @@ export function ServiceInventory({
                 placeholder="Find a check or host…"
             />
             {ordered.length > 0 ? (
-                <VirtualList
+                <ScrollList
                     label="Service check results"
                     rows={ordered}
                     getKey={(row) => row.id}

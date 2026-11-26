@@ -79,7 +79,7 @@
         --os-handle-bg: var(--scrollbar-thumb);
         --os-handle-bg-hover: theme("colors.primary.200");
         --os-handle-bg-active: theme("colors.primary.200");
-        /* Keep the thumb above sticky table headings and below popovers and dialogs. */
+        /* Keep the thumb above rows and below popovers and dialogs. */
         z-index: 20;
     }
 
@@ -90,9 +90,9 @@
         margin: 0;
     }
 
-    /* Long account forms must remain scrollable without an app-owned scroll container. */
+    /* Clip horizontal overflow without making body a scroll container for sticky headers. */
     body {
-        overflow-x: hidden;
+        overflow-x: clip;
     }
 
     #root {
@@ -160,6 +160,14 @@
         outline: 3px solid theme("colors.accent.400");
         outline-offset: 4px;
     }
+}
+
+/* Keep anchors inside a nested scrollport local to that scrollport. A change to
+   an offscreen row must not also move the document that contains it. */
+@utility scroll-anchor-boundary {
+    min-width: 0;
+    min-height: 0;
+    overflow-anchor: none;
 }
 
 @utility scroll-frame {

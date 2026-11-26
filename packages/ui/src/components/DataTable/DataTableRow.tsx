@@ -2,21 +2,19 @@ import { cn } from "../../lib/classNames";
 import type { DataColumn, DataRowAction } from "./DataTable";
 
 /**
- * Present a measured row as desktop cells or a compact two-column mobile card.
+ * Present a row as desktop cells or a compact two-column mobile card.
  * @returns A row with an optional full-surface details button and independent actions.
  */
 export function DataTableRow<T>({
     row,
     index,
     columns,
-    measureElement,
     compact,
     rowAction,
 }: {
     readonly row: T;
     readonly index: number;
     readonly columns: readonly DataColumn<T>[];
-    readonly measureElement: (element: Element | null) => void;
     readonly compact: boolean;
     readonly rowAction?: DataRowAction<T>;
 }) {
@@ -25,7 +23,6 @@ export function DataTableRow<T>({
     );
     return (
         <tr
-            ref={measureElement}
             data-index={index}
             className={cn(
                 "relative isolate @max-3xl:border-b @max-3xl:border-primary-700",
@@ -71,7 +68,7 @@ export function DataTableRow<T>({
                                 type="button"
                                 aria-label={rowAction.label(row)}
                                 onClick={() => rowAction.onSelect(row)}
-                                className="absolute inset-0 z-0 cursor-pointer transition-colors hover:bg-primary-800/50 focus-visible:bg-primary-800/50 focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:outline-none focus-visible:ring-inset"
+                                className="absolute inset-0 z-0 cursor-pointer hover:bg-primary-800/50 focus-visible:bg-primary-800/50 focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:outline-none focus-visible:ring-inset"
                             />
                         )}
                         <div

@@ -2,8 +2,8 @@
 
 The dashboard inbox is separate from Alertmanager, Pushover and the identity email outbox. It
 does not install a second push pipeline or change existing delivery. The header bell reads only
-counts until opened; the panel provides server-filtered read state and severity, virtualized
-cursor history, per-item read/unread/dismiss and bounded bulk actions.
+counts until opened; the panel provides server-filtered read state and severity, paginated
+history, per-item read/unread/dismiss and bounded bulk actions.
 
 `server/notifications/publish.ts` is the producer boundary. A source and stable source key identify
 an immutable event; identical replays return the existing ID, conflicting content is rejected.

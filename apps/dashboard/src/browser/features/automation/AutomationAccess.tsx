@@ -5,8 +5,8 @@ import {
     ConfirmDialog,
     LoadingState,
     queryRefresh,
+    ScrollList,
     SectionHeader,
-    VirtualList,
 } from "@homelab/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Bot, Plus } from "lucide-react";
@@ -71,7 +71,7 @@ export function AutomationAccess() {
                 }
             />
             {inventory.isPending && <LoadingState label="Loading automation accounts…" />}
-            <VirtualList
+            <ScrollList
                 label="Automation accounts"
                 framed
                 rows={

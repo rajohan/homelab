@@ -21,14 +21,10 @@ export function ActivityPanel({
     readonly onClose: () => void;
     readonly children: ReactNode;
 }) {
-    const scrollRef = useRef<HTMLElement>(null);
+    const scrollRef = useRef<HTMLDivElement>(null);
     useOverlayScrollbars(scrollRef);
     return (
-        <section
-            ref={scrollRef}
-            aria-label={title}
-            className="flex min-h-0 flex-col overflow-y-auto overscroll-contain"
-        >
+        <section aria-label={title} className="flex min-h-0 flex-col">
             <header className="flex shrink-0 items-center gap-3 border-b border-primary-700 bg-surface-heading px-4 py-3 sm:px-5">
                 <Icon aria-hidden="true" size={21} className="shrink-0 text-accent-300" />
                 <div className="min-w-0 flex-1">
@@ -43,11 +39,14 @@ export function ActivityPanel({
                     onClick={onClose}
                 />
             </header>
-            <div
-                data-ui="overlay-body"
-                className="flex min-h-0 min-w-0 flex-col gap-3 bg-surface-panel p-3 sm:p-4"
-            >
-                {children}
+            <div className="relative grid min-h-0">
+                <div
+                    ref={scrollRef}
+                    data-ui="overlay-body"
+                    className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto overscroll-contain bg-surface-panel p-3 sm:p-4"
+                >
+                    {children}
+                </div>
             </div>
         </section>
     );
