@@ -52,11 +52,11 @@ export function MiraRunTable({
                         label: "Conversation",
                         mobile: "title",
                         render: (run) => (
-                            <div className="space-y-1">
-                                <p className="font-medium text-primary-100">
+                            <div className="@3xl:space-y-1">
+                                <p className="font-medium text-primary-100 @max-3xl:text-sm @max-3xl:leading-5 @max-3xl:font-semibold">
                                     {run.title}
                                 </p>
-                                <MiraRunContext run={run} className="hidden @3xl:block" />
+                                <MiraRunContext run={run} />
                             </div>
                         ),
                     },
@@ -67,22 +67,19 @@ export function MiraRunTable({
                         mobile: "status",
                         width: "w-36",
                         render: (run) => (
-                            <>
-                                <div className="flex flex-wrap gap-1.5">
-                                    <Badge tone={miraStatusTone(run.state)}>
-                                        <span className="capitalize">
-                                            {run.cancelRequested &&
-                                            ["queued", "running"].includes(run.state)
-                                                ? "Stopping"
-                                                : run.state.replaceAll("_", " ")}
-                                        </span>
-                                    </Badge>
-                                    {run.followupResolution && (
-                                        <Badge tone="info">Follow-up closed</Badge>
-                                    )}
-                                </div>
-                                <MiraRunContext run={run} className="mt-2 @3xl:hidden" />
-                            </>
+                            <div className="flex flex-wrap gap-1.5">
+                                <Badge tone={miraStatusTone(run.state)}>
+                                    <span className="capitalize">
+                                        {run.cancelRequested &&
+                                        ["queued", "running"].includes(run.state)
+                                            ? "Stopping"
+                                            : run.state.replaceAll("_", " ")}
+                                    </span>
+                                </Badge>
+                                {run.followupResolution && (
+                                    <Badge tone="info">Follow-up closed</Badge>
+                                )}
+                            </div>
                         ),
                     },
                     {
@@ -90,8 +87,19 @@ export function MiraRunTable({
                         sortValue: (run) => run.createdAt,
                         label: "Queued",
                         mobile: "wide",
+                        hideLabel: "mobile",
                         width: "w-48",
-                        render: (run) => formatDateTime(run.createdAt),
+                        render: (run) => (
+                            <>
+                                <MiraRunContext run={run} withQueuedTime />
+                                <time
+                                    className="hidden @3xl:inline"
+                                    dateTime={run.createdAt}
+                                >
+                                    {formatDateTime(run.createdAt)}
+                                </time>
+                            </>
+                        ),
                     },
                     {
                         id: "actions",

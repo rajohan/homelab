@@ -174,20 +174,20 @@
 @utility status-action-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "title actions" "status status";
+    grid-template-areas: "title actions" "status actions";
+    align-items: start;
+    gap: calc(var(--spacing) * 2);
     & > [data-slot="status"] {
         grid-area: status;
-        align-self: center;
-        justify-self: start;
+        min-width: 0;
     }
     & > [data-slot="actions"] {
         grid-area: actions;
-        align-self: start;
         justify-self: end;
+        margin-block-start: calc(var(--spacing) * -2);
     }
     & > [data-slot="title"] {
         grid-area: title;
-        align-self: center;
     }
 }
 

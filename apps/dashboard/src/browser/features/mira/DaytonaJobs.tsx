@@ -82,7 +82,7 @@ export function DaytonaJobs({
                             {job.executionTarget === "main" ? "Main" : "Daytona"} ·{" "}
                             {daytonaCleanupDescriptions[job.cleanup]}
                         </p>
-                        {job.message && <p>{job.message}</p>}
+                        {job.message && <p className="text-primary-300">{job.message}</p>}
                     </HistoryEntry>
                 )}
                 continuation={{

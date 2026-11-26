@@ -32,10 +32,10 @@ export function DataTableRow<T>({
                 compact ? "align-middle" : "align-top",
                 compact
                     ? cn(
-                          "@max-3xl:gap-x-3 @max-3xl:p-3",
+                          "@max-3xl:p-3",
                           statusWithActions
-                              ? "@max-3xl:status-action-grid @max-3xl:gap-y-1.5"
-                              : "@max-3xl:grid @max-3xl:grid-cols-2 @max-3xl:gap-y-3"
+                              ? "@max-3xl:status-action-grid"
+                              : "@max-3xl:grid @max-3xl:grid-cols-2 @max-3xl:gap-3"
                       )
                     : "@max-3xl:block"
             )}

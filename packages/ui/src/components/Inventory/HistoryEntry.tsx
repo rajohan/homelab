@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "../Button/Button";
 import { DropdownMenu, type DropdownMenuAction } from "../DropdownMenu/DropdownMenu";
-import { HeadingLabel } from "../SectionHeader/HeadingLabel";
+import { SectionIcon } from "../SectionHeader/SectionIcon";
 
 /**
  * Present a history entry with a stable status and action menu in narrow containers.
@@ -30,16 +30,22 @@ export function HistoryEntry({
     return (
         <section className="@container/history-entry min-w-0">
             <div className="space-y-2 p-3 @3xl/history-entry:space-y-3 @3xl/history-entry:p-5">
-                <header className="gap-x-3 gap-y-1 @max-3xl/history-entry:status-action-grid @3xl/history-entry:flex @3xl/history-entry:items-center">
+                <header className="@max-3xl/history-entry:status-action-grid @3xl/history-entry:flex @3xl/history-entry:items-center @3xl/history-entry:gap-3">
                     <h3
                         data-slot="title"
-                        className="min-w-0 text-base leading-snug font-semibold text-primary-50 @3xl/history-entry:text-xl"
+                        className="flex min-w-0 items-center gap-3 text-sm leading-5 font-semibold text-primary-100 @3xl/history-entry:text-xl @3xl/history-entry:text-primary-50"
                     >
-                        <HeadingLabel icon={icon}>{title}</HeadingLabel>
+                        <SectionIcon
+                            icon={icon}
+                            className="hidden @3xl/history-entry:block"
+                        />
+                        <span className="min-w-0 wrap-anywhere @3xl/history-entry:[text-box:trim-both_cap_alphabetic]">
+                            {title}
+                        </span>
                     </h3>
                     <div
                         data-slot="status"
-                        className="min-w-0 @3xl/history-entry:shrink-0"
+                        className="flex min-w-0 capitalize @3xl/history-entry:shrink-0"
                     >
                         {badge}
                     </div>
@@ -65,7 +71,7 @@ export function HistoryEntry({
                         )}
                     </div>
                 </header>
-                <div className="min-w-0 space-y-1 text-sm wrap-anywhere text-primary-300">
+                <div className="min-w-0 space-y-1 text-xs leading-4 wrap-anywhere text-primary-400 @3xl/history-entry:text-sm @3xl/history-entry:text-primary-300">
                     {children}
                 </div>
             </div>

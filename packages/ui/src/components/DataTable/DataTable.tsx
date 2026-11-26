@@ -28,7 +28,8 @@ export interface DataColumn<T> {
         | "actions"
         | "footer-actions"
         | "hidden";
-    readonly hideLabel?: boolean;
+    /** Suppress the compact label only, or also the visible table heading when true. */
+    readonly hideLabel?: boolean | "mobile";
     readonly width?: string;
 }
 
@@ -139,7 +140,9 @@ export function DataTable<T>({
                                     ) : (
                                         <span
                                             className={
-                                                column.hideLabel ? "sr-only" : undefined
+                                                column.hideLabel === true
+                                                    ? "sr-only"
+                                                    : undefined
                                             }
                                         >
                                             {column.label}

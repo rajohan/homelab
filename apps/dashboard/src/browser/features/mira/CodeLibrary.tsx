@@ -99,13 +99,15 @@ export function CodeLibrary({
                         ]}
                     >
                         <p>Base {draft.content.commit.slice(0, 12)} · rajohan/homelab</p>
-                        {draft.message && <p>{draft.message}</p>}
                         <time
                             className="block text-xs text-primary-400"
                             dateTime={draft.updatedAt}
                         >
                             {formatDateTime(draft.updatedAt)}
                         </time>
+                        {draft.message && (
+                            <p className="text-primary-300">{draft.message}</p>
+                        )}
                     </HistoryEntry>
                 )}
                 continuation={{
