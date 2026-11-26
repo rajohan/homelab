@@ -3,6 +3,8 @@
 
 @theme {
     --spacing-form-control: 2.75rem;
+    --spacing-scrollbar: 10px;
+    --spacing-scrollbar-inset: calc(var(--spacing-scrollbar) + 1.5 * var(--spacing));
     --color-primary-950: var(--homelab-canvas);
     --color-primary-900: var(--homelab-panel);
     --color-primary-800: var(--homelab-raised);
@@ -70,7 +72,7 @@
     }
 
     .os-scrollbar.os-theme-homelab {
-        --os-size: 10px;
+        --os-size: var(--spacing-scrollbar);
         --os-padding-perpendicular: 1px;
         --os-padding-axis: 1px;
         --os-handle-border-radius: 4px;

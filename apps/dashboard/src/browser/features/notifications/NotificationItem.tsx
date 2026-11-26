@@ -43,7 +43,7 @@ export function NotificationItem({
     return (
         <article
             aria-label={notification.title}
-            className="border-t border-primary-700 px-1 py-3"
+            className="border-t border-primary-700 py-3 ps-1 pe-scrollbar-inset"
         >
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-primary-400">
                 <Badge tone={tones[notification.severity]} className="capitalize">
