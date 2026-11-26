@@ -71,13 +71,16 @@ export function DataTableRow<T>({
                                 type="button"
                                 aria-label={rowAction.label(row)}
                                 onClick={() => rowAction.onSelect(row)}
-                                className="absolute inset-0 z-0 cursor-pointer hover:bg-primary-800/50 focus-visible:bg-primary-800/50 focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:outline-none focus-visible:ring-inset"
+                                className="peer/row absolute inset-0 z-0 cursor-pointer hover:bg-accent-300/12 focus-visible:bg-accent-300/12 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent-400 active:bg-accent-300/18"
                             />
                         )}
                         <div
                             className={cn(
                                 "relative z-10 min-w-0",
-                                rowAction && !isAction && "pointer-events-none"
+                                rowAction && !isAction && "pointer-events-none",
+                                rowAction &&
+                                    columnIndex === 0 &&
+                                    "underline-offset-4 peer-hover/row:text-accent-300 peer-hover/row:underline peer-focus-visible/row:text-accent-300"
                             )}
                         >
                             <span

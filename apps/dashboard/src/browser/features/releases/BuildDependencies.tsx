@@ -140,7 +140,7 @@ export function BuildDependencies() {
                             sortValue: (item) => item.name,
                             render: (item) => (
                                 <a
-                                    className="text-accent-300 underline underline-offset-4"
+                                    className="rounded-sm text-accent-300 underline underline-offset-4 hover:text-accent-100 hover:decoration-2 focus-visible:outline-2 focus-visible:outline-accent-400"
                                     href={item.url}
                                     target="_blank"
                                     rel="noreferrer"
