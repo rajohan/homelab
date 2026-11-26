@@ -79,7 +79,7 @@
         --os-handle-bg: var(--scrollbar-thumb);
         --os-handle-bg-hover: theme("colors.primary.200");
         --os-handle-bg-active: theme("colors.primary.200");
-        /* Keep the thumb above sticky table headings and below popovers and dialogs. */
+        /* Keep the thumb above rows and below popovers and dialogs. */
         z-index: 20;
     }
 

@@ -64,7 +64,8 @@ export function DataTable<T>({
     readonly onSortChange?: (sort: TableSort | null) => void;
 }) {
     const scrollRef = useRef<HTMLElement>(null);
-    useOverlayScrollbars(scrollRef);
+    const headingRef = useRef<HTMLTableSectionElement>(null);
+    useOverlayScrollbars(scrollRef, headingRef);
     const [localSort, setLocalSort] = useState<TableSort | null>(null);
     const selectedSort = sort === undefined ? localSort : sort;
     const sortedColumn = columns.find((column) => column.id === selectedSort?.id);
@@ -104,7 +105,10 @@ export function DataTable<T>({
                     aria-label={label}
                     className="w-full table-fixed border-separate border-spacing-0 text-sm tabular-nums @max-3xl:block"
                 >
-                    <thead className="sticky top-0 z-10 bg-surface-heading text-left text-xs text-primary-400 @max-3xl:sr-only">
+                    <thead
+                        ref={headingRef}
+                        className="sticky top-0 z-10 bg-surface-heading text-left text-xs text-primary-400 @max-3xl:sr-only"
+                    >
                         <tr>
                             {columns.map((column) => (
                                 <th

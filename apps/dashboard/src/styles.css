@@ -18,6 +18,11 @@
     }
 }
 
+/* Only the dashboard shell keeps a header above the page as it scrolls. */
+body:has(header.h-shell-header) > .os-scrollbar-vertical {
+    top: var(--spacing-shell-header);
+}
+
 .mira-emoji-picker {
     --epr-bg-color: var(--homelab-panel);
     --epr-category-label-bg-color: var(--homelab-panel);
