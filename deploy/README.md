@@ -187,6 +187,12 @@ before the existing publisher, never `install`, `upgrade`, service restarts or r
 APT must already maintain `/var/lib/apt/periodic/update-success-stamp` through its
 standard success hook. Any repository refresh failure prevents a new report.
 
+Install `monitoring/homelab-update-inventory-retry.conf` as
+`/etc/systemd/system/homelab-update-inventory@.service.d/30-retry.conf` on inventory
+publishers and reload systemd. A failed daily publication retries after 15 minutes,
+up to four times within two hours. The daily timer remains the fallback. Only a
+newly collected and accepted report advances the inventory timestamp.
+
 The `+` prefix gives only this fixed APT preparation command its normal root context
 (including its own `_apt` privilege drop); the publisher retains its existing sandbox.
 This avoids releasing unrelated package-upgrade jobs queued behind incomplete

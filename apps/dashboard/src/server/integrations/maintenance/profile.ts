@@ -32,6 +32,9 @@ export function deploymentMaintenanceTargets(
                 JSON.stringify(["/usr/bin/pg_isready", "-h", "127.0.0.1", "-p", "5432"]);
         return {
             ...target,
+            ...(shipped.systemBusProfile && !target.systemBusProfile
+                ? { systemBusProfile: shipped.systemBusProfile }
+                : {}),
             ...(shipped.proxmox && !target.proxmox ? { proxmox: shipped.proxmox } : {}),
             ...(shipped.physicalNode && target.physicalNode === undefined
                 ? { physicalNode: true }

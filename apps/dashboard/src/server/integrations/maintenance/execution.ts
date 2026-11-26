@@ -6,9 +6,16 @@ import type { MaintenanceTarget } from "./configuration";
 import program from "./remote.py" with { type: "text" };
 import serviceReport from "./service_report.py" with { type: "text" };
 import systemBus from "./system_bus.py" with { type: "text" };
+import ubuntuBus from "./ubuntu_bus.py" with { type: "text" };
+
+const busProgram = serviceReport + "\n" + ubuntuBus + "\n" + systemBus;
 
 export const busRecoveryMessages = {
     qualified: null,
+    network:
+        "The host could not verify its default gateway or an uncached dashboard DNS lookup.",
+    workloads:
+        "The host could not confirm its Docker workload or package maintenance prerequisites.",
     implementation:
         "This system bus implementation has no qualified online restart recipe.",
     "unit-policy":
@@ -102,27 +109,24 @@ export const probeMaintenance: MaintenanceProbe = async (
     operationId
 ) => {
     signal.throwIfAborted();
-    const child = Bun.spawn(
-        updateSshArguments(connection, serviceReport + "\n" + systemBus + "\n" + program),
-        {
-            stdin: new TextEncoder().encode(
-                JSON.stringify({
-                    target,
-                    mode,
-                    expected,
-                    requiredOnly,
-                    operationId,
-                    ...(mode === "restart" && target.service === "dbus.service"
-                        ? { busProgram: serviceReport + "\n" + systemBus }
-                        : {}),
-                })
-            ),
-            stdout: "pipe",
-            stderr: "ignore",
-            signal,
-            env: { PATH: "/usr/bin:/bin", LANG: "C", HOME: "/nonexistent" },
-        }
-    );
+    const child = Bun.spawn(updateSshArguments(connection, busProgram + "\n" + program), {
+        stdin: new TextEncoder().encode(
+            JSON.stringify({
+                target,
+                mode,
+                expected,
+                requiredOnly,
+                operationId,
+                ...(mode === "restart" && target.service === "dbus.service"
+                    ? { busProgram }
+                    : {}),
+            })
+        ),
+        stdout: "pipe",
+        stderr: "ignore",
+        signal,
+        env: { PATH: "/usr/bin:/bin", LANG: "C", HOME: "/nonexistent" },
+    });
     try {
         let result = "";
         for await (const chunk of child.stdout) {

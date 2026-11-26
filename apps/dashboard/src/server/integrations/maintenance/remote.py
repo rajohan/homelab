@@ -92,7 +92,7 @@ def observe(target, full=True, include_fleet=False):
         fleet = read_service_report(run)
         for item in fleet["services"]:
             if item["unit"] == "dbus.service" and item["restartable"]:
-                item["busRecovery"] = bus_eligibility()
+                item["busRecovery"] = bus_eligibility(target.get("systemBusProfile"))
         if fleet.pop("kernelOrMicrocodePending", False) and not required:
             required = owns_kernel()
         if target["kind"] == "service":

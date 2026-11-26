@@ -156,6 +156,10 @@ export function maintenanceJobs(
     );
     return targets.flatMap((target): JobHandler[] => {
         const hostId = hosts.get(target.id)!.id;
+        const owner = targets.find(
+            (candidate) =>
+                candidate.kind === "host" && candidate.connection === target.connection
+        );
         const connection = connections.find((entry) => entry.id === target.connection)!;
         const configuration = maintenanceRevision(target, connections);
         const inspect: JobHandler = {
@@ -253,6 +257,10 @@ export function maintenanceJobs(
                 const recipe = reported
                     ? discoveredMaintenanceTarget(target, input.unit!)
                     : target;
+                // Every service's final reading refreshes the owner's whole fleet.
+                const probeRecipe = owner?.systemBusProfile
+                    ? { ...recipe, systemBusProfile: owner.systemBusProfile }
+                    : recipe;
                 const refuse = async (reason: string): Promise<never> => {
                     const result = {
                         label: recipe.label,
@@ -332,7 +340,7 @@ export function maintenanceJobs(
                 try {
                     after = await probe(
                         connection,
-                        recipe,
+                        probeRecipe,
                         "restart",
                         context.signal,
                         input.expected,
@@ -373,14 +381,15 @@ export function maintenanceJobs(
                             : "Verifying recovery through a fresh host connection."
                     );
                     after = undefined;
+                    const serviceTimeout = recipe.systemBusProfile ? 200_000 : 80_000;
                     const until =
-                        Date.now() + (recipe.kind === "host" ? 520_000 : 80_000);
+                        Date.now() + (recipe.kind === "host" ? 520_000 : serviceTimeout);
                     while (!after && Date.now() < until) {
                         await wait(context.signal);
                         try {
                             const current = await probe(
                                 connection,
-                                recipe,
+                                probeRecipe,
                                 "verify",
                                 AbortSignal.any([
                                     context.signal,
@@ -444,31 +453,25 @@ export function maintenanceJobs(
                                 },
                                 target.kind === "host"
                             );
-                        if (recipe.kind === "service") {
-                            const owner = targets.find(
-                                (candidate) =>
-                                    candidate.kind === "host" &&
-                                    candidate.connection === recipe.connection
+                        if (recipe.kind === "service" && owner) {
+                            await saveReading(
+                                transaction,
+                                owner.id,
+                                maintenanceRevision(owner, connections),
+                                fleet
+                                    ? {
+                                          bootId: verified.bootId,
+                                          rebootRequired: verified.rebootRequired,
+                                          fleet,
+                                          active: null,
+                                          invocationId: null,
+                                          serviceRestartRequired: null,
+                                          serviceEvidence: null,
+                                          health: false,
+                                      }
+                                    : null,
+                                true
                             );
-                            if (owner)
-                                await saveReading(
-                                    transaction,
-                                    owner.id,
-                                    maintenanceRevision(owner, connections),
-                                    fleet
-                                        ? {
-                                              bootId: verified.bootId,
-                                              rebootRequired: verified.rebootRequired,
-                                              fleet,
-                                              active: null,
-                                              invocationId: null,
-                                              serviceRestartRequired: null,
-                                              serviceEvidence: null,
-                                              health: false,
-                                          }
-                                        : null,
-                                    true
-                                );
                         }
                     }))
                 )

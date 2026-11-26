@@ -9,6 +9,7 @@ const targetSchema = v.strictObject({
     impact: v.pipe(v.string(), v.minLength(1), v.maxLength(500)),
     kind: v.picklist(["service", "host"]),
     restartReportedServices: v.optional(v.boolean()),
+    systemBusProfile: v.optional(v.literal("ubuntu-main")),
     physicalNode: v.optional(v.literal(true)),
     service: v.optional(
         v.pipe(v.string(), v.regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]{0,150}\.service$/))

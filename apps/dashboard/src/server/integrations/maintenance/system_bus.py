@@ -1,4 +1,4 @@
-"""Qualified recovery of the classic Debian system bus on a headless systemd host."""
+"""Qualified recovery of the classic system bus on a headless systemd host."""
 import json
 import os
 from pathlib import Path
@@ -90,12 +90,13 @@ def bus_login():
              "org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager", "ListSessions"])
 
 
-def bus_preflight(operator_uid):
+def bus_preflight(operator_uid, profile=None):
     release = platform.freedesktop_os_release()
-    if (release.get("ID") != "debian" or release.get("VERSION_ID") != "13" or os.geteuid() != 0
+    main = profile == "ubuntu-main" and (release.get("ID"), release.get("VERSION_ID")) == ("ubuntu", "26.04")
+    if (not (main or (release.get("ID"), release.get("VERSION_ID")) == ("debian", "13")) or os.geteuid() != 0
             or not os.access("/usr/bin/systemd-run", os.X_OK)):
         raise BusUnavailable("implementation")
-    if not re.match(r"systemd 257\b", bus_cmd(["/usr/bin/systemctl", "--version"])) or not re.search(
+    if not re.match(r"systemd 259\b" if main else r"systemd 257\b", bus_cmd(["/usr/bin/systemctl", "--version"])) or not re.search(
             r"\b1\.16\.", bus_cmd(["/usr/bin/dbus-daemon", "--version"])):
         raise BusUnavailable("implementation")
     props = bus_fields(BUS_UNIT, "Id", "ActiveState", "InvocationID", "MainPID", "RequiredBy", "BoundBy",
@@ -109,7 +110,14 @@ def bus_preflight(operator_uid):
     login = bus_fields(LOGIN_UNIT, "ActiveState", "MainPID", "InvocationID", "RefuseManualStop", "RefuseManualStart")
     if login.get("ActiveState") != "active" or login.get("RefuseManualStop") != "no" or login.get("RefuseManualStart") != "no":
         raise BusUnavailable("login")
-    owners, users = bus_endpoints(bus_connections(), operator_uid, int(login["MainPID"]))
+    rows = bus_connections()
+    extra = {}
+    allowed_names = BUS_NAMES
+    if main:
+        rows, connected, pids = main_clients(rows, True)
+        extra["main"] = main_baseline(connected, pids)
+        allowed_names = BUS_NAMES | {MAIN_BUS_UNITS[u] for u in connected if MAIN_BUS_UNITS.get(u)}
+    owners, users = bus_endpoints(rows, operator_uid, int(login["MainPID"]))
     if owners != BUS_NAMES:
         raise BusUnavailable("login")
     # A previously disconnected Type=dbus service would be invisible in ListNames.
@@ -119,29 +127,30 @@ def bus_preflight(operator_uid):
         raise BusUnavailable("unavailable")
     for start in range(0, len(units), 64):
         names = bus_cmd(["/usr/bin/systemctl", "show", "-p", "BusName", "--value", "--", *units[start:start + 64]])
-        if any(n and n not in BUS_NAMES for n in names.splitlines()):
+        if any(n and n not in allowed_names for n in names.splitlines()):
             raise BusUnavailable("clients")
     for unit, pid in users.items():
         if pid <= 1 or bus_fields(unit,"MainPID").get("MainPID") != str(pid) or not bus_executable(pid,"/usr/lib/systemd/systemd"):
             raise BusUnavailable("clients")
-    inhibitors = bus_cmd(["/usr/bin/busctl", "--system", "--timeout=3", "--auto-start=no", "call",
-                          "org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager", "ListInhibitors"])
-    if inhibitors != "a(ssssuu) 0":
-        raise BusUnavailable("inhibitors")
+    if not main:
+        inhibitors = bus_cmd(["/usr/bin/busctl", "--system", "--timeout=3", "--auto-start=no", "call",
+                              "org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager", "ListInhibitors"])
+        if inhibitors != "a(ssssuu) 0":
+            raise BusUnavailable("inhibitors")
     sessions = json.loads(bus_cmd(["/usr/bin/loginctl", "--json=short", "list-sessions"]))
     if not isinstance(sessions,list) or any(row.get("uid") != operator_uid or row.get("tty") for row in sessions):
         raise BusUnavailable("sessions")
     bus_login()
-    return {"bus": bus_id(), "invocation": props["InvocationID"], "login": login["InvocationID"], "users": users}
+    return {"bus": bus_id(), "invocation": props["InvocationID"], "login": login["InvocationID"], "users": users, **extra}
 
 
 def bus_login_uid():
     return int(Path("/proc/self/loginuid").read_text().strip())
 
 
-def bus_eligibility():
+def bus_eligibility(profile=None):
     try:
-        bus_preflight(bus_login_uid())
+        bus_preflight(bus_login_uid(), profile)
         return "qualified"
     except BusUnavailable as error:
         return str(error)
@@ -166,15 +175,29 @@ def bus_active_users(snapshot):
     return {unit:pid for unit,pid in snapshot["users"].items() if bus_fields(unit,"ActiveState","MainPID").get("MainPID") == str(pid)}
 
 
-def bus_restored(snapshot, uid):
+def bus_restored(snapshot, uid, confirmed=False):
     if bus_id() == snapshot["bus"]:
         return False
     login = bus_fields(LOGIN_UNIT, "MainPID")
-    owners, users = bus_endpoints(bus_connections(), uid, int(login["MainPID"]), strict=False)
-    if not BUS_NAMES.issubset(owners) or any(users.get(unit) != pid for unit, pid in snapshot["users"].items()):
+    rows = bus_connections()
+    owners, users = bus_endpoints(rows, uid, int(login["MainPID"]), strict=False)
+    if not BUS_NAMES.issubset(owners):
         return False
+    for unit, original in snapshot["users"].items():
+        if users.get(unit) == original:
+            continue
+        # Once the host has proved the original manager recovered, an automation
+        # account may log out and receive a new manager at the next SSH verification.
+        if not confirmed:
+            return False
+        current = bus_fields(unit, "ActiveState", "MainPID")
+        if current.get("ActiveState") == "inactive" and current.get("MainPID") == "0":
+            continue
+        pid = users.get(unit)
+        if not pid or current.get("ActiveState") != "active" or current.get("MainPID") != str(pid) or not bus_executable(pid, "/usr/lib/systemd/systemd"):
+            return False
     bus_login()
-    return True
+    return "main" not in snapshot or main_verified(snapshot["main"], rows)
 
 
 def bus_recover(snapshot, uid):
@@ -215,7 +238,7 @@ def bus_execute(directory):
             report = read_service_report(bus_cmd)
             if not any(s["unit"] == BUS_UNIT and s["restartable"] and s["invocationId"] == expected["invocationId"] for s in report["services"]):
                 raise BusUnavailable("requirement")
-            snapshot = bus_preflight(uid)
+            snapshot = bus_preflight(uid, request.get("profile"))
             if (snapshot["invocation"] != expected["invocationId"] or
                     Path("/proc/sys/kernel/random/boot_id").read_text().strip() != expected["bootId"] or time.time() > request["expires"]):
                 raise BusUnavailable("identity")
@@ -237,6 +260,8 @@ def bus_execute(directory):
             else:
                 raise RuntimeError("New system bus not confirmed")
             bus_recover(snapshot, uid)
+            if "main" in snapshot:
+                main_restore_clients(snapshot["main"])
             until = time.monotonic() + 25
             while time.monotonic() < until:
                 try:
@@ -268,6 +293,7 @@ def bus_submit(request):
     uid = bus_login_uid()
     target = request["target"]
     bus_write(directory / "request", {"expected": request["expected"], "uid": uid, "expires":time.time()+45,
+                                     "profile": target.get("systemBusProfile"),
                                      "health": target["health"], "preflight":target.get("preflight")})
     runner = directory / "runner.py"
     runner.write_text(request["busProgram"])
@@ -288,7 +314,7 @@ def bus_status(operation, expected):
         confirmed = json.loads((directory / "confirmed").read_text())
         if (Path("/proc/sys/kernel/random/boot_id").read_text().strip() != expected["bootId"] or
                 bus_id() != confirmed["bus"] or bus_fields(BUS_UNIT, "InvocationID").get("InvocationID") != confirmed["invocation"] or
-                not bus_restored(json.loads((directory/"baseline").read_text()), request["uid"])):
+                not bus_restored(json.loads((directory/"baseline").read_text()), request["uid"], confirmed=True)):
             return "unverified"
     return state
 

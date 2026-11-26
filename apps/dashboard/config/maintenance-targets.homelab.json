@@ -1,6 +1,7 @@
 [
     {
         "id": "main-host",
+        "systemBusProfile": "ubuntu-main",
         "connection": "main-apt",
         "label": "Main",
         "impact": "Dashboard, worker, media applications, Mira and local web tools will be unavailable until Main returns.",
