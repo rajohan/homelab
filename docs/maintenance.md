@@ -143,6 +143,17 @@ managers if needed. The worker opens a fresh SSH connection and verifies the new
 bus ID, service invocation, original user manager and working login interface.
 Individual restarts, batches and post-update follow-ups use the same checks.
 
+The Homelab profile also selects a classic D-Bus 1.16 recipe for Main on Ubuntu
+26.04 with systemd 259. Before touching the bus it records the routed uplink,
+checks the gateway and an uncached DNS lookup for the dashboard, and identifies
+the connected services and their normal sleep or shutdown inhibitors. Unknown
+clients, active package installations, interactive sessions and unreviewed stop
+dependencies prevent admission. The host reconnects its managers and recovers
+the previously active client services as needed. It verifies the original uplink,
+gateway, DNS, login interface, inhibitors, and Docker daemon identity and API.
+The worker then checks dashboard readiness from a fresh SSH login and requires
+Linux to clear the pending restart. Docker and the guest stay running.
+
 Automation tokens are refused even if assigned that capability. Each restart has
 one attempt, an audit history and ordinary job notifications. A host request may
 disconnect SSH; the worker only polls afterward and never resends the reboot.

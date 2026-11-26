@@ -66,6 +66,9 @@ export function discoveredMaintenanceTarget(
         connection: host.connection,
         kind: "service",
         reportedOn: host.id,
+        ...(systemBus && host.systemBusProfile
+            ? { systemBusProfile: host.systemBusProfile }
+            : {}),
         service: unit,
         label: unit,
         impact,

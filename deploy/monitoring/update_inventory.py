@@ -195,5 +195,9 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (OSError, ValueError, RuntimeError, urllib.error.URLError, subprocess.SubprocessError):
+    except urllib.error.HTTPError as error:
+        raise SystemExit(f"Dashboard rejected update inventory (HTTP {error.code}).") from None
+    except urllib.error.URLError:
+        raise SystemExit("Update inventory delivery failed to reach the dashboard.") from None
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
         raise SystemExit("Update inventory failed; check source availability and scoped configuration.")
