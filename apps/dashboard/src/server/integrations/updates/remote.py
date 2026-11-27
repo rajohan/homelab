@@ -318,6 +318,14 @@ def stable_parts(version):
     return tuple(int(part or 0) for part in match.groups()) if match else None
 
 
+def newer_apt_revision(installed, candidate):
+    """Match the dashboard's revision fallback for numeric upstreams on the same packaging series."""
+    pattern = r"((?:[0-9]+:)?[0-9]+(?:\.[0-9]+)*-(?=[0-9])(?:[A-Za-z0-9.+]|~bpo)*?)([0-9]+)"
+    old = re.fullmatch(pattern, installed)
+    new = re.fullmatch(pattern, candidate)
+    return old is not None and new is not None and old[1] == new[1] and int(new[2]) > int(old[2])
+
+
 def service_snapshot():
     """Bind a measured service list to the boot that produced it."""
     report = read_service_report(command)
@@ -379,6 +387,8 @@ def apt_update(item, automatic):
                     continue
             old = stable_parts(change.installed.version) if change.installed else None
             new = stable_parts(change.candidate.version)
+            if (not old or not new) and change.installed and newer_apt_revision(change.installed.version, change.candidate.version):
+                continue
             if not old or not new or old[0] != new[0] or new < old:
                 raise RuntimeError("A dependency requires manual approval")
     versions = [change.fullname + "=" + change.candidate.version for change in changes]
