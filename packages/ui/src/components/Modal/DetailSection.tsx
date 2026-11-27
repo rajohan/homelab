@@ -1,6 +1,7 @@
 import { type LucideIcon } from "lucide-react";
 import { type ReactNode, useId } from "react";
 
+import { cn } from "../../lib/classNames";
 import { Card } from "../Card/Card";
 import { HeadingLabel } from "../SectionHeader/HeadingLabel";
 
@@ -51,7 +52,14 @@ export function DetailSection({
             }
         >
             {description && (
-                <p className="text-xs leading-relaxed text-primary-400">{description}</p>
+                <p
+                    className={cn(
+                        "text-xs leading-relaxed text-primary-400",
+                        icon && "ps-7"
+                    )}
+                >
+                    {description}
+                </p>
             )}
             {children}
         </Card>

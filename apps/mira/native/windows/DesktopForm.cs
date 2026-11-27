@@ -99,6 +99,14 @@ internal sealed class DesktopForm : MiraWindow
     {
         var request = DesktopBridge.Read(source, web.Source, json);
         string action = (string)request["action"];
+        if (action == "startup" || action == "setStartup") {
+            try {
+                if (action == "setStartup") DesktopStartup.SetEnabled((bool)request["enabled"]);
+                return DesktopBridge.Reply((string)request["id"], connection, null, DesktopStartup.Enabled);
+            } catch (Exception) {
+                return DesktopBridge.Reply((string)request["id"], connection, "Could not change the Windows startup shortcut. Check this account's Startup folder.");
+            }
+        }
         if (action != "state" && (((action == "connect" || action == "pair" || action == "forget") && !connection.CanStart) || (action == "update" && !connection.CanOpenUpdate)))
             return DesktopBridge.Reply((string)request["id"], connection, "Finish or stop the current computer operation first.");
         if (action == "pair" && connection.ComputerId != null)

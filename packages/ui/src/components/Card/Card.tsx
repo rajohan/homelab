@@ -16,8 +16,8 @@ export function Card({
         <section
             data-ui="card"
             className={cn(
-                "max-w-full min-w-0 rounded-xl border border-primary-700 bg-surface-card",
-                header ? "px-3 pb-3 sm:px-5 sm:pb-5" : "p-4 sm:p-5",
+                "max-w-full min-w-0 rounded-xl border border-primary-700 bg-surface-card px-4 sm:px-5",
+                header ? "pb-3 sm:pb-5" : "py-4 sm:py-5",
                 className
             )}
             {...props}

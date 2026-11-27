@@ -18,7 +18,7 @@ import {
 } from "@homelab/ui";
 import { skipToken, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { PackageSearch } from "lucide-react";
+import { ExternalLink, PackageSearch } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "../../api/client";
@@ -140,12 +140,18 @@ export function BuildDependencies() {
                             sortValue: (item) => item.name,
                             render: (item) => (
                                 <a
-                                    className="rounded-sm text-accent-300 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-accent-400"
+                                    className="inline-flex max-w-full items-center gap-1.5 rounded-sm font-semibold text-primary-100 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-accent-400"
                                     href={item.url}
                                     target="_blank"
                                     rel="noreferrer"
                                 >
-                                    {item.name}
+                                    <span className="min-w-0 wrap-anywhere">
+                                        {item.name}
+                                    </span>
+                                    <ExternalLink
+                                        aria-hidden="true"
+                                        className="size-3 shrink-0 text-primary-400"
+                                    />
                                 </a>
                             ),
                         },

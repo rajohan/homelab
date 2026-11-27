@@ -27,7 +27,7 @@ RestartApplications=no
 UninstallLogging=yes
 DisableWelcomePage=no
 UsePreviousAppDir=no
-UsePreviousTasks=yes
+UsePreviousTasks=no
 
 [Tasks]
 Name: "startup"; Description: "Start Homelab in the tray and connect when I sign in"; Flags: unchecked
@@ -36,6 +36,7 @@ Name: "startup"; Description: "Start Homelab in the tray and connect when I sign
 #include "@FILES@"
 
 [Icons]
+Name: "{app}\Homelab startup"; Filename: "{app}\versions\{#Version}\mira-computer-desktop.exe"; Parameters: "--startup"; WorkingDir: "{app}\versions\{#Version}"
 Name: "{userprograms}\Homelab"; Filename: "{app}\versions\{#Version}\mira-computer-desktop.exe"; WorkingDir: "{app}\versions\{#Version}"
 Name: "{userstartup}\Homelab"; Filename: "{app}\versions\{#Version}\mira-computer-desktop.exe"; Parameters: "--startup"; WorkingDir: "{app}\versions\{#Version}"; Tasks: startup
 
@@ -46,10 +47,28 @@ Type: dirifempty; Name: "{userprograms}\Homelab"
 Type: files; Name: "{userstartup}\Homelab Mira.lnk"
 Type: files; Name: "{userstartup}\Homelab.lnk"; Tasks: not startup
 
+[UninstallDelete]
+Type: files; Name: "{userstartup}\Homelab.lnk"
+
 [Code]
 var
+  StartupShown: Boolean;
   Maintenance: THandle;
   ExpectedPaths, ExpectedHashes: TArrayOfString;
+
+procedure CurPageChanged(CurPageID: Integer);
+var I: Integer; Arg: String;
+begin
+  if (CurPageID <> wpSelectTasks) or StartupShown then Exit;
+  StartupShown := True;
+  { Use the current user's actual shortcut, including changes made in Settings. }
+  for I := 1 to ParamCount do begin
+    Arg := Uppercase(ParamStr(I));
+    if (Pos('/TASKS=', Arg) = 1) or (Pos('/MERGETASKS=', Arg) = 1) or (Pos('/LOADINF=', Arg) = 1) then Exit;
+  end;
+  if FileExists(ExpandConstant('{userstartup}\Homelab.lnk')) or
+     FileExists(ExpandConstant('{userstartup}\Homelab Mira.lnk')) then WizardSelectTasks('startup');
+end;
 
 function NativeCreateFile(Name: String; Access, Share: Cardinal; Security: NativeInt;
   Creation, Flags: Cardinal; Template: THandle): THandle;
