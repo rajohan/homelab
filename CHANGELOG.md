@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.31.1](https://github.com/rajohan/homelab/compare/v0.31.0...v0.31.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **updates:** accept stable multi-part APT version upgrades ([#305](https://github.com/rajohan/homelab/issues/305)) ([7ecd46c](https://github.com/rajohan/homelab/commit/7ecd46c8df9165c75244f1b84225c38f86e5f2db))
+* **updates:** admit numeric APT packaging revisions ([#303](https://github.com/rajohan/homelab/issues/303)) ([6f4c372](https://github.com/rajohan/homelab/commit/6f4c37214bf04badcdda5426026dd5cfbcae8c03))
+
 ## [0.31.0](https://github.com/rajohan/homelab/compare/v0.30.8...v0.31.0) (2026-11-27)
 
 
