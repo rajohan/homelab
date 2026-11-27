@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/rajohan/homelab/compare/v0.30.8...v0.31.0) (2026-11-27)
+
+
+### Features
+
+* **desktop:** add optional Windows startup and align dashboard headings ([#301](https://github.com/rajohan/homelab/issues/301)) ([c0e25e4](https://github.com/rajohan/homelab/commit/c0e25e472802091ee34941ade6ff885fbd40bce4))
+
 ## [0.30.8](https://github.com/rajohan/homelab/compare/v0.30.7...v0.30.8) (2026-11-26)
 
 
