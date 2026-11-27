@@ -34,18 +34,20 @@ internal static class DesktopBridge
         if (action == "pair") {
             if (value.Count != 5 || !value.ContainsKey("ticket") || !(value["ticket"] is string) ||
                 !Regex.IsMatch((string)value["ticket"], @"\Amira_pair_[0-9a-f-]{36}\.[A-Za-z0-9_-]{43}\z")) throw new InvalidDataException();
-        } else if (value.Count != 4 || (action != "state" && action != "connect" && action != "stop" && action != "forget" && action != "update")) throw new InvalidDataException();
+        } else if (action == "setStartup") {
+            if (value.Count != 5 || !value.ContainsKey("enabled") || !(value["enabled"] is bool)) throw new InvalidDataException();
+        } else if (value.Count != 4 || (action != "startup" && action != "state" && action != "connect" && action != "stop" && action != "forget" && action != "update")) throw new InvalidDataException();
         return value;
     }
-    internal static string Reply(string id, DesktopConnection connection, string error = null)
+    internal static string Reply(string id, DesktopConnection connection, string error = null, bool? startOnLogin = null)
     {
+        var state = new Dictionary<string, object> {
+            {"message", connection.Message}, {"computerId", connection.ComputerId},
+            {"busy", connection.Busy}, {"canStart", connection.CanStart}, {"canStop", connection.CanStop}, {"canUpdate", connection.CanOpenUpdate}
+        };
+        if (startOnLogin.HasValue) state.Add("startOnLogin", startOnLogin.Value);
         return new JavaScriptSerializer().Serialize(new {
-            type = "mira-desktop", protocol = 1, id = id, error = error,
-            state = new {
-                message = connection.Message, computerId = connection.ComputerId,
-                busy = connection.Busy, canStart = connection.CanStart,
-                canStop = connection.CanStop, canUpdate = connection.CanOpenUpdate
-            }
+            type = "mira-desktop", protocol = 1, id = id, error = error, state = state
         });
     }
 }

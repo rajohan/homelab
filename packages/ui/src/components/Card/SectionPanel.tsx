@@ -13,7 +13,6 @@ export function SectionPanel({
     children,
     className,
     id,
-    description,
     compactActions = true,
     ...heading
 }: Omit<ComponentProps<typeof SectionHeader>, "title"> & {
@@ -28,18 +27,11 @@ export function SectionPanel({
             aria-label={title}
             className={cn("flex flex-col", className)}
             header={
-                <>
-                    <SectionHeader
-                        title={title}
-                        {...heading}
-                        compactActions={compactActions}
-                    />
-                    {description && (
-                        <p className="mt-1.5 max-w-prose text-sm leading-relaxed text-primary-400">
-                            {description}
-                        </p>
-                    )}
-                </>
+                <SectionHeader
+                    title={title}
+                    {...heading}
+                    compactActions={compactActions}
+                />
             }
         >
             <div className="flex min-w-0 flex-1 flex-col gap-3 pt-3">{children}</div>

@@ -27,6 +27,7 @@ const sources = {
     desktop: [
         "WorkerJob.cs",
         "DesktopSettings.cs",
+        "DesktopStartup.cs",
         "DesktopSession.cs",
         "DesktopUpdateArtifact.cs",
         "DesktopUpdateSession.cs",

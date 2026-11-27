@@ -1,6 +1,7 @@
 import { type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { cn } from "../../lib/classNames";
 import { HeadingLabel } from "../SectionHeader/HeadingLabel";
 
 /**
@@ -56,7 +57,12 @@ export function PageHeader({
                         )}
                     </div>
                     {description && (
-                        <p className="max-w-3xl text-sm leading-6 text-primary-400">
+                        <p
+                            className={cn(
+                                "max-w-3xl text-sm leading-6 text-primary-400",
+                                icon && "ps-[calc(25px+var(--spacing)*2.5)]"
+                            )}
+                        >
                             {description}
                         </p>
                     )}

@@ -7,6 +7,7 @@ const stateSchema = v.strictObject({
     canStart: v.boolean(),
     canStop: v.boolean(),
     canUpdate: v.boolean(),
+    startOnLogin: v.optional(v.boolean()),
 });
 const replySchema = v.strictObject({
     type: v.literal("mira-desktop"),
@@ -17,7 +18,8 @@ const replySchema = v.strictObject({
 });
 export type DesktopState = v.InferOutput<typeof stateSchema>;
 type DesktopRequest =
-    | { readonly action: "state" | "connect" | "stop" | "forget" | "update" }
+    | { readonly action: "state" | "startup" | "connect" | "stop" | "forget" | "update" }
+    | { readonly action: "setStartup"; readonly enabled: boolean }
     | { readonly action: "pair"; readonly ticket: string };
 interface WebViewBridge {
     postMessage: (message: unknown) => void;

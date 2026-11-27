@@ -4,6 +4,7 @@ import {
     ErrorNotice,
     LoadingState,
     SectionHeader,
+    Switch,
 } from "@homelab/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Monitor, Plug, Square, Unplug } from "lucide-react";
@@ -30,6 +31,18 @@ export function DesktopComputer() {
             requestDesktop({ action }),
         onSuccess: (value) => queryClient.setQueryData(["mira", "desktop"], value),
     });
+    const startupKey = ["mira", "desktop", "startup"] as const;
+    const startup = useQuery({
+        queryKey: startupKey,
+        queryFn: ({ signal }) => requestDesktop({ action: "startup" }, signal),
+        enabled: hasDesktopBridge(),
+        retry: false,
+    });
+    const setStartup = useMutation({
+        mutationFn: (enabled: boolean) =>
+            requestDesktop({ action: "setStartup", enabled }),
+        onSuccess: (value) => queryClient.setQueryData(startupKey, value),
+    });
     if (!hasDesktopBridge()) return null;
     const current = state.data;
     return (
@@ -40,11 +53,20 @@ export function DesktopComputer() {
                 description={current?.message ?? "Checking the local connection…"}
             />
             {state.isPending && <LoadingState label="Checking Windows app…" />}
-            {(state.error ?? action.error) && (
-                <ErrorNotice error={state.error ?? action.error} />
+            {(state.error ?? action.error ?? setStartup.error) && (
+                <ErrorNotice error={state.error ?? action.error ?? setStartup.error} />
             )}
             {current && (
                 <>
+                    {startup.data?.startOnLogin !== undefined && (
+                        <Switch
+                            label="Start with Windows"
+                            description="Open Homelab in the system tray when you sign in."
+                            checked={startup.data.startOnLogin}
+                            disabled={setStartup.isPending}
+                            onChange={(enabled) => setStartup.mutate(enabled)}
+                        />
+                    )}
                     {!current.computerId && (
                         <p className="text-sm text-primary-400">
                             Use Pair computer to connect this PC. Chat and automations
