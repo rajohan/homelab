@@ -217,6 +217,11 @@ function tzRelease(version: string) {
     return /^(?:(\d+):)?(\d{4})(z*[a-z])(?:-[0-9][A-Za-z0-9.+]*)?$/.exec(version);
 }
 
+// Compare the final numeric build only within the same epoch, numeric upstream
+// version and packaging series. A ~bpo suffix is a Debian backport series.
+const aptRevisionSeries =
+    /^((?:\d+:)?\d+(?:\.\d+)*-(?=\d)(?:[A-Za-z0-9.+]|~bpo)*?)(\d+)$/;
+
 /**
  * Classify comparable stable versions without assuming an opaque tag is a safe update.
  * @param item - Installed and resolved candidate metadata; digests are never versions.
@@ -245,7 +250,15 @@ export function updateChange(item: UpdateItem): UpdateChange {
             : (item.available ?? undefined),
         item.kind === "os"
     );
-    if (!installed || !available) return "unknown";
+    if (!installed || !available) {
+        if (item.kind === "os" && item.status === "available" && item.available) {
+            const from = aptRevisionSeries.exec(item.installed);
+            const to = aptRevisionSeries.exec(item.available);
+            if (from && to && from[1] === to[1] && BigInt(to[2]!) > BigInt(from[2]!))
+                return "patch";
+        }
+        return "unknown";
+    }
     for (let index = 0; index < 3; index += 1) {
         const before = installed[index]!;
         const after = available[index]!;
