@@ -222,12 +222,51 @@ function tzRelease(version: string) {
 const aptRevisionSeries =
     /^((?:\d+:)?\d+(?:\.\d+)*-(?=\d)(?:[A-Za-z0-9.+]|~bpo)*?)(\d+)$/;
 
+const aptDottedUpstream = /^(?:\d+:)?(\d+(?:\.\d+)+)(?:-(?=\d)(?:[A-Za-z0-9.+]|~bpo)+)?$/;
+
+function aptEpoch(version: string): bigint {
+    return BigInt(/^(\d+):/.exec(version)?.[1] ?? 0);
+}
+
+function numericChange(
+    installed: readonly (number | bigint)[],
+    available: readonly (number | bigint)[]
+): UpdateChange | null {
+    for (let index = 0; index < Math.max(installed.length, available.length); index++) {
+        const before = installed[index] ?? 0;
+        const after = available[index] ?? 0;
+        if (after < before) return "unknown";
+        if (after > before) {
+            if (index === 0) return "major";
+            return index === 1 ? "minor" : "patch";
+        }
+    }
+    return null;
+}
+
+function aptPackagingChange(installed: string, available: string): UpdateChange {
+    const from = aptRevisionSeries.exec(installed);
+    const to = aptRevisionSeries.exec(available);
+    if (from && to && from[1] === to[1] && BigInt(to[2]!) > BigInt(from[2]!))
+        return "patch";
+
+    const old = aptDottedUpstream.exec(installed);
+    const next = aptDottedUpstream.exec(available);
+    if (!old || !next) return "unknown";
+    return (
+        numericChange(old[1]!.split(".").map(BigInt), next[1]!.split(".").map(BigInt)) ??
+        "unknown"
+    );
+}
+
 /**
  * Classify comparable stable versions without assuming an opaque tag is a safe update.
  * @param item - Installed and resolved candidate metadata; digests are never versions.
  * @returns Patch/minor/major, or unknown for downgrade, prerelease or unversioned channels.
  */
 export function updateChange(item: UpdateItem): UpdateChange {
+    if (item.kind === "os" && aptEpoch(item.installed) !== aptEpoch(item.available ?? ""))
+        return "unknown";
     if (item.kind === "os" && /^apt:tzdata(?::[a-z0-9]+)?$/.test(item.id)) {
         const from = tzRelease(item.installed);
         const to = tzRelease(item.available ?? "");
@@ -251,23 +290,12 @@ export function updateChange(item: UpdateItem): UpdateChange {
         item.kind === "os"
     );
     if (!installed || !available) {
-        if (item.kind === "os" && item.status === "available" && item.available) {
-            const from = aptRevisionSeries.exec(item.installed);
-            const to = aptRevisionSeries.exec(item.available);
-            if (from && to && from[1] === to[1] && BigInt(to[2]!) > BigInt(from[2]!))
-                return "patch";
-        }
+        if (item.kind === "os" && item.status === "available" && item.available)
+            return aptPackagingChange(item.installed, item.available);
         return "unknown";
     }
-    for (let index = 0; index < 3; index += 1) {
-        const before = installed[index]!;
-        const after = available[index]!;
-        if (after < before) return "unknown";
-        if (after > before) {
-            if (index === 0) return "major";
-            return index === 1 ? "minor" : "patch";
-        }
-    }
+    const change = numericChange(installed, available);
+    if (change) return change;
     if (item.kind === "container") {
         const from = /-ls(\d+)$/.exec(installedLabel ?? "");
         const to = /-ls(\d+)$/.exec(availableLabel ?? "");

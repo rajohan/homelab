@@ -33,9 +33,12 @@ through [the host-side publication queue](stack-publication.md).
   installation already executing on the host.
 - Automatic admission accepts verified stable patch/minor versions and newer IANA
   data releases of the APT `tzdata` package (for example `2026e` to `2026f`).
-  APT also accepts a higher numeric package revision within the same packaging series
-  when the epoch and numeric upstream version are unchanged. This covers four-part
-  ALSA versions and date-versioned firmware rebuilt for the same backport.
+  For APT packages with dotted numeric upstream versions, the first component is
+  the major version. With the same epoch, an increase in a later component can be
+  installed automatically, including `1.2.15.3-1` to `1.2.15.4-1`. This applies
+  to every package in the proposed transaction. APT also accepts a higher numeric
+  package revision within the same packaging series when the upstream version is
+  unchanged, including date-versioned firmware rebuilt for the same backport.
   The host checks its full APT transaction, including dependency versions and holds.
   Major upgrades, prereleases, downgrades and stale observations require review.
   The admission job reports available, queued and skipped counts and sample reasons.

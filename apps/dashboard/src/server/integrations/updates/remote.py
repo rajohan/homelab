@@ -5,6 +5,7 @@ command. Output contains only fixed progress phases and the verified version rec
 """
 import copy
 from contextlib import contextmanager
+from itertools import zip_longest
 import fcntl
 import json
 import os
@@ -318,12 +319,24 @@ def stable_parts(version):
     return tuple(int(part or 0) for part in match.groups()) if match else None
 
 
-def newer_apt_revision(installed, candidate):
-    """Match the dashboard's revision fallback for numeric upstreams on the same packaging series."""
+def compatible_apt_change(installed, candidate):
+    """Verify a newer packaging build or dotted upstream release within the same major."""
     pattern = r"((?:[0-9]+:)?[0-9]+(?:\.[0-9]+)*-(?=[0-9])(?:[A-Za-z0-9.+]|~bpo)*?)([0-9]+)"
     old = re.fullmatch(pattern, installed)
     new = re.fullmatch(pattern, candidate)
-    return old is not None and new is not None and old[1] == new[1] and int(new[2]) > int(old[2])
+    if old and new and old[1] == new[1] and int(new[2]) > int(old[2]):
+        return True
+
+    upstream = r"(?:\d+:)?(\d+(?:\.\d+)+)(?:-(?=\d)(?:[A-Za-z0-9.+]|~bpo)+)?"
+    old = re.fullmatch(upstream, installed, re.ASCII)
+    new = re.fullmatch(upstream, candidate, re.ASCII)
+    if not old or not new:
+        return False
+    before = tuple(map(int, old[1].split(".")))
+    after = tuple(map(int, new[1].split(".")))
+    if before[0] != after[0]:
+        return False
+    return next((b > a for a, b in zip_longest(before, after, fillvalue=0) if a != b), False)
 
 
 def service_snapshot():
@@ -379,15 +392,17 @@ def apt_update(item, automatic):
         if not change.candidate or (change.installed and apt_pkg.version_compare(change.candidate.version, change.installed.version) < 0):
             raise RuntimeError("Package downgrades are not permitted")
         if automatic:
-            if change.name == "tzdata" and change.installed:
+            if not change.installed or int(change.installed.version.rpartition(":")[0] or 0) != int(change.candidate.version.rpartition(":")[0] or 0):
+                raise RuntimeError("A dependency requires manual approval")
+            if change.name == "tzdata":
                 pattern = r"(?:(\d+):)?(\d{4}z*[a-z])(?:-[0-9][A-Za-z0-9.+]*)?"
                 before = re.fullmatch(pattern, change.installed.version)
                 after = re.fullmatch(pattern, change.candidate.version)
                 if before and after and before[1] == after[1] and before[2] < after[2]:
                     continue
-            old = stable_parts(change.installed.version) if change.installed else None
+            old = stable_parts(change.installed.version)
             new = stable_parts(change.candidate.version)
-            if (not old or not new) and change.installed and newer_apt_revision(change.installed.version, change.candidate.version):
+            if (not old or not new) and compatible_apt_change(change.installed.version, change.candidate.version):
                 continue
             if not old or not new or old[0] != new[0] or new < old:
                 raise RuntimeError("A dependency requires manual approval")
